@@ -196,7 +196,7 @@ def update_tracker(data):
     today = date.today().isoformat()
     buy_cost_rate = 0.001425
     sell_cost_rate = 0.004425
-    slippage = 0.001
+    slippage = 0.003
     max_hold = 20
     reserve_ratio = 0.10
     reserve_cash = data['initial_capital'] * reserve_ratio
