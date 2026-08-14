@@ -8,14 +8,17 @@ TWSE 上市普通股清單（取代硬編碼股池，修復前視選股偏差）
 池裡再選贏家，所有績效數字被系統性灌水；`build_liquid_universe` 的 Top-N 流動性
 篩選也因此形同虛設。
 
-本模組改以 TWSE OpenAPI「上市公司基本資料」(t187ap03_L) 取得**全體上市公司**
-的普通股代號（~1089 檔），讓 `build_liquid_universe` 真正在全市場上做每日
-Top-N 流動性篩選——這才是「動態 Universe」原本應有的意思。
+本模組以 TWSE 官方 **ISIN 端點**（isin.twse.com.tw/isin/C_public.jsp?strMode=2，
+「本國上市證券國際證券辨識號碼一覽表」）為主來源，取得**全體上市普通股**
+（股票 + 創新板，~1085 檔）的代號清單；該端點連線異常時自動退回 TWSE OpenAPI
+「上市公司基本資料」(t187ap03_L, ~1089 檔，含 4 檔 TDR) 作為 fallback。
+如此 `build_liquid_universe` 才真正在全市場上做每日 Top-N 流動性篩選——
+這才是「動態 Universe」原本應有的意思。
 
 偏差說明（誠實揭露，勿高估修復程度）
 ------------------------------------
 - ✅ **選擇偏差已消除**：清單是全市場列舉，不含任何人為挑選。
-- ⚠️ **存活者偏差仍在**：TWSE OpenAPI 只提供「當前」上市清單，回測期間內下市
+- ⚠️ **存活者偏差仍在**：TWSE 只提供「當前」上市清單，回測期間內下市
   的公司不會出現。因此結果仍略偏樂觀，但偏差量級遠小於原本的手選名單。
 - ✅ **不引入新的 look-ahead**：清單只決定「下載哪些代號」。未上市 / 未上市前的
   期間在 yfinance 回傳 NaN，`build_liquid_universe` 的
@@ -24,12 +27,23 @@ Top-N 流動性篩選——這才是「動態 Universe」原本應有的意思�
 - 清單快照會連同抓取日期寫入本地 cache 並納入版控，讓歷史 run 可重現。
 """
 
+import html as _html
 import json
 import os
+import re
 import urllib.request
 from datetime import datetime, timezone
 
+# 主來源：TWSE 官方 ISIN 端點（Big5 HTML 表格）
+TWSE_ISIN_URL = 'https://isin.twse.com.tw/isin/C_public.jsp?strMode=2'
+# fallback：TWSE OpenAPI 上市公司基本資料（JSON）
 TWSE_LISTED_API = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_L'
+
+# ISIN 表格中屬於「上市普通股」的分類區段。
+# 端點回傳多個區段：股票 / 創新板 / 上市認購(售)權證 / 特別股 / ETF / ETN /
+# 臺灣存託憑證(TDR) / 受益證券 / 各種債券...。普通股只有前兩者；
+# TDR（9103/9105/9110/9136 等）不是普通股，OpenAPI fallback 無法排除，這裡正確排除。
+ISIN_COMMON_STOCK_SECTIONS = {'股票', '創新板'}
 
 _DEFAULT_CACHE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -38,6 +52,82 @@ _DEFAULT_CACHE = os.path.join(
 
 # 快照超過此天數就嘗試重抓（抓不到仍沿用舊快照）
 DEFAULT_MAX_AGE_DAYS = 30
+
+_ROW_RE = re.compile(r'<tr[^>]*>(.*?)</tr>', re.DOTALL)
+_TD_RE = re.compile(r'<td[^>]*>(.*?)</td>', re.DOTALL)
+_TAG_RE = re.compile(r'<[^>]+>')
+
+
+def _clean_cell(raw):
+    """去除 HTML tag / entity，並把全形空格轉成一般空格。"""
+    text = _TAG_RE.sub('', raw or '')
+    text = text.replace('&nbsp;', ' ').replace('&#160;', ' ')
+    return _html.unescape(text).strip().replace('\u3000', ' ')
+
+
+def _parse_isin_date(raw):
+    """ISIN 端點的上市日為 'YYYY/MM/DD'；格式異常則回傳 None。"""
+    m = re.match(r'^(\d{4})/(\d{2})/(\d{2})', raw or '')
+    if not m:
+        return None
+    return f'{m.group(1)}-{m.group(2)}-{m.group(3)}'
+
+
+def _parse_isin_table(html_text):
+    """
+    解析 ISIN 一覽表。
+
+    結構：單一 <td> 的 row 是分類標題（股票 / ETF / ...），之後的資料 row 有
+    5-7 個 <td>：[代號 名稱, ISIN, 上市日, 市場別, 產業別, CFICode, 備註]。
+    只保留 ISIN_COMMON_STOCK_SECTIONS 分類下的 4 碼數字代號。
+    """
+    stocks = []
+    section = None
+    for row in _ROW_RE.findall(html_text):
+        cells = _TD_RE.findall(row)
+        if len(cells) == 1:
+            section = _clean_cell(cells[0])
+            continue
+        if section not in ISIN_COMMON_STOCK_SECTIONS or len(cells) < 4:
+            continue
+        first = _clean_cell(cells[0])
+        m = re.match(r'^(\d{4})', first)
+        if not m:
+            continue
+        stocks.append({
+            'code': m.group(1),
+            'name': first[5:].strip(),
+            'listing_date': _parse_isin_date(_clean_cell(cells[2])),
+        })
+    return stocks
+
+
+def fetch_from_isin(timeout=60):
+    """
+    主來源：直接向 TWSE ISIN 端點抓取上市普通股清單。
+
+    Returns
+    -------
+    dict
+        {'fetched_at': ISO 日期, 'source': url, 'stocks': [{code, name, listing_date}, ...]}
+    """
+    req = urllib.request.Request(
+        TWSE_ISIN_URL,
+        headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) tw_stocker/8.5'},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read()
+    stocks = _parse_isin_table(raw.decode('big5', errors='replace'))
+    stocks.sort(key=lambda s: s['code'])
+    if len(stocks) < 500:
+        raise RuntimeError(f'TWSE ISIN 清單異常：只取得 {len(stocks)} 檔，疑似格式變更')
+
+    return {
+        'fetched_at': datetime.now(timezone.utc).date().isoformat(),
+        'source': TWSE_ISIN_URL,
+        'count': len(stocks),
+        'stocks': stocks,
+    }
 
 
 def _parse_listing_date(raw):
@@ -53,7 +143,7 @@ def _parse_listing_date(raw):
 
 def fetch_from_twse(timeout=30):
     """
-    直接向 TWSE OpenAPI 抓取上市公司清單。
+    fallback：向 TWSE OpenAPI 抓取上市公司清單。
 
     Returns
     -------
@@ -70,19 +160,19 @@ def fetch_from_twse(timeout=30):
     stocks = []
     for row in payload:
         code = (row.get('公司代號') or '').strip()
-        # 只取 4 碼數字的普通股代號。ETF / 權證 / 特別股 / 受益證券不在此 API，
+        # 只取 4 碼數字的代號。ETF / 權證 / 特別股 / 受益證券不在此 API，
         # 少數外國企業註冊代號含英文字母者一併排除。
         if len(code) != 4 or not code.isdigit():
             continue
         stocks.append({
             'code': code,
-            'name': (row.get('公司簡稱') or '').strip(),
+            'name': (row.get('公司簡稱') or row.get('公司名稱') or '').strip(),
             'listing_date': _parse_listing_date(row.get('上市日期')),
         })
 
     stocks.sort(key=lambda s: s['code'])
     if len(stocks) < 500:
-        raise RuntimeError(f"TWSE 清單異常：只取得 {len(stocks)} 檔，疑似 API 格式變更")
+        raise RuntimeError(f'TWSE 清單異常：只取得 {len(stocks)} 檔，疑似 API 格式變更')
 
     return {
         'fetched_at': datetime.now(timezone.utc).date().isoformat(),
@@ -90,6 +180,15 @@ def fetch_from_twse(timeout=30):
         'count': len(stocks),
         'stocks': stocks,
     }
+
+
+def fetch_snapshot():
+    """ISIN 端點為主、OpenAPI 為 fallback，回傳統一格式的快照 dict。"""
+    try:
+        return fetch_from_isin()
+    except Exception as isin_exc:
+        print(f'   ⚠️ TWSE ISIN 端點抓取失敗（{isin_exc}），退回 OpenAPI t187ap03_L')
+        return fetch_from_twse()
 
 
 def _cache_age_days(snapshot):
@@ -126,13 +225,13 @@ def load_twse_snapshot(cache_path=None, max_age_days=DEFAULT_MAX_AGE_DAYS,
         return cached
 
     try:
-        snapshot = fetch_from_twse()
+        snapshot = fetch_snapshot()
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(snapshot, f, ensure_ascii=False, indent=1)
         if verbose:
             print(f"   🌐 已更新 TWSE 上市清單: {snapshot['count']} 檔 "
-                  f"({snapshot['fetched_at']})")
+                  f"({snapshot['fetched_at']}, 來源: {snapshot['source']})")
         return snapshot
     except Exception as exc:
         if cached is not None:

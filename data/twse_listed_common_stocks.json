@@ -1,7 +1,7 @@
 {
  "fetched_at": "2026-08-14",
- "source": "https://openapi.twse.com.tw/v1/opendata/t187ap03_L",
- "count": 1089,
+ "source": "https://isin.twse.com.tw/isin/C_public.jsp?strMode=2",
+ "count": 1085,
  "stocks": [
   {
    "code": "1101",
@@ -146,7 +146,7 @@
   {
    "code": "1303",
    "name": "南亞",
-   "listing_date": "1967-11-15"
+   "listing_date": "1967-11-05"
   },
   {
    "code": "1304",
@@ -236,7 +236,7 @@
   {
    "code": "1337",
    "name": "再生-KY",
-   "listing_date": "2011-08-17"
+   "listing_date": "2011-07-01"
   },
   {
    "code": "1338",
@@ -251,7 +251,7 @@
   {
    "code": "1340",
    "name": "勝悅-KY",
-   "listing_date": "2014-01-14"
+   "listing_date": "2013-12-06"
   },
   {
    "code": "1341",
@@ -391,7 +391,7 @@
   {
    "code": "1449",
    "name": "佳和",
-   "listing_date": "1992-05-06"
+   "listing_date": "1992-03-12"
   },
   {
    "code": "1451",
@@ -1475,7 +1475,7 @@
   },
   {
    "code": "2353",
-   "name": "宏碁",
+   "name": "宏��",
    "listing_date": "1996-09-18"
   },
   {
@@ -1760,7 +1760,7 @@
   },
   {
    "code": "2432",
-   "name": "倚天酷碁-創",
+   "name": "倚天酷��-創",
    "listing_date": "2023-05-31"
   },
   {
@@ -1936,7 +1936,7 @@
   {
    "code": "2482",
    "name": "連宇",
-   "listing_date": "2001-09-19"
+   "listing_date": "2001-09-17"
   },
   {
    "code": "2483",
@@ -1971,7 +1971,7 @@
   {
    "code": "2491",
    "name": "吉祥全",
-   "listing_date": "2001-09-19"
+   "listing_date": "2001-09-17"
   },
   {
    "code": "2492",
@@ -2750,7 +2750,7 @@
   },
   {
    "code": "3046",
-   "name": "建碁",
+   "name": "建��",
    "listing_date": "2002-08-26"
   },
   {
@@ -3256,7 +3256,7 @@
   {
    "code": "3717",
    "name": "聯嘉投控",
-   "listing_date": "2025-08-15"
+   "listing_date": "2018-05-09"
   },
   {
    "code": "4104",
@@ -3586,7 +3586,7 @@
   {
    "code": "4934",
    "name": "太極",
-   "listing_date": "2011-08-16"
+   "listing_date": "2010-03-10"
   },
   {
    "code": "4935",
@@ -3751,7 +3751,7 @@
   {
    "code": "5292",
    "name": "華懋",
-   "listing_date": "2023-11-21"
+   "listing_date": "2020-01-07"
   },
   {
    "code": "5306",
@@ -4150,7 +4150,7 @@
   },
   {
    "code": "6285",
-   "name": "啟碁",
+   "name": "啟��",
    "listing_date": "2003-09-22"
   },
   {
@@ -4501,7 +4501,7 @@
   {
    "code": "6757",
    "name": "台灣虎航",
-   "listing_date": "2023-08-15"
+   "listing_date": "2024-11-29"
   },
   {
    "code": "6768",
@@ -4520,7 +4520,7 @@
   },
   {
    "code": "6776",
-   "name": "展碁國際",
+   "name": "展�眥篕�",
    "listing_date": "2021-03-31"
   },
   {
@@ -4551,7 +4551,7 @@
   {
    "code": "6794",
    "name": "向榮生技",
-   "listing_date": "2024-05-21"
+   "listing_date": "2025-10-16"
   },
   {
    "code": "6796",
@@ -4621,7 +4621,7 @@
   {
    "code": "6869",
    "name": "雲豹能源",
-   "listing_date": "2023-03-14"
+   "listing_date": "2024-06-19"
   },
   {
    "code": "6873",
@@ -4651,7 +4651,7 @@
   {
    "code": "6902",
    "name": "GOGOLOOK",
-   "listing_date": "2023-07-13"
+   "listing_date": "2025-05-16"
   },
   {
    "code": "6906",
@@ -4660,7 +4660,7 @@
   },
   {
    "code": "6908",
-   "name": "宏碁遊戲-創",
+   "name": "宏�砦C戲-創",
    "listing_date": "2026-03-25"
   },
   {
@@ -4886,7 +4886,7 @@
   {
    "code": "7780",
    "name": "大研生醫*",
-   "listing_date": "2025-09-09"
+   "listing_date": "2026-01-19"
   },
   {
    "code": "7786",
@@ -5237,26 +5237,6 @@
    "code": "8996",
    "name": "高力",
    "listing_date": "2014-02-14"
-  },
-  {
-   "code": "9103",
-   "name": "美德醫療-DR",
-   "listing_date": "2002-12-13"
-  },
-  {
-   "code": "9105",
-   "name": "泰金寶-DR",
-   "listing_date": "2003-09-22"
-  },
-  {
-   "code": "9110",
-   "name": "越南控-DR",
-   "listing_date": "2009-12-03"
-  },
-  {
-   "code": "9136",
-   "name": "巨騰-DR",
-   "listing_date": "2009-05-25"
   },
   {
    "code": "9802",

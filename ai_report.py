@@ -39,7 +39,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from strategy.ai_strategy import fetch_panel_data, engineer_features, build_liquid_universe
-from strategy.twse_universe import get_twse_common_stocks
+from strategy.universe import get_twse_common_stocks
 from strategy.event_backtest import EventDrivenBacktester
 from strategy.evaluation import slice_evaluation_window
 from strategy.risk_metrics import compute_risk_metrics, format_metrics_summary
@@ -71,7 +71,7 @@ DEFAULT_TICKERS = [
 # 會產生前視選股偏差（所有績效被系統性灌水），且讓 build_liquid_universe 的
 # Top-N 流動性篩選形同虛設——等於在贏家池裡再選贏家。
 #
-# 動態 Universe 現在改用 strategy/twse_universe.py 的全體上市普通股（~1089 檔）。
+# 動態 Universe 現在改用 strategy/universe.py 的全體上市普通股（TWSE ISIN 端點，~1085 檔）。
 # 此清單僅保留為離線 / TWSE API 失效時的 fallback，以及 `--pool legacy` 的
 # 歷史結果重現用途，不應作為新的驗證基礎。
 LEGACY_EXTENDED_TICKERS = [
@@ -587,6 +587,16 @@ def generate_report(trades_df, equity_df, total_score, close_df, config,
                                                   config.get('gap_filter', 1.5))),
                 'max_hold_days': int(max_hold_days),
                 'time_exit': time_exit,
+                # Sizing 與 TP/SL 參數：paper tracker 於實際開盤價成交後，
+                # 用這組值重算倉位大小與 TP/SL，避免沿用以 reference_close
+                # 為錨點的預估值（開盤跳空時會整組偏移）。
+                'position_size': float(config.get('position_size', 0.10)),
+                'regime_scale': float(config.get('regime_scale_effective', 1.0)),
+                'tp_sl_mode': config.get('tp_sl_mode', 'atr'),
+                'tp_atr_mult': float(config.get('tp_atr_mult', 4.0)),
+                'sl_atr_mult': float(config.get('sl_atr_mult', 3.0)),
+                'tp_pct': float(config.get('tp_pct', 0.15)),
+                'sl_pct': float(config.get('sl_pct', 0.08)),
                 'model_version': 'v8.5',
             })
 
@@ -2131,6 +2141,12 @@ def main():
         # 下一交易日進場實際採用的 gap filter 倍數（含 dynamic regime 放寬），
         # 由回測引擎以 latest_date 大盤資料算出，供 paper trading 精確對齊。
         'gap_filter_effective': backtester.next_session_gap_limit(),
+        # Paper trading 的 position sizing 需與回測同式：
+        # trade_amount = current_equity × position_size × regime_scale
+        'position_size': args.position_size,
+        'regime_scale_effective': backtester.next_session_regime_scale(),
+        # 回測假設的滑價；paper tracker 另用自己較保守的實測值，不吃這個欄位。
+        'backtest_slippage': args.slippage,
     }
     generate_report(report_trades_df, report_equity_df, total_score, close_df, config,
                     metrics, benchmark_equity, ew_equity,
