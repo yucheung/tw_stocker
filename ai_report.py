@@ -100,6 +100,62 @@ EXTENDED_TICKERS = [
 EXTENDED_TICKERS = list(dict.fromkeys(EXTENDED_TICKERS))
 
 
+def enforce_data_integrity(close_df, tickers, universe_mask=None,
+                           universe_size=None, min_coverage=0.7,
+                           min_universe_ratio=0.8):
+    """
+    資料完整性閘門：下載退化時 hard fail，而不是安靜地產出一份垃圾報表。
+
+    背景：2026-08 的 production run 曾從 116 檔退化成 1 檔仍宣告成功，
+    產出 Sharpe 0.03 的報表並被 commit 發佈。這個閘門讓那條路徑直接中止。
+
+    Parameters
+    ----------
+    close_df : pd.DataFrame
+        Phase 1 下載回來的收盤價矩陣 (日期 x 股票)
+    tickers : list[str]
+        原始請求的股票清單
+    universe_mask : pd.DataFrame (bool), optional
+        動態 Universe 遮罩；靜態池模式傳 None 則跳過 universe 檢查
+    universe_size : int, optional
+        期望的每日 universe 大小（`--universe-size`）
+    min_coverage : float
+        有效檔數 / 請求檔數 的下限
+    min_universe_ratio : float
+        平均每日 universe 檔數 / universe_size 的下限
+
+    Raises
+    ------
+    RuntimeError
+        資料完整性不足或 universe 退化時
+    """
+    n_rows = len(close_df)
+    if n_rows == 0:
+        raise RuntimeError("資料完整性不足: 下載結果為空，中止產報")
+
+    # 「有效」= 該檔有足夠多的非 NaN 收盤價。短窗口回測（walk-forward fold）
+    # 的總長度可能不到 100 根，因此門檻取 min(100, 半個樣本)。
+    min_bars = min(100, max(1, int(n_rows * 0.5)))
+    n_valid = int((close_df.notna().sum() > min_bars).sum())
+
+    if n_valid < min_coverage * len(tickers):
+        raise RuntimeError(
+            f"資料完整性不足: {n_valid}/{len(tickers)} 檔有效"
+            f"（門檻 {min_coverage:.0%}，需 ≥{min_bars} 根有效 K 線），中止產報"
+        )
+    print(f"   🛡️ 資料完整性閘門通過: {n_valid}/{len(tickers)} 檔有效 "
+          f"(≥{min_bars} 根 K 線)")
+
+    if universe_mask is not None and universe_size:
+        avg_univ = float(universe_mask.sum(axis=1).mean())
+        if avg_univ < min_universe_ratio * universe_size:
+            raise RuntimeError(
+                f"Universe 退化: 平均每日僅 {avg_univ:.0f} 檔"
+                f"（期望 {universe_size}，門檻 {min_universe_ratio:.0%}），中止產報"
+            )
+        print(f"   🛡️ Universe 閘門通過: 平均每日 {avg_univ:.0f}/{universe_size} 檔")
+
+
 def get_next_n_trading_days(from_date, n_days):
     """
     使用 exchange_calendars 計算從 from_date 起的第 n 個交易日。
@@ -1500,6 +1556,14 @@ def parse_args():
         '--universe-size', type=int, default=60,
         help='動態 Universe 大小 (預設: 60)'
     )
+    parser.add_argument(
+        '--min-data-coverage', type=float, default=0.7,
+        help='資料完整性閘門：有效檔數 / 請求檔數 的下限 (預設: 0.7)'
+    )
+    parser.add_argument(
+        '--skip-data-gate', action='store_true',
+        help='停用資料完整性閘門（僅供研究用，production 不得使用）'
+    )
 
     # TP/SL
     parser.add_argument(
@@ -1851,6 +1915,18 @@ def main():
         universe_mask = build_liquid_universe(close_df, vol_df, top_n=args.universe_size)
     else:
         universe_mask = None
+
+    # Phase 2.1: 資料完整性閘門（阻止靜默故障：退化的下載不得產出報表）
+    if args.skip_data_gate:
+        print("\n⚠️ 已停用資料完整性閘門 (--skip-data-gate)，本次產出不得用於決策")
+    else:
+        print("\n🛡️ 資料完整性檢查...")
+        enforce_data_integrity(
+            close_df, tickers,
+            universe_mask=universe_mask,
+            universe_size=args.universe_size if use_dynamic else None,
+            min_coverage=args.min_data_coverage,
+        )
 
     # Phase 2.5: 籌碼時序數據（僅用於因子加權；報表顯示使用輕量 API）
     inst_flow_df = None

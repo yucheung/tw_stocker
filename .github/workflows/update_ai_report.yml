@@ -89,6 +89,7 @@ jobs:
           PY
 
       - name: Run AI Quant Pipeline v8.5
+        id: report
         if: github.event.schedule != '0 10 1 * *' && steps.twcheck.outputs.is_trading == 'true'
         run: |
           python ai_report.py \
@@ -104,10 +105,12 @@ jobs:
             --days ${{ github.event.inputs.days || '1200' }}
 
       - name: Paper Trading Tracker
-        if: github.event.schedule != '0 10 1 * *' && steps.twcheck.outputs.is_trading == 'true'
+        id: paper
+        if: steps.report.outcome == 'success'
         run: python paper_tracker.py
 
       - name: Monthly Paper Trading Report
+        id: monthly
         if: github.event.schedule == '0 10 1 * *'
         run: python paper_trade.py monthly
 
@@ -117,7 +120,13 @@ jobs:
             find artifacts/ -type f -mtime +180 -delete 2>/dev/null || true
           fi
 
+      # 只有在產報 + paper tracker 都成功時才 commit。若 ai_report.py 因資料完整性
+      # 閘門中止（或當日非交易日而整段被跳過），一律不覆蓋 stock_report.html /
+      # paper_equity.json，避免退化的產出污染 paper trading 歷史記錄。
       - name: Commit and push
+        if: >-
+          (steps.report.outcome == 'success' && steps.paper.outcome == 'success')
+          || steps.monthly.outcome == 'success'
         run: |
           git config --global user.email "voidful.stack@gmail.com"
           git config --global user.name "Voidful"
