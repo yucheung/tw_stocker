@@ -97,6 +97,17 @@ def get_current_bars(tickers):
     return bars
 
 
+def _opt_float(value, default=None):
+    """寬鬆轉 float：None / 空字串 / 非法值一律回傳 default。"""
+    if value is None:
+        return default
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    return f if f == f else default  # 排除 NaN
+
+
 def get_current_prices(tickers):
     """Backward-compatible latest close lookup."""
     return {ticker: bar['close'] for ticker, bar in get_current_bars(tickers).items()}
@@ -132,6 +143,15 @@ def extract_signals_from_orders():
             'execution_date': order.get('execution_date'),
             'max_hold_days': int(order.get('max_hold_days', 20)),
             'time_exit': order.get('time_exit'),
+            # Sizing / TP/SL 重算參數（舊 orders JSON 沒有這些欄位 → None，
+            # 由 size_position / recompute_tp_sl 各自退回保守 fallback）
+            'position_size': _opt_float(order.get('position_size')),
+            'regime_scale': _opt_float(order.get('regime_scale')),
+            'tp_sl_mode': order.get('tp_sl_mode'),
+            'tp_atr_mult': _opt_float(order.get('tp_atr_mult')),
+            'sl_atr_mult': _opt_float(order.get('sl_atr_mult')),
+            'tp_pct': _opt_float(order.get('tp_pct')),
+            'sl_pct': _opt_float(order.get('sl_pct')),
         })
     if signals:
         print(f"   📦 使用 orders JSON: {latest}")
@@ -293,13 +313,28 @@ def update_tracker(data):
 
         for idx, (sig, entry_price) in enumerate(candidates):
             available_cash = max(data['capital'] - reserve_cash, 0)
-            remaining_candidates = len(candidates) - idx
             if available_cash <= 0:
                 print(f"   💵 保留本金 10%，可投入現金不足，停止開倉")
                 break
 
-            gross_budget = available_cash / remaining_candidates
-            trade_amount = gross_budget / (1 + buy_cost_rate + slippage)
+            # ── Position sizing 對齊回測（event_backtest.py:1049）──
+            # trade_amount = current_equity × position_size × regime_scale
+            # position_size / regime_scale 由 artifacts/orders JSON 帶入
+            # （ai_report 在收盤後即算好下一場進場的 regime 曝險縮放）；
+            # 舊訂單缺欄位時退回保守預設 0.10 / 1.0。
+            current_equity = data['capital']
+            for tkr, pos in data['positions'].items():
+                px = prices.get(tkr, pos['entry'])
+                current_equity += px * pos['shares']
+            position_size = _opt_float(sig.get('position_size'), 0.10)
+            regime_scale = _opt_float(sig.get('regime_scale'), 1.0)
+            if position_size <= 0:
+                position_size = 0.10
+            if regime_scale <= 0:
+                regime_scale = 1.0
+            trade_amount = current_equity * position_size * regime_scale
+            # 現金不足時以可動用現金為上限（對齊回測的 capital >= actual_cost 檢查）
+            trade_amount = min(trade_amount, available_cash)
             shares = int(trade_amount / entry_price)
             if shares <= 0:
                 print(f"   💵 資金不足 {sig['ticker']}: 無法在保留本金 10% 後買進")

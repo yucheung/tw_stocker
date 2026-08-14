@@ -278,6 +278,22 @@ class EventDrivenBacktester:
                 eff_gap_limit = 1.8
         return eff_gap_limit
 
+    def next_session_regime_scale(self):
+        """供 paper trading 使用：回傳「下一個交易日進場」會採用的 regime 曝險縮放。
+
+        下一場進場（未來 bar i=N）的 regime 由 i-1=最後一根 bar（latest_date）的
+        資料決定——而那正是收盤後 ai_report 已知的資訊，因此可精確算出。
+        regime_ok=False（空頭且無 floor）時回傳 0.0，代表下一場不應進場。
+        run() 尚未執行時退回 1.0。
+        """
+        if getattr(self, '_dates', None) is None or getattr(self, '_close_df', None) is None:
+            return 1.0
+        n = len(self._dates)  # 未來 bar 的索引；方法只讀取 i-1
+        regime_ok, regime_scale = self._compute_regime_scale(
+            n, self._dates, self._close_df,
+            self._market_close, self._market_ma60, self._market_ma20)
+        return regime_scale if regime_ok else 0.0
+
     def next_session_gap_limit(self):
         """供 paper trading 使用：回傳「下一個交易日進場」會採用的 gap filter 倍數。
 
