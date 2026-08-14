@@ -108,6 +108,26 @@ def _opt_float(value, default=None):
     return f if f == f else default  # 排除 NaN
 
 
+def recompute_tp_sl(order, open_price, atr_val):
+    """以實際開盤價為錨，重算 TP/SL 價位。
+
+    回測假設 next-open 進場，TP/SL 錨點也應是 open_price。
+    ai_report.py 產出的 order 以收盤價為錨，這裡修正（開盤跳空時避免整組偏移）。
+    舊訂單缺欄位時（None）由 _opt_float 退回保守預設值。
+    """
+    if atr_val is None or atr_val <= 0:
+        # ATR 不可用，退回固定百分比 fallback
+        tp_pct = _opt_float(order.get('tp_pct'), 0.20) or 0.20
+        sl_pct = _opt_float(order.get('sl_pct'), 0.20) or 0.20
+        return open_price * (1 + tp_pct), open_price * (1 - sl_pct)
+
+    tp_mult = _opt_float(order.get('tp_atr_mult'), 4.0) or 4.0
+    sl_mult = _opt_float(order.get('sl_atr_mult'), 2.0) or 2.0
+    tp_price = open_price + atr_val * tp_mult
+    sl_price = open_price - atr_val * sl_mult
+    return tp_price, sl_price
+
+
 def get_current_prices(tickers):
     """Backward-compatible latest close lookup."""
     return {ticker: bar['close'] for ticker, bar in get_current_bars(tickers).items()}
@@ -144,7 +164,7 @@ def extract_signals_from_orders():
             'max_hold_days': int(order.get('max_hold_days', 20)),
             'time_exit': order.get('time_exit'),
             # Sizing / TP/SL 重算參數（舊 orders JSON 沒有這些欄位 → None，
-            # 由 size_position / recompute_tp_sl 各自退回保守 fallback）
+            # 開倉時由 recompute_tp_sl 與內建 sizing 各自退回保守 fallback）
             'position_size': _opt_float(order.get('position_size')),
             'regime_scale': _opt_float(order.get('regime_scale')),
             'tp_sl_mode': order.get('tp_sl_mode'),
@@ -348,10 +368,14 @@ def update_tracker(data):
 
             ticker = sig['ticker']
             data['capital'] -= (actual_trade_amount + buy_cost)
+            # TP/SL 以實際開盤價為錨重算（ai_report 以收盤價為錨，開盤跳空時修正）
+            open_price = bars.get(ticker, {}).get('open', entry_price)
+            atr_for_tp = _opt_float(sig.get('atr'))
+            tp_new, sl_new = recompute_tp_sl(sig, open_price, atr_for_tp)
             data['positions'][ticker] = {
                 'entry': entry_price,
-                'tp': sig['tp'],
-                'sl': sig['sl'],
+                'tp': tp_new,
+                'sl': sl_new,
                 'entry_date': today,
                 'shares': shares,
                 'day_count': 0,
@@ -360,7 +384,7 @@ def update_tracker(data):
             opened += 1
             print(
                 f"   🆕 開倉 {ticker} @ {entry_price:.1f} × {shares:,.0f} "
-                f"(投入 {actual_trade_amount:,.0f}, TP {sig['tp']:.1f} / SL {sig['sl']:.1f})"
+                f"(投入 {actual_trade_amount:,.0f}, TP {tp_new:.1f} / SL {sl_new:.1f})"
             )
         if opened:
             print(f"   ✅ 今日開倉 {opened} 檔（待執行 {len(due_orders)} 筆）")
@@ -381,6 +405,14 @@ def update_tracker(data):
             'execution_date': s.get('execution_date'),
             'max_hold_days': s.get('max_hold_days', max_hold),
             'signal_date': today,
+            # TP/SL 重算與 sizing 參數：開倉時以實際開盤價為錨重算
+            'position_size': s.get('position_size'),
+            'regime_scale': s.get('regime_scale'),
+            'tp_sl_mode': s.get('tp_sl_mode'),
+            'tp_atr_mult': s.get('tp_atr_mult'),
+            'sl_atr_mult': s.get('sl_atr_mult'),
+            'tp_pct': s.get('tp_pct'),
+            'sl_pct': s.get('sl_pct'),
         } for s in signals]
         # 今日訊號取代舊的待執行單（每交易日重新排序）；保留尚未到期者
         data['pending_orders'] = new_pending + deferred
