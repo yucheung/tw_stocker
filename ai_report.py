@@ -39,6 +39,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from strategy.ai_strategy import fetch_panel_data, engineer_features, build_liquid_universe
+from strategy.twse_universe import get_twse_common_stocks
 from strategy.event_backtest import EventDrivenBacktester
 from strategy.evaluation import slice_evaluation_window
 from strategy.risk_metrics import compute_risk_metrics, format_metrics_summary
@@ -66,9 +67,14 @@ DEFAULT_TICKERS = [
     '2891', '1519', '2379', '2303',
 ]
 
-# 擴展股池：全 TWSE 主要個股（動態 universe 模式用）
-# 包含上市 ETF、權值股、中型股，約 200 檔候選池
-EXTENDED_TICKERS = [
+# ⚠️ 已淘汰（v8.5 P0-2）：這份手工名單是「今天已知表現亮眼」的個股，用它做回測
+# 會產生前視選股偏差（所有績效被系統性灌水），且讓 build_liquid_universe 的
+# Top-N 流動性篩選形同虛設——等於在贏家池裡再選贏家。
+#
+# 動態 Universe 現在改用 strategy/twse_universe.py 的全體上市普通股（~1089 檔）。
+# 此清單僅保留為離線 / TWSE API 失效時的 fallback，以及 `--pool legacy` 的
+# 歷史結果重現用途，不應作為新的驗證基礎。
+LEGACY_EXTENDED_TICKERS = [
     # 半導體
     '2330', '2454', '2303', '3711', '2379', '6770', '3034', '2449',
     '5274', '3529', '2408', '3443', '3035', '6415', '6525', '3661',
@@ -97,7 +103,38 @@ EXTENDED_TICKERS = [
 ]
 
 # 去重
-EXTENDED_TICKERS = list(dict.fromkeys(EXTENDED_TICKERS))
+LEGACY_EXTENDED_TICKERS = list(dict.fromkeys(LEGACY_EXTENDED_TICKERS))
+
+# 舊名稱別名，供既有 script（sweep / walk_forward 等）沿用
+EXTENDED_TICKERS = LEGACY_EXTENDED_TICKERS
+
+
+def resolve_dynamic_pool(pool='full', listed_before=None, refresh=False):
+    """
+    決定動態 Universe 模式要下載的股池。
+
+    Parameters
+    ----------
+    pool : {'full', 'legacy'}
+        'full'   = TWSE 全體上市普通股（預設，無前視選股偏差）
+        'legacy' = 舊的 ~140 檔手選名單（僅供重現歷史結果，帶前視偏差）
+    listed_before : str, optional
+        排除該日期之後才上市的個股。只在明確指定 `--end-date` 的歷史回測中傳入，
+        用意是不要讓「回測期間根本還不存在的股票」進入下載清單。
+    """
+    if pool == 'legacy':
+        print(f"   ⚠️ 使用 legacy 手選股池 ({len(LEGACY_EXTENDED_TICKERS)} 檔) —— "
+              f"含前視選股偏差，結果不可用於決策")
+        return LEGACY_EXTENDED_TICKERS
+
+    try:
+        tickers = get_twse_common_stocks(listed_before=listed_before, refresh=refresh)
+        print(f"   🌐 TWSE 全體上市普通股: {len(tickers)} 檔")
+        return tickers
+    except Exception as exc:
+        print(f"   ⚠️ 無法取得 TWSE 上市清單（{exc}），退回 legacy 手選股池 —— "
+              f"本次結果含前視選股偏差")
+        return LEGACY_EXTENDED_TICKERS
 
 
 def enforce_data_integrity(close_df, tickers, universe_mask=None,
@@ -1557,6 +1594,15 @@ def parse_args():
         help='動態 Universe 大小 (預設: 60)'
     )
     parser.add_argument(
+        '--pool', choices=['full', 'legacy'], default='full',
+        help='動態 Universe 母體: full=TWSE 全體上市普通股 (預設), '
+             'legacy=舊的手選 140 檔（含前視偏差，僅供重現歷史結果）'
+    )
+    parser.add_argument(
+        '--refresh-listing', action='store_true',
+        help='強制重新抓取 TWSE 上市清單（忽略本地快照時效）'
+    )
+    parser.add_argument(
         '--min-data-coverage', type=float, default=0.7,
         help='資料完整性閘門：有效檔數 / 請求檔數 的下限 (預設: 0.7)'
     )
@@ -1882,10 +1928,16 @@ def main():
         tickers = args.tickers if args.tickers else DEFAULT_TICKERS
         use_dynamic = False
     else:
-        tickers = EXTENDED_TICKERS
+        print("🌐 建構動態 Universe 母體...")
+        tickers = resolve_dynamic_pool(
+            pool=args.pool,
+            listed_before=args.end_date,
+            refresh=args.refresh_listing,
+        )
         use_dynamic = True
 
-    mode_str = f"動態 Universe (Top-{args.universe_size})" if use_dynamic else f"靜態 ({len(tickers)} 檔)"
+    mode_str = (f"動態 Universe (母體 {len(tickers)} 檔 → 每日 Top-{args.universe_size})"
+                if use_dynamic else f"靜態 ({len(tickers)} 檔)")
     tp_sl_str = f"ATR×{args.tp_atr}/{args.sl_atr}" if args.tp_sl_mode == 'atr' \
         else f"+{args.tp*100:.0f}%/-{args.sl*100:.0f}%"
     cost_str = f"買 {args.buy_cost*100:.3f}% 賣 {args.sell_cost*100:.3f}%"

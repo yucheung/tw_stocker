@@ -1,0 +1,5452 @@
+{
+ "fetched_at": "2026-08-14",
+ "source": "https://openapi.twse.com.tw/v1/opendata/t187ap03_L",
+ "count": 1089,
+ "stocks": [
+  {
+   "code": "1101",
+   "name": "台泥",
+   "listing_date": "1962-02-09"
+  },
+  {
+   "code": "1102",
+   "name": "亞泥",
+   "listing_date": "1962-06-08"
+  },
+  {
+   "code": "1103",
+   "name": "嘉泥",
+   "listing_date": "1969-11-14"
+  },
+  {
+   "code": "1104",
+   "name": "環泥",
+   "listing_date": "1971-02-01"
+  },
+  {
+   "code": "1108",
+   "name": "幸福",
+   "listing_date": "1990-06-06"
+  },
+  {
+   "code": "1109",
+   "name": "信大",
+   "listing_date": "1991-12-05"
+  },
+  {
+   "code": "1110",
+   "name": "東泥",
+   "listing_date": "1994-10-22"
+  },
+  {
+   "code": "1201",
+   "name": "味全",
+   "listing_date": "1962-02-09"
+  },
+  {
+   "code": "1203",
+   "name": "味王",
+   "listing_date": "1964-08-24"
+  },
+  {
+   "code": "1210",
+   "name": "大成",
+   "listing_date": "1978-05-20"
+  },
+  {
+   "code": "1213",
+   "name": "大飲",
+   "listing_date": "1981-04-10"
+  },
+  {
+   "code": "1215",
+   "name": "卜蜂",
+   "listing_date": "1987-07-27"
+  },
+  {
+   "code": "1216",
+   "name": "統一",
+   "listing_date": "1987-12-28"
+  },
+  {
+   "code": "1217",
+   "name": "愛之味",
+   "listing_date": "1989-10-28"
+  },
+  {
+   "code": "1218",
+   "name": "泰山",
+   "listing_date": "1989-11-11"
+  },
+  {
+   "code": "1219",
+   "name": "福壽",
+   "listing_date": "1990-12-01"
+  },
+  {
+   "code": "1220",
+   "name": "台榮",
+   "listing_date": "1991-11-20"
+  },
+  {
+   "code": "1225",
+   "name": "福懋油",
+   "listing_date": "1993-09-27"
+  },
+  {
+   "code": "1227",
+   "name": "佳格",
+   "listing_date": "1994-04-09"
+  },
+  {
+   "code": "1229",
+   "name": "聯華",
+   "listing_date": "1976-07-19"
+  },
+  {
+   "code": "1231",
+   "name": "聯華食",
+   "listing_date": "1995-11-02"
+  },
+  {
+   "code": "1232",
+   "name": "大統益",
+   "listing_date": "1996-02-09"
+  },
+  {
+   "code": "1233",
+   "name": "天仁",
+   "listing_date": "1999-01-20"
+  },
+  {
+   "code": "1234",
+   "name": "黑松",
+   "listing_date": "1999-03-12"
+  },
+  {
+   "code": "1235",
+   "name": "興泰",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1236",
+   "name": "宏亞",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "1256",
+   "name": "鮮活果汁-KY",
+   "listing_date": "2016-03-17"
+  },
+  {
+   "code": "1301",
+   "name": "台塑",
+   "listing_date": "1964-07-27"
+  },
+  {
+   "code": "1303",
+   "name": "南亞",
+   "listing_date": "1967-11-15"
+  },
+  {
+   "code": "1304",
+   "name": "台聚",
+   "listing_date": "1972-05-20"
+  },
+  {
+   "code": "1305",
+   "name": "華夏",
+   "listing_date": "1973-03-05"
+  },
+  {
+   "code": "1307",
+   "name": "三芳",
+   "listing_date": "1985-11-23"
+  },
+  {
+   "code": "1308",
+   "name": "亞聚",
+   "listing_date": "1986-06-20"
+  },
+  {
+   "code": "1309",
+   "name": "台達化",
+   "listing_date": "1986-06-27"
+  },
+  {
+   "code": "1310",
+   "name": "台苯",
+   "listing_date": "1987-08-06"
+  },
+  {
+   "code": "1312",
+   "name": "國喬",
+   "listing_date": "1988-12-21"
+  },
+  {
+   "code": "1313",
+   "name": "聯成",
+   "listing_date": "1989-03-27"
+  },
+  {
+   "code": "1314",
+   "name": "中石化",
+   "listing_date": "1991-07-12"
+  },
+  {
+   "code": "1315",
+   "name": "達新",
+   "listing_date": "1992-05-09"
+  },
+  {
+   "code": "1316",
+   "name": "上曜",
+   "listing_date": "1992-10-15"
+  },
+  {
+   "code": "1319",
+   "name": "東陽",
+   "listing_date": "1994-12-12"
+  },
+  {
+   "code": "1321",
+   "name": "大洋",
+   "listing_date": "1999-01-26"
+  },
+  {
+   "code": "1323",
+   "name": "永裕",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1324",
+   "name": "地球",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1325",
+   "name": "恆大",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1326",
+   "name": "台化",
+   "listing_date": "1984-12-20"
+  },
+  {
+   "code": "1337",
+   "name": "再生-KY",
+   "listing_date": "2011-08-17"
+  },
+  {
+   "code": "1338",
+   "name": "廣華-KY",
+   "listing_date": "2012-12-19"
+  },
+  {
+   "code": "1339",
+   "name": "昭輝",
+   "listing_date": "2012-04-24"
+  },
+  {
+   "code": "1340",
+   "name": "勝悅-KY",
+   "listing_date": "2014-01-14"
+  },
+  {
+   "code": "1341",
+   "name": "富林-KY",
+   "listing_date": "2018-12-24"
+  },
+  {
+   "code": "1342",
+   "name": "八貫",
+   "listing_date": "2020-11-24"
+  },
+  {
+   "code": "1402",
+   "name": "遠東新",
+   "listing_date": "1967-04-14"
+  },
+  {
+   "code": "1409",
+   "name": "新纖",
+   "listing_date": "1973-08-31"
+  },
+  {
+   "code": "1410",
+   "name": "南染",
+   "listing_date": "1973-10-18"
+  },
+  {
+   "code": "1413",
+   "name": "宏洲",
+   "listing_date": "1975-12-23"
+  },
+  {
+   "code": "1414",
+   "name": "東和",
+   "listing_date": "1976-02-02"
+  },
+  {
+   "code": "1416",
+   "name": "廣豐",
+   "listing_date": "1976-04-20"
+  },
+  {
+   "code": "1417",
+   "name": "嘉裕",
+   "listing_date": "1976-12-28"
+  },
+  {
+   "code": "1418",
+   "name": "東華",
+   "listing_date": "1977-02-14"
+  },
+  {
+   "code": "1419",
+   "name": "新紡",
+   "listing_date": "1977-03-14"
+  },
+  {
+   "code": "1423",
+   "name": "利華",
+   "listing_date": "1979-04-02"
+  },
+  {
+   "code": "1432",
+   "name": "大魯閣",
+   "listing_date": "1982-07-26"
+  },
+  {
+   "code": "1434",
+   "name": "福懋",
+   "listing_date": "1985-12-24"
+  },
+  {
+   "code": "1435",
+   "name": "中福",
+   "listing_date": "1987-12-28"
+  },
+  {
+   "code": "1436",
+   "name": "華友聯",
+   "listing_date": "1988-04-11"
+  },
+  {
+   "code": "1437",
+   "name": "勤益控",
+   "listing_date": "1988-11-10"
+  },
+  {
+   "code": "1438",
+   "name": "三地開發",
+   "listing_date": "1988-12-15"
+  },
+  {
+   "code": "1439",
+   "name": "雋揚",
+   "listing_date": "1989-05-22"
+  },
+  {
+   "code": "1440",
+   "name": "南紡",
+   "listing_date": "1989-10-03"
+  },
+  {
+   "code": "1441",
+   "name": "大東",
+   "listing_date": "1989-10-27"
+  },
+  {
+   "code": "1442",
+   "name": "名軒",
+   "listing_date": "1989-11-16"
+  },
+  {
+   "code": "1443",
+   "name": "立益物流",
+   "listing_date": "1990-04-21"
+  },
+  {
+   "code": "1444",
+   "name": "力麗",
+   "listing_date": "1990-08-08"
+  },
+  {
+   "code": "1445",
+   "name": "大宇",
+   "listing_date": "1991-02-05"
+  },
+  {
+   "code": "1446",
+   "name": "宏和",
+   "listing_date": "1991-10-15"
+  },
+  {
+   "code": "1447",
+   "name": "力鵬",
+   "listing_date": "1992-01-28"
+  },
+  {
+   "code": "1449",
+   "name": "佳和",
+   "listing_date": "1992-05-06"
+  },
+  {
+   "code": "1451",
+   "name": "年興",
+   "listing_date": "1992-12-21"
+  },
+  {
+   "code": "1452",
+   "name": "宏益",
+   "listing_date": "1992-12-28"
+  },
+  {
+   "code": "1453",
+   "name": "大將",
+   "listing_date": "1993-04-19"
+  },
+  {
+   "code": "1454",
+   "name": "台富",
+   "listing_date": "1993-05-07"
+  },
+  {
+   "code": "1455",
+   "name": "集盛",
+   "listing_date": "1993-10-07"
+  },
+  {
+   "code": "1456",
+   "name": "怡華",
+   "listing_date": "1993-12-09"
+  },
+  {
+   "code": "1457",
+   "name": "宜進",
+   "listing_date": "1994-10-20"
+  },
+  {
+   "code": "1459",
+   "name": "聯發",
+   "listing_date": "1994-10-26"
+  },
+  {
+   "code": "1460",
+   "name": "宏遠",
+   "listing_date": "1995-04-28"
+  },
+  {
+   "code": "1463",
+   "name": "強盛新",
+   "listing_date": "1996-12-05"
+  },
+  {
+   "code": "1464",
+   "name": "得力",
+   "listing_date": "1997-01-18"
+  },
+  {
+   "code": "1465",
+   "name": "偉全",
+   "listing_date": "1997-09-08"
+  },
+  {
+   "code": "1466",
+   "name": "聚隆",
+   "listing_date": "1998-04-04"
+  },
+  {
+   "code": "1467",
+   "name": "南緯",
+   "listing_date": "1998-12-21"
+  },
+  {
+   "code": "1468",
+   "name": "昶和",
+   "listing_date": "1999-01-21"
+  },
+  {
+   "code": "1470",
+   "name": "大統新創",
+   "listing_date": "1999-05-21"
+  },
+  {
+   "code": "1471",
+   "name": "首利",
+   "listing_date": "2000-03-06"
+  },
+  {
+   "code": "1472",
+   "name": "三洋實業",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1473",
+   "name": "台南",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1474",
+   "name": "弘裕",
+   "listing_date": "2000-10-31"
+  },
+  {
+   "code": "1475",
+   "name": "業旺",
+   "listing_date": "2000-10-27"
+  },
+  {
+   "code": "1476",
+   "name": "儒鴻",
+   "listing_date": "2001-04-18"
+  },
+  {
+   "code": "1477",
+   "name": "聚陽",
+   "listing_date": "2003-01-21"
+  },
+  {
+   "code": "1503",
+   "name": "士電",
+   "listing_date": "1969-12-15"
+  },
+  {
+   "code": "1504",
+   "name": "東元",
+   "listing_date": "1973-11-05"
+  },
+  {
+   "code": "1506",
+   "name": "正道",
+   "listing_date": "1980-08-11"
+  },
+  {
+   "code": "1512",
+   "name": "瑞利",
+   "listing_date": "1994-01-28"
+  },
+  {
+   "code": "1513",
+   "name": "中興電",
+   "listing_date": "1994-03-08"
+  },
+  {
+   "code": "1514",
+   "name": "亞力",
+   "listing_date": "1994-03-26"
+  },
+  {
+   "code": "1515",
+   "name": "力山",
+   "listing_date": "1995-02-04"
+  },
+  {
+   "code": "1516",
+   "name": "川飛",
+   "listing_date": "1995-04-01"
+  },
+  {
+   "code": "1517",
+   "name": "利奇",
+   "listing_date": "1995-11-14"
+  },
+  {
+   "code": "1519",
+   "name": "華城",
+   "listing_date": "1997-04-16"
+  },
+  {
+   "code": "1521",
+   "name": "大億",
+   "listing_date": "1997-10-06"
+  },
+  {
+   "code": "1522",
+   "name": "堤維西",
+   "listing_date": "1997-10-06"
+  },
+  {
+   "code": "1524",
+   "name": "耿鼎",
+   "listing_date": "1998-10-30"
+  },
+  {
+   "code": "1525",
+   "name": "江申",
+   "listing_date": "1999-05-15"
+  },
+  {
+   "code": "1526",
+   "name": "日馳",
+   "listing_date": "2000-03-27"
+  },
+  {
+   "code": "1527",
+   "name": "鑽全",
+   "listing_date": "2000-06-21"
+  },
+  {
+   "code": "1528",
+   "name": "恩德",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1529",
+   "name": "樂事綠能",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1530",
+   "name": "亞崴",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1531",
+   "name": "高林股",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1532",
+   "name": "勤美",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1533",
+   "name": "車王電",
+   "listing_date": "2001-04-06"
+  },
+  {
+   "code": "1535",
+   "name": "中宇",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "1536",
+   "name": "和大",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "1537",
+   "name": "廣隆",
+   "listing_date": "2002-01-22"
+  },
+  {
+   "code": "1538",
+   "name": "正峰",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "1539",
+   "name": "巨庭",
+   "listing_date": "2002-10-29"
+  },
+  {
+   "code": "1540",
+   "name": "喬福",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "1541",
+   "name": "錩泰",
+   "listing_date": "2003-03-19"
+  },
+  {
+   "code": "1558",
+   "name": "伸興",
+   "listing_date": "2014-12-23"
+  },
+  {
+   "code": "1560",
+   "name": "中砂",
+   "listing_date": "2005-01-31"
+  },
+  {
+   "code": "1563",
+   "name": "巧新",
+   "listing_date": "2024-05-13"
+  },
+  {
+   "code": "1568",
+   "name": "倉佑",
+   "listing_date": "2014-05-14"
+  },
+  {
+   "code": "1582",
+   "name": "信錦",
+   "listing_date": "2009-12-17"
+  },
+  {
+   "code": "1583",
+   "name": "程泰",
+   "listing_date": "2008-01-24"
+  },
+  {
+   "code": "1587",
+   "name": "吉茂",
+   "listing_date": "2018-04-16"
+  },
+  {
+   "code": "1589",
+   "name": "永冠-KY",
+   "listing_date": "2012-04-27"
+  },
+  {
+   "code": "1590",
+   "name": "亞德客-KY",
+   "listing_date": "2010-12-13"
+  },
+  {
+   "code": "1597",
+   "name": "直得",
+   "listing_date": "2020-12-23"
+  },
+  {
+   "code": "1598",
+   "name": "岱宇",
+   "listing_date": "2016-09-20"
+  },
+  {
+   "code": "1603",
+   "name": "華電",
+   "listing_date": "1968-06-03"
+  },
+  {
+   "code": "1604",
+   "name": "聲寶",
+   "listing_date": "1970-12-14"
+  },
+  {
+   "code": "1605",
+   "name": "華新",
+   "listing_date": "1972-11-03"
+  },
+  {
+   "code": "1608",
+   "name": "華榮",
+   "listing_date": "1988-07-11"
+  },
+  {
+   "code": "1609",
+   "name": "大亞",
+   "listing_date": "1988-12-12"
+  },
+  {
+   "code": "1611",
+   "name": "中電",
+   "listing_date": "1990-01-16"
+  },
+  {
+   "code": "1612",
+   "name": "宏泰",
+   "listing_date": "1993-05-08"
+  },
+  {
+   "code": "1614",
+   "name": "三洋電",
+   "listing_date": "1997-09-18"
+  },
+  {
+   "code": "1615",
+   "name": "大山",
+   "listing_date": "2000-03-30"
+  },
+  {
+   "code": "1616",
+   "name": "億泰",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1617",
+   "name": "榮星",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1618",
+   "name": "合機",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1623",
+   "name": "大東電",
+   "listing_date": "2026-01-22"
+  },
+  {
+   "code": "1626",
+   "name": "艾美特-KY",
+   "listing_date": "2013-03-21"
+  },
+  {
+   "code": "1702",
+   "name": "南僑",
+   "listing_date": "1973-05-30"
+  },
+  {
+   "code": "1707",
+   "name": "葡萄王",
+   "listing_date": "1982-12-20"
+  },
+  {
+   "code": "1708",
+   "name": "東鹼",
+   "listing_date": "1986-06-16"
+  },
+  {
+   "code": "1709",
+   "name": "和益",
+   "listing_date": "1986-07-03"
+  },
+  {
+   "code": "1710",
+   "name": "東聯",
+   "listing_date": "1987-10-21"
+  },
+  {
+   "code": "1711",
+   "name": "永光",
+   "listing_date": "1988-12-27"
+  },
+  {
+   "code": "1712",
+   "name": "興農",
+   "listing_date": "1989-12-14"
+  },
+  {
+   "code": "1713",
+   "name": "國化",
+   "listing_date": "1990-01-31"
+  },
+  {
+   "code": "1714",
+   "name": "和桐",
+   "listing_date": "1991-08-30"
+  },
+  {
+   "code": "1717",
+   "name": "長興",
+   "listing_date": "1994-03-31"
+  },
+  {
+   "code": "1718",
+   "name": "中纖",
+   "listing_date": "1963-12-02"
+  },
+  {
+   "code": "1720",
+   "name": "生達",
+   "listing_date": "1995-12-12"
+  },
+  {
+   "code": "1721",
+   "name": "三晃",
+   "listing_date": "1996-05-16"
+  },
+  {
+   "code": "1722",
+   "name": "台肥",
+   "listing_date": "1998-03-24"
+  },
+  {
+   "code": "1723",
+   "name": "中碳",
+   "listing_date": "1998-11-27"
+  },
+  {
+   "code": "1725",
+   "name": "元禎",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1726",
+   "name": "永記",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1727",
+   "name": "中華化",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "1730",
+   "name": "花仙子",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "1731",
+   "name": "美吾華",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "1732",
+   "name": "毛寶",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "1733",
+   "name": "五鼎",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "1734",
+   "name": "杏輝",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "1735",
+   "name": "日勝化",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "1736",
+   "name": "喬山",
+   "listing_date": "2003-01-09"
+  },
+  {
+   "code": "1737",
+   "name": "臺鹽",
+   "listing_date": "2003-11-18"
+  },
+  {
+   "code": "1752",
+   "name": "南光",
+   "listing_date": "2022-01-19"
+  },
+  {
+   "code": "1760",
+   "name": "寶齡富錦",
+   "listing_date": "2018-01-23"
+  },
+  {
+   "code": "1762",
+   "name": "中化生",
+   "listing_date": "2010-12-20"
+  },
+  {
+   "code": "1773",
+   "name": "勝一",
+   "listing_date": "2009-02-27"
+  },
+  {
+   "code": "1776",
+   "name": "展宇",
+   "listing_date": "2016-05-09"
+  },
+  {
+   "code": "1783",
+   "name": "和康生",
+   "listing_date": "2013-12-20"
+  },
+  {
+   "code": "1786",
+   "name": "科妍",
+   "listing_date": "2013-11-12"
+  },
+  {
+   "code": "1789",
+   "name": "神隆",
+   "listing_date": "2011-09-29"
+  },
+  {
+   "code": "1795",
+   "name": "美時",
+   "listing_date": "2019-12-16"
+  },
+  {
+   "code": "1802",
+   "name": "台玻",
+   "listing_date": "1973-07-20"
+  },
+  {
+   "code": "1805",
+   "name": "寶徠",
+   "listing_date": "1989-10-20"
+  },
+  {
+   "code": "1806",
+   "name": "冠軍",
+   "listing_date": "1992-09-29"
+  },
+  {
+   "code": "1808",
+   "name": "潤隆",
+   "listing_date": "1994-10-26"
+  },
+  {
+   "code": "1809",
+   "name": "中釉",
+   "listing_date": "1996-04-30"
+  },
+  {
+   "code": "1810",
+   "name": "和成",
+   "listing_date": "1991-10-14"
+  },
+  {
+   "code": "1817",
+   "name": "凱撒衛",
+   "listing_date": "2013-10-24"
+  },
+  {
+   "code": "1903",
+   "name": "士紙",
+   "listing_date": "1963-12-09"
+  },
+  {
+   "code": "1904",
+   "name": "正隆",
+   "listing_date": "1971-09-10"
+  },
+  {
+   "code": "1905",
+   "name": "華紙",
+   "listing_date": "1975-02-07"
+  },
+  {
+   "code": "1906",
+   "name": "寶隆",
+   "listing_date": "1976-04-26"
+  },
+  {
+   "code": "1907",
+   "name": "永豐餘",
+   "listing_date": "1977-02-22"
+  },
+  {
+   "code": "1909",
+   "name": "榮成",
+   "listing_date": "1985-11-19"
+  },
+  {
+   "code": "2002",
+   "name": "中鋼",
+   "listing_date": "1974-12-26"
+  },
+  {
+   "code": "2006",
+   "name": "東和鋼鐵",
+   "listing_date": "1988-07-13"
+  },
+  {
+   "code": "2007",
+   "name": "燁興",
+   "listing_date": "1988-10-04"
+  },
+  {
+   "code": "2008",
+   "name": "高興昌",
+   "listing_date": "1988-12-28"
+  },
+  {
+   "code": "2009",
+   "name": "第一銅",
+   "listing_date": "1989-10-20"
+  },
+  {
+   "code": "2010",
+   "name": "春源",
+   "listing_date": "1989-12-22"
+  },
+  {
+   "code": "2012",
+   "name": "春雨",
+   "listing_date": "1991-10-17"
+  },
+  {
+   "code": "2013",
+   "name": "中鋼構",
+   "listing_date": "1992-01-21"
+  },
+  {
+   "code": "2014",
+   "name": "中鴻",
+   "listing_date": "1992-02-20"
+  },
+  {
+   "code": "2015",
+   "name": "豐興",
+   "listing_date": "1992-05-25"
+  },
+  {
+   "code": "2017",
+   "name": "官田鋼",
+   "listing_date": "1992-11-02"
+  },
+  {
+   "code": "2020",
+   "name": "美亞",
+   "listing_date": "1993-04-27"
+  },
+  {
+   "code": "2022",
+   "name": "聚亨",
+   "listing_date": "1995-03-27"
+  },
+  {
+   "code": "2023",
+   "name": "燁輝",
+   "listing_date": "1995-07-28"
+  },
+  {
+   "code": "2024",
+   "name": "志聯",
+   "listing_date": "1995-12-30"
+  },
+  {
+   "code": "2025",
+   "name": "千興",
+   "listing_date": "1996-02-08"
+  },
+  {
+   "code": "2027",
+   "name": "大成鋼",
+   "listing_date": "1996-10-24"
+  },
+  {
+   "code": "2028",
+   "name": "威致",
+   "listing_date": "1996-12-13"
+  },
+  {
+   "code": "2029",
+   "name": "盛餘",
+   "listing_date": "1997-01-11"
+  },
+  {
+   "code": "2030",
+   "name": "彰源",
+   "listing_date": "1998-12-24"
+  },
+  {
+   "code": "2031",
+   "name": "新光鋼",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2032",
+   "name": "新鋼",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2033",
+   "name": "佳大",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2034",
+   "name": "允強",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2038",
+   "name": "海光",
+   "listing_date": "2008-12-30"
+  },
+  {
+   "code": "2049",
+   "name": "上銀",
+   "listing_date": "2009-06-26"
+  },
+  {
+   "code": "2059",
+   "name": "川湖",
+   "listing_date": "2008-06-25"
+  },
+  {
+   "code": "2062",
+   "name": "橋椿",
+   "listing_date": "2007-11-16"
+  },
+  {
+   "code": "2069",
+   "name": "運錩",
+   "listing_date": "2016-03-22"
+  },
+  {
+   "code": "2072",
+   "name": "世紀風電",
+   "listing_date": "2026-03-26"
+  },
+  {
+   "code": "2101",
+   "name": "南港",
+   "listing_date": "1963-11-01"
+  },
+  {
+   "code": "2102",
+   "name": "泰豐",
+   "listing_date": "1979-07-16"
+  },
+  {
+   "code": "2103",
+   "name": "台橡",
+   "listing_date": "1982-09-25"
+  },
+  {
+   "code": "2104",
+   "name": "國際中橡",
+   "listing_date": "1986-07-15"
+  },
+  {
+   "code": "2105",
+   "name": "正新",
+   "listing_date": "1987-12-07"
+  },
+  {
+   "code": "2106",
+   "name": "建大",
+   "listing_date": "1990-12-20"
+  },
+  {
+   "code": "2107",
+   "name": "厚生",
+   "listing_date": "1992-03-03"
+  },
+  {
+   "code": "2108",
+   "name": "南帝",
+   "listing_date": "1992-10-27"
+  },
+  {
+   "code": "2109",
+   "name": "華豐",
+   "listing_date": "2000-05-08"
+  },
+  {
+   "code": "2114",
+   "name": "鑫永銓",
+   "listing_date": "2010-12-29"
+  },
+  {
+   "code": "2115",
+   "name": "六暉-KY",
+   "listing_date": "2013-12-25"
+  },
+  {
+   "code": "2201",
+   "name": "裕隆",
+   "listing_date": "1976-07-08"
+  },
+  {
+   "code": "2204",
+   "name": "中華",
+   "listing_date": "1991-03-12"
+  },
+  {
+   "code": "2206",
+   "name": "三陽工業",
+   "listing_date": "1996-07-29"
+  },
+  {
+   "code": "2207",
+   "name": "和泰車",
+   "listing_date": "1997-02-25"
+  },
+  {
+   "code": "2208",
+   "name": "台船",
+   "listing_date": "2008-12-22"
+  },
+  {
+   "code": "2211",
+   "name": "長榮鋼",
+   "listing_date": "2021-04-12"
+  },
+  {
+   "code": "2227",
+   "name": "裕日車",
+   "listing_date": "2004-12-21"
+  },
+  {
+   "code": "2228",
+   "name": "劍麟",
+   "listing_date": "2013-11-25"
+  },
+  {
+   "code": "2231",
+   "name": "為升",
+   "listing_date": "2010-11-19"
+  },
+  {
+   "code": "2233",
+   "name": "宇隆",
+   "listing_date": "2019-09-17"
+  },
+  {
+   "code": "2236",
+   "name": "百達-KY",
+   "listing_date": "2015-06-03"
+  },
+  {
+   "code": "2237",
+   "name": "華德動能-創",
+   "listing_date": "2026-08-10"
+  },
+  {
+   "code": "2239",
+   "name": "英利-KY",
+   "listing_date": "2016-01-27"
+  },
+  {
+   "code": "2241",
+   "name": "艾姆勒",
+   "listing_date": "2020-08-26"
+  },
+  {
+   "code": "2243",
+   "name": "宏旭-KY",
+   "listing_date": "2017-09-27"
+  },
+  {
+   "code": "2247",
+   "name": "汎德永業",
+   "listing_date": "2020-10-12"
+  },
+  {
+   "code": "2248",
+   "name": "華勝-KY",
+   "listing_date": "2025-03-13"
+  },
+  {
+   "code": "2250",
+   "name": "IKKA-KY",
+   "listing_date": "2021-05-31"
+  },
+  {
+   "code": "2254",
+   "name": "巨鎧精密-創",
+   "listing_date": "2023-10-20"
+  },
+  {
+   "code": "2258",
+   "name": "鴻華先進-創",
+   "listing_date": "2023-11-20"
+  },
+  {
+   "code": "2301",
+   "name": "光寶科",
+   "listing_date": "1995-11-17"
+  },
+  {
+   "code": "2302",
+   "name": "麗正",
+   "listing_date": "1985-01-15"
+  },
+  {
+   "code": "2303",
+   "name": "聯電",
+   "listing_date": "1985-07-16"
+  },
+  {
+   "code": "2305",
+   "name": "全友",
+   "listing_date": "1988-10-21"
+  },
+  {
+   "code": "2308",
+   "name": "台達電",
+   "listing_date": "1988-12-19"
+  },
+  {
+   "code": "2312",
+   "name": "金寶",
+   "listing_date": "1989-11-07"
+  },
+  {
+   "code": "2313",
+   "name": "華通",
+   "listing_date": "1990-07-24"
+  },
+  {
+   "code": "2314",
+   "name": "台揚",
+   "listing_date": "1990-08-08"
+  },
+  {
+   "code": "2316",
+   "name": "楠梓電",
+   "listing_date": "1991-02-05"
+  },
+  {
+   "code": "2317",
+   "name": "鴻海",
+   "listing_date": "1991-06-18"
+  },
+  {
+   "code": "2321",
+   "name": "東訊",
+   "listing_date": "1991-11-08"
+  },
+  {
+   "code": "2323",
+   "name": "中環",
+   "listing_date": "1992-02-17"
+  },
+  {
+   "code": "2324",
+   "name": "仁寶",
+   "listing_date": "1992-02-18"
+  },
+  {
+   "code": "2327",
+   "name": "國巨*",
+   "listing_date": "1993-10-22"
+  },
+  {
+   "code": "2328",
+   "name": "廣宇",
+   "listing_date": "1993-11-09"
+  },
+  {
+   "code": "2329",
+   "name": "華泰",
+   "listing_date": "1994-04-20"
+  },
+  {
+   "code": "2330",
+   "name": "台積電",
+   "listing_date": "1994-09-05"
+  },
+  {
+   "code": "2331",
+   "name": "精英",
+   "listing_date": "1994-09-21"
+  },
+  {
+   "code": "2332",
+   "name": "友訊",
+   "listing_date": "1994-10-17"
+  },
+  {
+   "code": "2337",
+   "name": "旺宏",
+   "listing_date": "1995-03-15"
+  },
+  {
+   "code": "2338",
+   "name": "光罩",
+   "listing_date": "1995-04-17"
+  },
+  {
+   "code": "2340",
+   "name": "台亞",
+   "listing_date": "1995-05-02"
+  },
+  {
+   "code": "2342",
+   "name": "茂矽",
+   "listing_date": "1995-09-19"
+  },
+  {
+   "code": "2344",
+   "name": "華邦電",
+   "listing_date": "1995-10-18"
+  },
+  {
+   "code": "2345",
+   "name": "智邦",
+   "listing_date": "1995-11-15"
+  },
+  {
+   "code": "2347",
+   "name": "聯強",
+   "listing_date": "1995-12-13"
+  },
+  {
+   "code": "2348",
+   "name": "海悅",
+   "listing_date": "1996-01-05"
+  },
+  {
+   "code": "2349",
+   "name": "錸德",
+   "listing_date": "1996-04-23"
+  },
+  {
+   "code": "2351",
+   "name": "順德",
+   "listing_date": "1996-04-25"
+  },
+  {
+   "code": "2352",
+   "name": "佳世達",
+   "listing_date": "1996-07-22"
+  },
+  {
+   "code": "2353",
+   "name": "宏碁",
+   "listing_date": "1996-09-18"
+  },
+  {
+   "code": "2354",
+   "name": "鴻準",
+   "listing_date": "1996-10-08"
+  },
+  {
+   "code": "2355",
+   "name": "敬鵬",
+   "listing_date": "1996-10-14"
+  },
+  {
+   "code": "2356",
+   "name": "英業達",
+   "listing_date": "1996-11-13"
+  },
+  {
+   "code": "2357",
+   "name": "華碩",
+   "listing_date": "1996-11-14"
+  },
+  {
+   "code": "2359",
+   "name": "所羅門",
+   "listing_date": "1996-12-19"
+  },
+  {
+   "code": "2360",
+   "name": "致茂",
+   "listing_date": "1996-12-21"
+  },
+  {
+   "code": "2362",
+   "name": "藍天",
+   "listing_date": "1997-04-02"
+  },
+  {
+   "code": "2363",
+   "name": "矽統",
+   "listing_date": "1997-08-01"
+  },
+  {
+   "code": "2364",
+   "name": "倫飛",
+   "listing_date": "1997-08-11"
+  },
+  {
+   "code": "2365",
+   "name": "昆盈",
+   "listing_date": "1997-11-03"
+  },
+  {
+   "code": "2367",
+   "name": "燿華",
+   "listing_date": "1997-12-13"
+  },
+  {
+   "code": "2368",
+   "name": "金像電",
+   "listing_date": "1998-03-09"
+  },
+  {
+   "code": "2369",
+   "name": "菱生",
+   "listing_date": "1998-04-10"
+  },
+  {
+   "code": "2371",
+   "name": "大同",
+   "listing_date": "1962-02-09"
+  },
+  {
+   "code": "2373",
+   "name": "震旦行",
+   "listing_date": "1991-08-01"
+  },
+  {
+   "code": "2374",
+   "name": "佳能",
+   "listing_date": "1995-01-16"
+  },
+  {
+   "code": "2375",
+   "name": "凱美",
+   "listing_date": "1998-08-29"
+  },
+  {
+   "code": "2376",
+   "name": "技嘉",
+   "listing_date": "1998-09-24"
+  },
+  {
+   "code": "2377",
+   "name": "微星",
+   "listing_date": "1998-10-31"
+  },
+  {
+   "code": "2379",
+   "name": "瑞昱",
+   "listing_date": "1998-10-26"
+  },
+  {
+   "code": "2380",
+   "name": "虹光",
+   "listing_date": "1998-12-03"
+  },
+  {
+   "code": "2382",
+   "name": "廣達",
+   "listing_date": "1999-01-08"
+  },
+  {
+   "code": "2383",
+   "name": "台光電",
+   "listing_date": "1998-11-27"
+  },
+  {
+   "code": "2385",
+   "name": "群光",
+   "listing_date": "1999-01-05"
+  },
+  {
+   "code": "2387",
+   "name": "精元",
+   "listing_date": "1999-01-25"
+  },
+  {
+   "code": "2388",
+   "name": "威盛",
+   "listing_date": "1999-03-05"
+  },
+  {
+   "code": "2390",
+   "name": "云辰",
+   "listing_date": "1999-06-15"
+  },
+  {
+   "code": "2392",
+   "name": "正崴",
+   "listing_date": "1999-09-20"
+  },
+  {
+   "code": "2393",
+   "name": "億光",
+   "listing_date": "1999-11-04"
+  },
+  {
+   "code": "2395",
+   "name": "研華",
+   "listing_date": "1999-12-13"
+  },
+  {
+   "code": "2397",
+   "name": "友通",
+   "listing_date": "2000-01-15"
+  },
+  {
+   "code": "2399",
+   "name": "映泰",
+   "listing_date": "1999-12-16"
+  },
+  {
+   "code": "2401",
+   "name": "凌陽",
+   "listing_date": "2000-01-27"
+  },
+  {
+   "code": "2402",
+   "name": "毅嘉",
+   "listing_date": "2000-01-14"
+  },
+  {
+   "code": "2404",
+   "name": "漢唐",
+   "listing_date": "2000-03-14"
+  },
+  {
+   "code": "2405",
+   "name": "輔信",
+   "listing_date": "2000-03-17"
+  },
+  {
+   "code": "2406",
+   "name": "國碩",
+   "listing_date": "2000-04-29"
+  },
+  {
+   "code": "2408",
+   "name": "南亞科",
+   "listing_date": "2000-08-17"
+  },
+  {
+   "code": "2409",
+   "name": "友達",
+   "listing_date": "2000-09-08"
+  },
+  {
+   "code": "2412",
+   "name": "中華電",
+   "listing_date": "2000-10-27"
+  },
+  {
+   "code": "2413",
+   "name": "環科",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2414",
+   "name": "精技",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2415",
+   "name": "錩新",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2417",
+   "name": "圓剛",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2419",
+   "name": "仲琦",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2420",
+   "name": "新巨",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2421",
+   "name": "建準",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2423",
+   "name": "固緯",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2424",
+   "name": "隴華",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2425",
+   "name": "承啟",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2426",
+   "name": "鼎元",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2427",
+   "name": "三商電",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2428",
+   "name": "興勤",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2429",
+   "name": "銘旺科",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2430",
+   "name": "燦坤",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2431",
+   "name": "聯昌",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2432",
+   "name": "倚天酷碁-創",
+   "listing_date": "2023-05-31"
+  },
+  {
+   "code": "2433",
+   "name": "互盛電",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2434",
+   "name": "統懋",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2436",
+   "name": "偉詮電",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2438",
+   "name": "翔耀",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2439",
+   "name": "美律",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2440",
+   "name": "太空梭",
+   "listing_date": "2000-11-10"
+  },
+  {
+   "code": "2441",
+   "name": "超豐",
+   "listing_date": "2000-10-26"
+  },
+  {
+   "code": "2442",
+   "name": "新美齊",
+   "listing_date": "2000-11-22"
+  },
+  {
+   "code": "2444",
+   "name": "兆勁",
+   "listing_date": "2000-12-08"
+  },
+  {
+   "code": "2449",
+   "name": "京元電子",
+   "listing_date": "2001-05-09"
+  },
+  {
+   "code": "2450",
+   "name": "神腦",
+   "listing_date": "2001-05-24"
+  },
+  {
+   "code": "2451",
+   "name": "創見",
+   "listing_date": "2001-05-03"
+  },
+  {
+   "code": "2453",
+   "name": "凌群",
+   "listing_date": "2001-05-22"
+  },
+  {
+   "code": "2454",
+   "name": "聯發科",
+   "listing_date": "2001-07-23"
+  },
+  {
+   "code": "2455",
+   "name": "全新",
+   "listing_date": "2002-01-24"
+  },
+  {
+   "code": "2457",
+   "name": "飛宏",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2458",
+   "name": "義隆",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2459",
+   "name": "敦吉",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2460",
+   "name": "建通",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2461",
+   "name": "光群雷",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2462",
+   "name": "良得電",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2464",
+   "name": "盟立",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2465",
+   "name": "麗臺",
+   "listing_date": "2001-09-19"
+  },
+  {
+   "code": "2466",
+   "name": "冠西電",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2467",
+   "name": "志聖",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2468",
+   "name": "華經",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2471",
+   "name": "資通",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2472",
+   "name": "立隆電",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2474",
+   "name": "可成",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2476",
+   "name": "鉅祥",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2477",
+   "name": "美隆電",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2478",
+   "name": "大毅",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2480",
+   "name": "敦陽科",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2481",
+   "name": "強茂",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2482",
+   "name": "連宇",
+   "listing_date": "2001-09-19"
+  },
+  {
+   "code": "2483",
+   "name": "百容",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2484",
+   "name": "希華",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2485",
+   "name": "兆赫",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2486",
+   "name": "一詮",
+   "listing_date": "2001-09-19"
+  },
+  {
+   "code": "2488",
+   "name": "漢平",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2489",
+   "name": "瑞軒",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2491",
+   "name": "吉祥全",
+   "listing_date": "2001-09-19"
+  },
+  {
+   "code": "2492",
+   "name": "華新科",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2493",
+   "name": "揚博",
+   "listing_date": "2002-01-23"
+  },
+  {
+   "code": "2495",
+   "name": "普安",
+   "listing_date": "2002-03-25"
+  },
+  {
+   "code": "2496",
+   "name": "卓越",
+   "listing_date": "2002-03-08"
+  },
+  {
+   "code": "2497",
+   "name": "怡利電",
+   "listing_date": "2002-02-04"
+  },
+  {
+   "code": "2498",
+   "name": "宏達電",
+   "listing_date": "2002-03-26"
+  },
+  {
+   "code": "2501",
+   "name": "國建",
+   "listing_date": "1967-10-28"
+  },
+  {
+   "code": "2504",
+   "name": "國產",
+   "listing_date": "1978-03-14"
+  },
+  {
+   "code": "2505",
+   "name": "國揚",
+   "listing_date": "1979-11-14"
+  },
+  {
+   "code": "2506",
+   "name": "太設",
+   "listing_date": "1980-02-02"
+  },
+  {
+   "code": "2509",
+   "name": "全坤建",
+   "listing_date": "1988-05-20"
+  },
+  {
+   "code": "2511",
+   "name": "太子",
+   "listing_date": "1991-04-24"
+  },
+  {
+   "code": "2514",
+   "name": "龍邦",
+   "listing_date": "1992-09-26"
+  },
+  {
+   "code": "2515",
+   "name": "中工",
+   "listing_date": "1993-03-02"
+  },
+  {
+   "code": "2516",
+   "name": "新建",
+   "listing_date": "1993-05-25"
+  },
+  {
+   "code": "2520",
+   "name": "冠德",
+   "listing_date": "1993-10-27"
+  },
+  {
+   "code": "2524",
+   "name": "京城",
+   "listing_date": "1994-10-18"
+  },
+  {
+   "code": "2527",
+   "name": "宏璟",
+   "listing_date": "1995-03-06"
+  },
+  {
+   "code": "2528",
+   "name": "皇普",
+   "listing_date": "1995-03-10"
+  },
+  {
+   "code": "2530",
+   "name": "華建",
+   "listing_date": "1995-10-12"
+  },
+  {
+   "code": "2534",
+   "name": "宏盛",
+   "listing_date": "1996-02-12"
+  },
+  {
+   "code": "2535",
+   "name": "達欣工",
+   "listing_date": "1996-03-11"
+  },
+  {
+   "code": "2536",
+   "name": "宏普",
+   "listing_date": "1996-03-14"
+  },
+  {
+   "code": "2537",
+   "name": "聯上發",
+   "listing_date": "1996-09-06"
+  },
+  {
+   "code": "2538",
+   "name": "基泰",
+   "listing_date": "1996-11-01"
+  },
+  {
+   "code": "2539",
+   "name": "櫻花建",
+   "listing_date": "1997-07-16"
+  },
+  {
+   "code": "2540",
+   "name": "愛山林",
+   "listing_date": "1989-12-26"
+  },
+  {
+   "code": "2542",
+   "name": "興富發",
+   "listing_date": "1999-05-03"
+  },
+  {
+   "code": "2543",
+   "name": "皇昌",
+   "listing_date": "1999-10-15"
+  },
+  {
+   "code": "2545",
+   "name": "皇翔",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2546",
+   "name": "根基",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "2547",
+   "name": "日勝生",
+   "listing_date": "2000-12-22"
+  },
+  {
+   "code": "2548",
+   "name": "華固",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "2597",
+   "name": "潤弘",
+   "listing_date": "2010-03-26"
+  },
+  {
+   "code": "2601",
+   "name": "益航",
+   "listing_date": "1965-11-04"
+  },
+  {
+   "code": "2603",
+   "name": "長榮",
+   "listing_date": "1987-09-21"
+  },
+  {
+   "code": "2605",
+   "name": "新興",
+   "listing_date": "1989-12-08"
+  },
+  {
+   "code": "2606",
+   "name": "裕民",
+   "listing_date": "1990-12-08"
+  },
+  {
+   "code": "2607",
+   "name": "榮運",
+   "listing_date": "1990-12-14"
+  },
+  {
+   "code": "2608",
+   "name": "嘉里大榮",
+   "listing_date": "1990-12-20"
+  },
+  {
+   "code": "2609",
+   "name": "陽明",
+   "listing_date": "1992-04-20"
+  },
+  {
+   "code": "2610",
+   "name": "華航",
+   "listing_date": "1993-02-26"
+  },
+  {
+   "code": "2611",
+   "name": "志信",
+   "listing_date": "1993-10-28"
+  },
+  {
+   "code": "2612",
+   "name": "中航",
+   "listing_date": "1994-10-20"
+  },
+  {
+   "code": "2613",
+   "name": "中櫃",
+   "listing_date": "1995-01-20"
+  },
+  {
+   "code": "2614",
+   "name": "東森",
+   "listing_date": "1995-09-23"
+  },
+  {
+   "code": "2615",
+   "name": "萬海",
+   "listing_date": "1996-05-16"
+  },
+  {
+   "code": "2616",
+   "name": "山隆",
+   "listing_date": "1997-11-08"
+  },
+  {
+   "code": "2617",
+   "name": "台航",
+   "listing_date": "1998-06-24"
+  },
+  {
+   "code": "2618",
+   "name": "長榮航",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "2630",
+   "name": "亞航",
+   "listing_date": "2018-02-22"
+  },
+  {
+   "code": "2633",
+   "name": "台灣高鐵",
+   "listing_date": "2016-10-27"
+  },
+  {
+   "code": "2634",
+   "name": "漢翔",
+   "listing_date": "2014-08-25"
+  },
+  {
+   "code": "2636",
+   "name": "台驊控股",
+   "listing_date": "2016-12-22"
+  },
+  {
+   "code": "2637",
+   "name": "慧洋-KY",
+   "listing_date": "2010-12-01"
+  },
+  {
+   "code": "2642",
+   "name": "宅配通",
+   "listing_date": "2013-12-12"
+  },
+  {
+   "code": "2645",
+   "name": "長榮航太",
+   "listing_date": "2023-03-14"
+  },
+  {
+   "code": "2646",
+   "name": "星宇航空",
+   "listing_date": "2024-10-25"
+  },
+  {
+   "code": "2701",
+   "name": "萬企",
+   "listing_date": "1965-03-22"
+  },
+  {
+   "code": "2702",
+   "name": "華園",
+   "listing_date": "1965-02-14"
+  },
+  {
+   "code": "2704",
+   "name": "國賓",
+   "listing_date": "1982-11-10"
+  },
+  {
+   "code": "2705",
+   "name": "六福",
+   "listing_date": "1988-12-24"
+  },
+  {
+   "code": "2706",
+   "name": "第一店",
+   "listing_date": "1991-06-25"
+  },
+  {
+   "code": "2707",
+   "name": "晶華",
+   "listing_date": "1998-03-09"
+  },
+  {
+   "code": "2712",
+   "name": "遠雄來",
+   "listing_date": "2013-12-03"
+  },
+  {
+   "code": "2722",
+   "name": "夏都",
+   "listing_date": "2012-03-14"
+  },
+  {
+   "code": "2723",
+   "name": "美食-KY",
+   "listing_date": "2010-11-22"
+  },
+  {
+   "code": "2727",
+   "name": "王品",
+   "listing_date": "2012-03-06"
+  },
+  {
+   "code": "2731",
+   "name": "雄獅",
+   "listing_date": "2013-09-24"
+  },
+  {
+   "code": "2739",
+   "name": "寒舍",
+   "listing_date": "2016-05-19"
+  },
+  {
+   "code": "2748",
+   "name": "雲品",
+   "listing_date": "2016-11-23"
+  },
+  {
+   "code": "2753",
+   "name": "八方雲集",
+   "listing_date": "2021-09-09"
+  },
+  {
+   "code": "2762",
+   "name": "世界健身-KY",
+   "listing_date": "2024-01-24"
+  },
+  {
+   "code": "2801",
+   "name": "彰銀",
+   "listing_date": "1962-02-15"
+  },
+  {
+   "code": "2812",
+   "name": "台中銀",
+   "listing_date": "1984-05-15"
+  },
+  {
+   "code": "2816",
+   "name": "旺旺保",
+   "listing_date": "1992-05-05"
+  },
+  {
+   "code": "2820",
+   "name": "華票",
+   "listing_date": "1994-10-26"
+  },
+  {
+   "code": "2832",
+   "name": "台產",
+   "listing_date": "1997-09-30"
+  },
+  {
+   "code": "2834",
+   "name": "臺企銀",
+   "listing_date": "1998-01-03"
+  },
+  {
+   "code": "2836",
+   "name": "高雄銀",
+   "listing_date": "1998-05-18"
+  },
+  {
+   "code": "2838",
+   "name": "聯邦銀",
+   "listing_date": "1998-06-29"
+  },
+  {
+   "code": "2845",
+   "name": "遠東銀",
+   "listing_date": "1998-11-27"
+  },
+  {
+   "code": "2849",
+   "name": "安泰銀",
+   "listing_date": "1999-09-27"
+  },
+  {
+   "code": "2850",
+   "name": "新產",
+   "listing_date": "2000-05-22"
+  },
+  {
+   "code": "2851",
+   "name": "中再保",
+   "listing_date": "2000-07-06"
+  },
+  {
+   "code": "2852",
+   "name": "第一保",
+   "listing_date": "2000-11-28"
+  },
+  {
+   "code": "2855",
+   "name": "統一證",
+   "listing_date": "2002-09-16"
+  },
+  {
+   "code": "2867",
+   "name": "三商壽",
+   "listing_date": "2012-12-18"
+  },
+  {
+   "code": "2880",
+   "name": "華南金",
+   "listing_date": "2001-12-19"
+  },
+  {
+   "code": "2881",
+   "name": "富邦金",
+   "listing_date": "2001-12-19"
+  },
+  {
+   "code": "2882",
+   "name": "國泰金",
+   "listing_date": "2001-12-31"
+  },
+  {
+   "code": "2883",
+   "name": "凱基金",
+   "listing_date": "2001-12-28"
+  },
+  {
+   "code": "2884",
+   "name": "玉山金",
+   "listing_date": "2002-01-28"
+  },
+  {
+   "code": "2885",
+   "name": "元大金",
+   "listing_date": "2002-02-04"
+  },
+  {
+   "code": "2886",
+   "name": "兆豐金",
+   "listing_date": "2002-02-04"
+  },
+  {
+   "code": "2887",
+   "name": "台新新光金",
+   "listing_date": "2002-02-18"
+  },
+  {
+   "code": "2889",
+   "name": "國票金",
+   "listing_date": "2002-03-26"
+  },
+  {
+   "code": "2890",
+   "name": "永豐金",
+   "listing_date": "2002-05-09"
+  },
+  {
+   "code": "2891",
+   "name": "中信金",
+   "listing_date": "2002-05-17"
+  },
+  {
+   "code": "2892",
+   "name": "第一金",
+   "listing_date": "2003-01-02"
+  },
+  {
+   "code": "2897",
+   "name": "王道銀行",
+   "listing_date": "2017-05-05"
+  },
+  {
+   "code": "2901",
+   "name": "欣欣",
+   "listing_date": "1976-05-07"
+  },
+  {
+   "code": "2903",
+   "name": "遠百",
+   "listing_date": "1978-10-11"
+  },
+  {
+   "code": "2904",
+   "name": "匯僑",
+   "listing_date": "1983-01-05"
+  },
+  {
+   "code": "2905",
+   "name": "三商",
+   "listing_date": "1988-09-19"
+  },
+  {
+   "code": "2906",
+   "name": "高林",
+   "listing_date": "1989-12-26"
+  },
+  {
+   "code": "2908",
+   "name": "特力",
+   "listing_date": "1993-02-18"
+  },
+  {
+   "code": "2910",
+   "name": "統領",
+   "listing_date": "1996-12-30"
+  },
+  {
+   "code": "2911",
+   "name": "麗嬰房",
+   "listing_date": "1997-01-18"
+  },
+  {
+   "code": "2912",
+   "name": "統一超",
+   "listing_date": "1997-08-22"
+  },
+  {
+   "code": "2913",
+   "name": "農林",
+   "listing_date": "1962-02-09"
+  },
+  {
+   "code": "2915",
+   "name": "潤泰全",
+   "listing_date": "1977-07-20"
+  },
+  {
+   "code": "2923",
+   "name": "鼎固-KY",
+   "listing_date": "2012-12-07"
+  },
+  {
+   "code": "2929",
+   "name": "淘帝-KY",
+   "listing_date": "2013-12-30"
+  },
+  {
+   "code": "2939",
+   "name": "永邑-KY",
+   "listing_date": "2018-01-11"
+  },
+  {
+   "code": "2945",
+   "name": "三商家購",
+   "listing_date": "2021-11-30"
+  },
+  {
+   "code": "3002",
+   "name": "歐格",
+   "listing_date": "2002-01-23"
+  },
+  {
+   "code": "3003",
+   "name": "健和興",
+   "listing_date": "2002-02-19"
+  },
+  {
+   "code": "3004",
+   "name": "豐達科",
+   "listing_date": "2002-02-25"
+  },
+  {
+   "code": "3005",
+   "name": "神基",
+   "listing_date": "2002-02-25"
+  },
+  {
+   "code": "3006",
+   "name": "晶豪科",
+   "listing_date": "2002-03-04"
+  },
+  {
+   "code": "3008",
+   "name": "大立光",
+   "listing_date": "2002-03-11"
+  },
+  {
+   "code": "3010",
+   "name": "華立",
+   "listing_date": "2002-07-22"
+  },
+  {
+   "code": "3011",
+   "name": "今皓",
+   "listing_date": "2002-07-22"
+  },
+  {
+   "code": "3013",
+   "name": "晟銘電",
+   "listing_date": "2002-09-16"
+  },
+  {
+   "code": "3014",
+   "name": "聯陽",
+   "listing_date": "2002-10-29"
+  },
+  {
+   "code": "3015",
+   "name": "全漢",
+   "listing_date": "2002-10-16"
+  },
+  {
+   "code": "3016",
+   "name": "嘉晶",
+   "listing_date": "2002-12-24"
+  },
+  {
+   "code": "3017",
+   "name": "奇鋐",
+   "listing_date": "2002-09-27"
+  },
+  {
+   "code": "3018",
+   "name": "隆銘綠能",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3019",
+   "name": "亞光",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3021",
+   "name": "鴻名",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3022",
+   "name": "威強電",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3023",
+   "name": "信邦",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3024",
+   "name": "憶聲",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3025",
+   "name": "星通",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3026",
+   "name": "禾伸堂",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3027",
+   "name": "盛達",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3028",
+   "name": "增你強",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3029",
+   "name": "零壹",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3030",
+   "name": "德律",
+   "listing_date": "2002-10-29"
+  },
+  {
+   "code": "3031",
+   "name": "佰鴻",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3032",
+   "name": "偉訓",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3033",
+   "name": "威健",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3034",
+   "name": "聯詠",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3035",
+   "name": "智原",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3036",
+   "name": "文曄",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3037",
+   "name": "欣興",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3038",
+   "name": "全台",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3040",
+   "name": "遠見",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3041",
+   "name": "揚智",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3042",
+   "name": "晶技",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3043",
+   "name": "科風",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3044",
+   "name": "健鼎",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3045",
+   "name": "台灣大",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3046",
+   "name": "建碁",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3047",
+   "name": "訊舟",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "3048",
+   "name": "益登",
+   "listing_date": "2002-10-01"
+  },
+  {
+   "code": "3049",
+   "name": "精金",
+   "listing_date": "2002-09-27"
+  },
+  {
+   "code": "3050",
+   "name": "鈺德",
+   "listing_date": "2002-10-29"
+  },
+  {
+   "code": "3051",
+   "name": "力特",
+   "listing_date": "2002-10-28"
+  },
+  {
+   "code": "3052",
+   "name": "夆典",
+   "listing_date": "1995-11-25"
+  },
+  {
+   "code": "3054",
+   "name": "立萬利",
+   "listing_date": "2002-11-18"
+  },
+  {
+   "code": "3055",
+   "name": "蔚華科",
+   "listing_date": "2002-12-12"
+  },
+  {
+   "code": "3056",
+   "name": "富華新",
+   "listing_date": "2003-03-03"
+  },
+  {
+   "code": "3057",
+   "name": "喬鼎",
+   "listing_date": "2002-12-18"
+  },
+  {
+   "code": "3058",
+   "name": "立德",
+   "listing_date": "2002-12-09"
+  },
+  {
+   "code": "3059",
+   "name": "華晶科",
+   "listing_date": "2002-12-24"
+  },
+  {
+   "code": "3060",
+   "name": "銘異",
+   "listing_date": "2003-04-21"
+  },
+  {
+   "code": "3062",
+   "name": "建漢",
+   "listing_date": "2003-07-28"
+  },
+  {
+   "code": "3090",
+   "name": "日電貿",
+   "listing_date": "2007-12-31"
+  },
+  {
+   "code": "3092",
+   "name": "鴻碩",
+   "listing_date": "2021-05-13"
+  },
+  {
+   "code": "3094",
+   "name": "聯傑",
+   "listing_date": "2007-08-06"
+  },
+  {
+   "code": "3130",
+   "name": "一零四",
+   "listing_date": "2006-02-17"
+  },
+  {
+   "code": "3135",
+   "name": "凌航",
+   "listing_date": "2025-08-06"
+  },
+  {
+   "code": "3138",
+   "name": "耀登",
+   "listing_date": "2020-12-11"
+  },
+  {
+   "code": "3149",
+   "name": "正達",
+   "listing_date": "2011-11-23"
+  },
+  {
+   "code": "3150",
+   "name": "鈺寶-創",
+   "listing_date": "2024-06-27"
+  },
+  {
+   "code": "3164",
+   "name": "景岳",
+   "listing_date": "2010-03-22"
+  },
+  {
+   "code": "3167",
+   "name": "大量",
+   "listing_date": "2013-10-21"
+  },
+  {
+   "code": "3168",
+   "name": "眾福科",
+   "listing_date": "2024-03-26"
+  },
+  {
+   "code": "3189",
+   "name": "景碩",
+   "listing_date": "2004-11-01"
+  },
+  {
+   "code": "3209",
+   "name": "全科",
+   "listing_date": "2008-11-26"
+  },
+  {
+   "code": "3229",
+   "name": "晟鈦",
+   "listing_date": "2009-12-31"
+  },
+  {
+   "code": "3231",
+   "name": "緯創",
+   "listing_date": "2003-08-19"
+  },
+  {
+   "code": "3257",
+   "name": "虹冠電",
+   "listing_date": "2011-03-21"
+  },
+  {
+   "code": "3266",
+   "name": "昇陽",
+   "listing_date": "2014-12-24"
+  },
+  {
+   "code": "3296",
+   "name": "勝德",
+   "listing_date": "2007-12-31"
+  },
+  {
+   "code": "3305",
+   "name": "昇貿",
+   "listing_date": "2008-07-10"
+  },
+  {
+   "code": "3308",
+   "name": "聯德",
+   "listing_date": "2008-03-12"
+  },
+  {
+   "code": "3311",
+   "name": "閎暉",
+   "listing_date": "2004-03-08"
+  },
+  {
+   "code": "3312",
+   "name": "弘憶股",
+   "listing_date": "2010-12-29"
+  },
+  {
+   "code": "3321",
+   "name": "同泰",
+   "listing_date": "2015-12-15"
+  },
+  {
+   "code": "3338",
+   "name": "泰碩",
+   "listing_date": "2013-12-13"
+  },
+  {
+   "code": "3346",
+   "name": "麗清",
+   "listing_date": "2016-12-19"
+  },
+  {
+   "code": "3356",
+   "name": "奇偶",
+   "listing_date": "2005-03-28"
+  },
+  {
+   "code": "3376",
+   "name": "新日興",
+   "listing_date": "2007-12-31"
+  },
+  {
+   "code": "3380",
+   "name": "明泰",
+   "listing_date": "2004-12-20"
+  },
+  {
+   "code": "3406",
+   "name": "玉晶光",
+   "listing_date": "2005-12-20"
+  },
+  {
+   "code": "3413",
+   "name": "京鼎",
+   "listing_date": "2015-07-28"
+  },
+  {
+   "code": "3416",
+   "name": "融程電",
+   "listing_date": "2015-01-23"
+  },
+  {
+   "code": "3419",
+   "name": "譁裕",
+   "listing_date": "2008-01-21"
+  },
+  {
+   "code": "3432",
+   "name": "台端",
+   "listing_date": "2010-12-30"
+  },
+  {
+   "code": "3437",
+   "name": "榮創",
+   "listing_date": "2014-07-09"
+  },
+  {
+   "code": "3443",
+   "name": "創意",
+   "listing_date": "2006-11-03"
+  },
+  {
+   "code": "3447",
+   "name": "展達",
+   "listing_date": "2022-12-15"
+  },
+  {
+   "code": "3450",
+   "name": "聯鈞",
+   "listing_date": "2006-04-12"
+  },
+  {
+   "code": "3481",
+   "name": "群創",
+   "listing_date": "2006-10-24"
+  },
+  {
+   "code": "3494",
+   "name": "誠研",
+   "listing_date": "2007-12-13"
+  },
+  {
+   "code": "3501",
+   "name": "維熹",
+   "listing_date": "2007-09-20"
+  },
+  {
+   "code": "3504",
+   "name": "揚明光",
+   "listing_date": "2007-01-26"
+  },
+  {
+   "code": "3515",
+   "name": "華擎",
+   "listing_date": "2007-11-08"
+  },
+  {
+   "code": "3518",
+   "name": "柏騰",
+   "listing_date": "2007-11-28"
+  },
+  {
+   "code": "3528",
+   "name": "安馳",
+   "listing_date": "2016-05-18"
+  },
+  {
+   "code": "3530",
+   "name": "晶相光",
+   "listing_date": "2018-07-16"
+  },
+  {
+   "code": "3532",
+   "name": "台勝科",
+   "listing_date": "2007-12-10"
+  },
+  {
+   "code": "3533",
+   "name": "嘉澤",
+   "listing_date": "2007-12-10"
+  },
+  {
+   "code": "3535",
+   "name": "晶彩科",
+   "listing_date": "2008-01-31"
+  },
+  {
+   "code": "3543",
+   "name": "州巧",
+   "listing_date": "2020-04-15"
+  },
+  {
+   "code": "3545",
+   "name": "敦泰",
+   "listing_date": "2007-07-03"
+  },
+  {
+   "code": "3550",
+   "name": "聯穎",
+   "listing_date": "2010-11-10"
+  },
+  {
+   "code": "3557",
+   "name": "嘉威",
+   "listing_date": "2008-02-27"
+  },
+  {
+   "code": "3563",
+   "name": "牧德",
+   "listing_date": "2019-04-02"
+  },
+  {
+   "code": "3576",
+   "name": "聯合再生",
+   "listing_date": "2009-01-12"
+  },
+  {
+   "code": "3583",
+   "name": "辛耘",
+   "listing_date": "2013-03-12"
+  },
+  {
+   "code": "3588",
+   "name": "通嘉",
+   "listing_date": "2009-08-14"
+  },
+  {
+   "code": "3591",
+   "name": "艾笛森",
+   "listing_date": "2010-11-12"
+  },
+  {
+   "code": "3592",
+   "name": "瑞鼎",
+   "listing_date": "2022-01-07"
+  },
+  {
+   "code": "3593",
+   "name": "力銘",
+   "listing_date": "2009-03-16"
+  },
+  {
+   "code": "3596",
+   "name": "智易",
+   "listing_date": "2009-03-11"
+  },
+  {
+   "code": "3605",
+   "name": "宏致",
+   "listing_date": "2009-03-26"
+  },
+  {
+   "code": "3607",
+   "name": "谷崧",
+   "listing_date": "2009-10-28"
+  },
+  {
+   "code": "3617",
+   "name": "碩天",
+   "listing_date": "2009-12-23"
+  },
+  {
+   "code": "3622",
+   "name": "洋華",
+   "listing_date": "2009-03-25"
+  },
+  {
+   "code": "3645",
+   "name": "達邁",
+   "listing_date": "2011-10-05"
+  },
+  {
+   "code": "3652",
+   "name": "精聯",
+   "listing_date": "2022-09-21"
+  },
+  {
+   "code": "3653",
+   "name": "健策",
+   "listing_date": "2009-11-18"
+  },
+  {
+   "code": "3661",
+   "name": "世芯-KY",
+   "listing_date": "2014-10-28"
+  },
+  {
+   "code": "3665",
+   "name": "貿聯-KY",
+   "listing_date": "2011-04-21"
+  },
+  {
+   "code": "3669",
+   "name": "圓展",
+   "listing_date": "2011-08-25"
+  },
+  {
+   "code": "3673",
+   "name": "TPK-KY",
+   "listing_date": "2010-10-29"
+  },
+  {
+   "code": "3679",
+   "name": "新至陞",
+   "listing_date": "2011-10-05"
+  },
+  {
+   "code": "3686",
+   "name": "達能",
+   "listing_date": "2010-07-20"
+  },
+  {
+   "code": "3694",
+   "name": "海華",
+   "listing_date": "2011-05-03"
+  },
+  {
+   "code": "3701",
+   "name": "大眾控",
+   "listing_date": "2004-08-30"
+  },
+  {
+   "code": "3702",
+   "name": "大聯大",
+   "listing_date": "2005-11-09"
+  },
+  {
+   "code": "3703",
+   "name": "欣陸",
+   "listing_date": "2010-04-08"
+  },
+  {
+   "code": "3704",
+   "name": "合勤控",
+   "listing_date": "2010-08-16"
+  },
+  {
+   "code": "3705",
+   "name": "永信",
+   "listing_date": "2011-01-03"
+  },
+  {
+   "code": "3706",
+   "name": "神達",
+   "listing_date": "2013-09-12"
+  },
+  {
+   "code": "3708",
+   "name": "上緯投控",
+   "listing_date": "2016-08-31"
+  },
+  {
+   "code": "3711",
+   "name": "日月光投控",
+   "listing_date": "2018-04-30"
+  },
+  {
+   "code": "3712",
+   "name": "永崴投控",
+   "listing_date": "2018-10-01"
+  },
+  {
+   "code": "3714",
+   "name": "富采",
+   "listing_date": "2021-01-06"
+  },
+  {
+   "code": "3715",
+   "name": "定穎投控",
+   "listing_date": "2022-08-25"
+  },
+  {
+   "code": "3716",
+   "name": "中化控股",
+   "listing_date": "2024-09-02"
+  },
+  {
+   "code": "3717",
+   "name": "聯嘉投控",
+   "listing_date": "2025-08-15"
+  },
+  {
+   "code": "4104",
+   "name": "佳醫",
+   "listing_date": "2007-12-31"
+  },
+  {
+   "code": "4106",
+   "name": "雃博",
+   "listing_date": "2004-11-08"
+  },
+  {
+   "code": "4108",
+   "name": "懷特",
+   "listing_date": "2008-07-16"
+  },
+  {
+   "code": "4119",
+   "name": "旭富",
+   "listing_date": "2004-01-07"
+  },
+  {
+   "code": "4133",
+   "name": "亞諾法",
+   "listing_date": "2009-12-28"
+  },
+  {
+   "code": "4137",
+   "name": "麗豐-KY",
+   "listing_date": "2013-11-27"
+  },
+  {
+   "code": "4142",
+   "name": "國光生",
+   "listing_date": "2012-05-03"
+  },
+  {
+   "code": "4148",
+   "name": "全宇生技-KY",
+   "listing_date": "2017-06-08"
+  },
+  {
+   "code": "4155",
+   "name": "訊映",
+   "listing_date": "2017-12-05"
+  },
+  {
+   "code": "4164",
+   "name": "承業醫",
+   "listing_date": "2012-10-24"
+  },
+  {
+   "code": "4169",
+   "name": "泰宗",
+   "listing_date": "2026-04-08"
+  },
+  {
+   "code": "4178",
+   "name": "永笙-KY",
+   "listing_date": "2026-04-30"
+  },
+  {
+   "code": "4190",
+   "name": "佐登-KY",
+   "listing_date": "2015-10-21"
+  },
+  {
+   "code": "4195",
+   "name": "基米-創",
+   "listing_date": "2026-05-11"
+  },
+  {
+   "code": "4306",
+   "name": "炎洲",
+   "listing_date": "2008-01-21"
+  },
+  {
+   "code": "4414",
+   "name": "如興",
+   "listing_date": "2004-09-06"
+  },
+  {
+   "code": "4426",
+   "name": "利勤",
+   "listing_date": "2011-12-16"
+  },
+  {
+   "code": "4438",
+   "name": "廣越",
+   "listing_date": "2016-10-18"
+  },
+  {
+   "code": "4439",
+   "name": "冠星-KY",
+   "listing_date": "2019-12-05"
+  },
+  {
+   "code": "4440",
+   "name": "宜新實業",
+   "listing_date": "2021-10-25"
+  },
+  {
+   "code": "4441",
+   "name": "振大環球",
+   "listing_date": "2025-09-09"
+  },
+  {
+   "code": "4526",
+   "name": "東台",
+   "listing_date": "2003-09-15"
+  },
+  {
+   "code": "4532",
+   "name": "瑞智",
+   "listing_date": "2003-08-04"
+  },
+  {
+   "code": "4536",
+   "name": "拓凱",
+   "listing_date": "2013-10-09"
+  },
+  {
+   "code": "4540",
+   "name": "全球傳動",
+   "listing_date": "2018-08-15"
+  },
+  {
+   "code": "4545",
+   "name": "銘鈺",
+   "listing_date": "2016-01-06"
+  },
+  {
+   "code": "4551",
+   "name": "智伸科",
+   "listing_date": "2015-08-10"
+  },
+  {
+   "code": "4552",
+   "name": "力達-KY",
+   "listing_date": "2016-07-20"
+  },
+  {
+   "code": "4555",
+   "name": "氣立",
+   "listing_date": "2015-10-27"
+  },
+  {
+   "code": "4557",
+   "name": "永新-KY",
+   "listing_date": "2015-10-12"
+  },
+  {
+   "code": "4560",
+   "name": "強信-KY",
+   "listing_date": "2017-05-26"
+  },
+  {
+   "code": "4562",
+   "name": "穎漢",
+   "listing_date": "2017-08-21"
+  },
+  {
+   "code": "4564",
+   "name": "元翎",
+   "listing_date": "2019-03-07"
+  },
+  {
+   "code": "4566",
+   "name": "時碩工業",
+   "listing_date": "2018-02-05"
+  },
+  {
+   "code": "4569",
+   "name": "六方科-KY",
+   "listing_date": "2023-07-31"
+  },
+  {
+   "code": "4571",
+   "name": "鈞興-KY",
+   "listing_date": "2019-09-17"
+  },
+  {
+   "code": "4572",
+   "name": "駐龍",
+   "listing_date": "2019-09-10"
+  },
+  {
+   "code": "4576",
+   "name": "大銀微系統",
+   "listing_date": "2019-09-04"
+  },
+  {
+   "code": "4581",
+   "name": "光隆精密-KY",
+   "listing_date": "2020-03-09"
+  },
+  {
+   "code": "4582",
+   "name": "聚恆-創",
+   "listing_date": "2026-05-22"
+  },
+  {
+   "code": "4583",
+   "name": "台灣精銳",
+   "listing_date": "2022-05-09"
+  },
+  {
+   "code": "4585",
+   "name": "達明",
+   "listing_date": "2025-09-26"
+  },
+  {
+   "code": "4588",
+   "name": "玖鼎電力",
+   "listing_date": "2024-01-29"
+  },
+  {
+   "code": "4590",
+   "name": "富田-創",
+   "listing_date": "2026-01-29"
+  },
+  {
+   "code": "4720",
+   "name": "德淵",
+   "listing_date": "2015-06-24"
+  },
+  {
+   "code": "4722",
+   "name": "國精化",
+   "listing_date": "2012-08-15"
+  },
+  {
+   "code": "4736",
+   "name": "泰博",
+   "listing_date": "2023-12-22"
+  },
+  {
+   "code": "4737",
+   "name": "華廣",
+   "listing_date": "2010-12-23"
+  },
+  {
+   "code": "4739",
+   "name": "康普",
+   "listing_date": "2017-09-08"
+  },
+  {
+   "code": "4746",
+   "name": "台耀",
+   "listing_date": "2011-03-01"
+  },
+  {
+   "code": "4755",
+   "name": "三福化",
+   "listing_date": "2013-11-27"
+  },
+  {
+   "code": "4763",
+   "name": "材料*-KY",
+   "listing_date": "2015-11-09"
+  },
+  {
+   "code": "4764",
+   "name": "雙鍵",
+   "listing_date": "2018-01-04"
+  },
+  {
+   "code": "4766",
+   "name": "南寶",
+   "listing_date": "2018-11-28"
+  },
+  {
+   "code": "4770",
+   "name": "上品",
+   "listing_date": "2021-12-22"
+  },
+  {
+   "code": "4771",
+   "name": "望隼",
+   "listing_date": "2024-03-18"
+  },
+  {
+   "code": "4807",
+   "name": "日成-KY",
+   "listing_date": "2017-06-26"
+  },
+  {
+   "code": "4904",
+   "name": "遠傳",
+   "listing_date": "2005-08-24"
+  },
+  {
+   "code": "4906",
+   "name": "正文",
+   "listing_date": "2003-06-30"
+  },
+  {
+   "code": "4912",
+   "name": "聯德控股-KY",
+   "listing_date": "2015-05-21"
+  },
+  {
+   "code": "4915",
+   "name": "致伸",
+   "listing_date": "2012-10-05"
+  },
+  {
+   "code": "4916",
+   "name": "事欣科",
+   "listing_date": "2013-11-21"
+  },
+  {
+   "code": "4919",
+   "name": "新唐",
+   "listing_date": "2010-09-27"
+  },
+  {
+   "code": "4927",
+   "name": "泰鼎-KY",
+   "listing_date": "2015-09-08"
+  },
+  {
+   "code": "4930",
+   "name": "燦星網",
+   "listing_date": "2010-06-21"
+  },
+  {
+   "code": "4934",
+   "name": "太極",
+   "listing_date": "2011-08-16"
+  },
+  {
+   "code": "4935",
+   "name": "茂林-KY",
+   "listing_date": "2011-07-28"
+  },
+  {
+   "code": "4938",
+   "name": "和碩",
+   "listing_date": "2010-06-24"
+  },
+  {
+   "code": "4942",
+   "name": "嘉彰",
+   "listing_date": "2011-06-27"
+  },
+  {
+   "code": "4943",
+   "name": "康控-KY",
+   "listing_date": "2016-11-11"
+  },
+  {
+   "code": "4949",
+   "name": "有成精密",
+   "listing_date": "2024-05-09"
+  },
+  {
+   "code": "4952",
+   "name": "凌通",
+   "listing_date": "2011-11-01"
+  },
+  {
+   "code": "4956",
+   "name": "光鋐",
+   "listing_date": "2011-10-24"
+  },
+  {
+   "code": "4958",
+   "name": "臻鼎-KY",
+   "listing_date": "2011-12-26"
+  },
+  {
+   "code": "4960",
+   "name": "誠美材",
+   "listing_date": "2011-10-24"
+  },
+  {
+   "code": "4961",
+   "name": "天鈺",
+   "listing_date": "2018-10-17"
+  },
+  {
+   "code": "4967",
+   "name": "十銓",
+   "listing_date": "2019-01-14"
+  },
+  {
+   "code": "4968",
+   "name": "立積",
+   "listing_date": "2015-11-13"
+  },
+  {
+   "code": "4976",
+   "name": "佳凌",
+   "listing_date": "2012-11-20"
+  },
+  {
+   "code": "4977",
+   "name": "眾達-KY",
+   "listing_date": "2013-11-20"
+  },
+  {
+   "code": "4989",
+   "name": "榮科",
+   "listing_date": "2018-06-28"
+  },
+  {
+   "code": "4994",
+   "name": "傳奇",
+   "listing_date": "2013-12-25"
+  },
+  {
+   "code": "4999",
+   "name": "鑫禾",
+   "listing_date": "2013-06-03"
+  },
+  {
+   "code": "5007",
+   "name": "三星",
+   "listing_date": "2011-09-16"
+  },
+  {
+   "code": "5203",
+   "name": "訊連",
+   "listing_date": "2004-09-27"
+  },
+  {
+   "code": "5215",
+   "name": "科嘉-KY",
+   "listing_date": "2011-12-26"
+  },
+  {
+   "code": "5222",
+   "name": "全訊",
+   "listing_date": "2021-10-25"
+  },
+  {
+   "code": "5225",
+   "name": "東科-KY",
+   "listing_date": "2012-11-05"
+  },
+  {
+   "code": "5234",
+   "name": "達興材料",
+   "listing_date": "2012-07-16"
+  },
+  {
+   "code": "5236",
+   "name": "凌陽創新",
+   "listing_date": "2026-07-16"
+  },
+  {
+   "code": "5243",
+   "name": "乙盛-KY",
+   "listing_date": "2013-11-25"
+  },
+  {
+   "code": "5244",
+   "name": "弘凱",
+   "listing_date": "2022-01-19"
+  },
+  {
+   "code": "5258",
+   "name": "虹堡",
+   "listing_date": "2016-12-30"
+  },
+  {
+   "code": "5269",
+   "name": "祥碩",
+   "listing_date": "2012-12-12"
+  },
+  {
+   "code": "5283",
+   "name": "禾聯碩",
+   "listing_date": "2019-05-24"
+  },
+  {
+   "code": "5284",
+   "name": "jpp-KY",
+   "listing_date": "2017-03-09"
+  },
+  {
+   "code": "5285",
+   "name": "界霖",
+   "listing_date": "2014-02-25"
+  },
+  {
+   "code": "5288",
+   "name": "豐祥-KY",
+   "listing_date": "2014-09-25"
+  },
+  {
+   "code": "5292",
+   "name": "華懋",
+   "listing_date": "2023-11-21"
+  },
+  {
+   "code": "5306",
+   "name": "桂盟",
+   "listing_date": "2022-03-08"
+  },
+  {
+   "code": "5388",
+   "name": "中磊",
+   "listing_date": "2007-12-03"
+  },
+  {
+   "code": "5434",
+   "name": "崇越",
+   "listing_date": "2003-08-25"
+  },
+  {
+   "code": "5469",
+   "name": "瀚宇博",
+   "listing_date": "2003-08-25"
+  },
+  {
+   "code": "5471",
+   "name": "松翰",
+   "listing_date": "2003-08-25"
+  },
+  {
+   "code": "5484",
+   "name": "慧友",
+   "listing_date": "2003-08-25"
+  },
+  {
+   "code": "5515",
+   "name": "建國",
+   "listing_date": "2003-10-06"
+  },
+  {
+   "code": "5519",
+   "name": "隆大",
+   "listing_date": "2014-02-10"
+  },
+  {
+   "code": "5521",
+   "name": "工信",
+   "listing_date": "2012-12-18"
+  },
+  {
+   "code": "5522",
+   "name": "遠雄",
+   "listing_date": "2007-08-06"
+  },
+  {
+   "code": "5525",
+   "name": "順天",
+   "listing_date": "2004-11-26"
+  },
+  {
+   "code": "5531",
+   "name": "鄉林",
+   "listing_date": "2005-01-31"
+  },
+  {
+   "code": "5533",
+   "name": "皇鼎",
+   "listing_date": "2008-04-30"
+  },
+  {
+   "code": "5534",
+   "name": "長虹",
+   "listing_date": "2004-05-24"
+  },
+  {
+   "code": "5538",
+   "name": "東明-KY",
+   "listing_date": "2013-12-16"
+  },
+  {
+   "code": "5546",
+   "name": "永固-KY",
+   "listing_date": "2020-05-20"
+  },
+  {
+   "code": "5607",
+   "name": "遠雄港",
+   "listing_date": "2004-12-02"
+  },
+  {
+   "code": "5608",
+   "name": "四維航",
+   "listing_date": "2003-08-25"
+  },
+  {
+   "code": "5706",
+   "name": "鳳凰",
+   "listing_date": "2011-10-21"
+  },
+  {
+   "code": "5871",
+   "name": "中租-KY",
+   "listing_date": "2011-12-13"
+  },
+  {
+   "code": "5876",
+   "name": "上海商銀",
+   "listing_date": "2018-10-19"
+  },
+  {
+   "code": "5880",
+   "name": "合庫金",
+   "listing_date": "2011-12-01"
+  },
+  {
+   "code": "5906",
+   "name": "台南-KY",
+   "listing_date": "2011-10-24"
+  },
+  {
+   "code": "5907",
+   "name": "大洋-KY",
+   "listing_date": "2012-06-06"
+  },
+  {
+   "code": "6005",
+   "name": "群益證",
+   "listing_date": "2005-11-21"
+  },
+  {
+   "code": "6024",
+   "name": "群益期",
+   "listing_date": "2017-10-16"
+  },
+  {
+   "code": "6108",
+   "name": "競國",
+   "listing_date": "2008-12-30"
+  },
+  {
+   "code": "6112",
+   "name": "邁達特",
+   "listing_date": "2003-08-04"
+  },
+  {
+   "code": "6115",
+   "name": "鎰勝",
+   "listing_date": "2004-07-19"
+  },
+  {
+   "code": "6116",
+   "name": "彩晶",
+   "listing_date": "2004-09-06"
+  },
+  {
+   "code": "6117",
+   "name": "迎廣",
+   "listing_date": "2003-08-25"
+  },
+  {
+   "code": "6120",
+   "name": "達運",
+   "listing_date": "2006-09-13"
+  },
+  {
+   "code": "6128",
+   "name": "上福",
+   "listing_date": "2003-06-16"
+  },
+  {
+   "code": "6133",
+   "name": "金橋",
+   "listing_date": "2003-08-15"
+  },
+  {
+   "code": "6136",
+   "name": "富爾特",
+   "listing_date": "2003-08-25"
+  },
+  {
+   "code": "6139",
+   "name": "亞翔",
+   "listing_date": "2003-08-25"
+  },
+  {
+   "code": "6141",
+   "name": "柏承",
+   "listing_date": "2003-10-22"
+  },
+  {
+   "code": "6142",
+   "name": "友勁",
+   "listing_date": "2003-08-04"
+  },
+  {
+   "code": "6152",
+   "name": "百一",
+   "listing_date": "2009-12-08"
+  },
+  {
+   "code": "6153",
+   "name": "嘉聯益",
+   "listing_date": "2008-01-21"
+  },
+  {
+   "code": "6155",
+   "name": "鈞寶",
+   "listing_date": "2006-08-18"
+  },
+  {
+   "code": "6164",
+   "name": "華興",
+   "listing_date": "2008-10-21"
+  },
+  {
+   "code": "6165",
+   "name": "浪凡",
+   "listing_date": "2003-08-04"
+  },
+  {
+   "code": "6166",
+   "name": "凌華",
+   "listing_date": "2004-11-08"
+  },
+  {
+   "code": "6168",
+   "name": "宏齊",
+   "listing_date": "2003-08-25"
+  },
+  {
+   "code": "6176",
+   "name": "瑞儀",
+   "listing_date": "2007-05-15"
+  },
+  {
+   "code": "6177",
+   "name": "達麗",
+   "listing_date": "2013-08-01"
+  },
+  {
+   "code": "6183",
+   "name": "關貿",
+   "listing_date": "2011-12-01"
+  },
+  {
+   "code": "6184",
+   "name": "大豐電",
+   "listing_date": "2005-02-15"
+  },
+  {
+   "code": "6189",
+   "name": "豐藝",
+   "listing_date": "2004-05-24"
+  },
+  {
+   "code": "6191",
+   "name": "精成科",
+   "listing_date": "2007-10-19"
+  },
+  {
+   "code": "6192",
+   "name": "巨路",
+   "listing_date": "2004-09-27"
+  },
+  {
+   "code": "6196",
+   "name": "帆宣",
+   "listing_date": "2004-05-24"
+  },
+  {
+   "code": "6197",
+   "name": "佳必琪",
+   "listing_date": "2004-11-08"
+  },
+  {
+   "code": "6201",
+   "name": "亞弘電",
+   "listing_date": "2004-09-27"
+  },
+  {
+   "code": "6202",
+   "name": "盛群",
+   "listing_date": "2004-09-27"
+  },
+  {
+   "code": "6205",
+   "name": "詮欣",
+   "listing_date": "2008-01-21"
+  },
+  {
+   "code": "6206",
+   "name": "飛捷",
+   "listing_date": "2004-08-03"
+  },
+  {
+   "code": "6209",
+   "name": "今國光",
+   "listing_date": "2004-11-08"
+  },
+  {
+   "code": "6213",
+   "name": "聯茂",
+   "listing_date": "2008-01-21"
+  },
+  {
+   "code": "6214",
+   "name": "精誠",
+   "listing_date": "2010-12-30"
+  },
+  {
+   "code": "6215",
+   "name": "和椿",
+   "listing_date": "2007-12-31"
+  },
+  {
+   "code": "6216",
+   "name": "居易",
+   "listing_date": "2004-09-27"
+  },
+  {
+   "code": "6224",
+   "name": "聚鼎",
+   "listing_date": "2009-09-17"
+  },
+  {
+   "code": "6225",
+   "name": "天瀚",
+   "listing_date": "2004-09-27"
+  },
+  {
+   "code": "6226",
+   "name": "光鼎",
+   "listing_date": "2008-11-10"
+  },
+  {
+   "code": "6230",
+   "name": "尼得科超眾",
+   "listing_date": "2010-09-16"
+  },
+  {
+   "code": "6235",
+   "name": "華孚",
+   "listing_date": "2004-08-23"
+  },
+  {
+   "code": "6239",
+   "name": "力成",
+   "listing_date": "2004-11-08"
+  },
+  {
+   "code": "6243",
+   "name": "迅杰",
+   "listing_date": "2009-12-17"
+  },
+  {
+   "code": "6257",
+   "name": "矽格",
+   "listing_date": "2003-08-25"
+  },
+  {
+   "code": "6269",
+   "name": "台郡",
+   "listing_date": "2003-09-23"
+  },
+  {
+   "code": "6271",
+   "name": "同欣電",
+   "listing_date": "2007-11-16"
+  },
+  {
+   "code": "6272",
+   "name": "驊陞",
+   "listing_date": "2025-12-22"
+  },
+  {
+   "code": "6277",
+   "name": "宏正",
+   "listing_date": "2003-10-30"
+  },
+  {
+   "code": "6278",
+   "name": "台表科",
+   "listing_date": "2010-08-24"
+  },
+  {
+   "code": "6281",
+   "name": "全國電",
+   "listing_date": "2005-12-08"
+  },
+  {
+   "code": "6282",
+   "name": "康舒",
+   "listing_date": "2003-09-08"
+  },
+  {
+   "code": "6283",
+   "name": "淳安",
+   "listing_date": "2008-01-21"
+  },
+  {
+   "code": "6285",
+   "name": "啟碁",
+   "listing_date": "2003-09-22"
+  },
+  {
+   "code": "6405",
+   "name": "悅城",
+   "listing_date": "2013-11-28"
+  },
+  {
+   "code": "6409",
+   "name": "旭隼",
+   "listing_date": "2014-03-31"
+  },
+  {
+   "code": "6412",
+   "name": "群電",
+   "listing_date": "2013-11-08"
+  },
+  {
+   "code": "6414",
+   "name": "樺漢",
+   "listing_date": "2014-03-28"
+  },
+  {
+   "code": "6415",
+   "name": "矽力*-KY",
+   "listing_date": "2013-12-12"
+  },
+  {
+   "code": "6416",
+   "name": "瑞祺電通",
+   "listing_date": "2018-04-16"
+  },
+  {
+   "code": "6426",
+   "name": "統新",
+   "listing_date": "2021-03-24"
+  },
+  {
+   "code": "6431",
+   "name": "光麗-KY",
+   "listing_date": "2014-12-04"
+  },
+  {
+   "code": "6438",
+   "name": "迅得",
+   "listing_date": "2021-01-19"
+  },
+  {
+   "code": "6442",
+   "name": "光聖",
+   "listing_date": "2015-07-14"
+  },
+  {
+   "code": "6443",
+   "name": "元晶",
+   "listing_date": "2015-10-01"
+  },
+  {
+   "code": "6446",
+   "name": "藥華藥",
+   "listing_date": "2024-01-25"
+  },
+  {
+   "code": "6449",
+   "name": "鈺邦",
+   "listing_date": "2014-12-09"
+  },
+  {
+   "code": "6451",
+   "name": "訊芯-KY",
+   "listing_date": "2015-01-26"
+  },
+  {
+   "code": "6456",
+   "name": "GIS-KY",
+   "listing_date": "2015-06-12"
+  },
+  {
+   "code": "6464",
+   "name": "台數科",
+   "listing_date": "2015-12-16"
+  },
+  {
+   "code": "6472",
+   "name": "保瑞",
+   "listing_date": "2023-12-19"
+  },
+  {
+   "code": "6477",
+   "name": "安集",
+   "listing_date": "2016-06-21"
+  },
+  {
+   "code": "6491",
+   "name": "晶碩",
+   "listing_date": "2019-10-07"
+  },
+  {
+   "code": "6504",
+   "name": "南六",
+   "listing_date": "2013-05-07"
+  },
+  {
+   "code": "6505",
+   "name": "台塑化",
+   "listing_date": "2003-12-26"
+  },
+  {
+   "code": "6515",
+   "name": "穎崴",
+   "listing_date": "2021-01-20"
+  },
+  {
+   "code": "6525",
+   "name": "捷敏-KY",
+   "listing_date": "2016-04-12"
+  },
+  {
+   "code": "6526",
+   "name": "達發",
+   "listing_date": "2023-10-19"
+  },
+  {
+   "code": "6531",
+   "name": "愛普*",
+   "listing_date": "2016-05-31"
+  },
+  {
+   "code": "6533",
+   "name": "晶心科",
+   "listing_date": "2017-03-14"
+  },
+  {
+   "code": "6534",
+   "name": "正瀚-創",
+   "listing_date": "2023-12-21"
+  },
+  {
+   "code": "6541",
+   "name": "泰福-KY",
+   "listing_date": "2017-10-26"
+  },
+  {
+   "code": "6550",
+   "name": "北極星藥業-KY",
+   "listing_date": "2022-06-06"
+  },
+  {
+   "code": "6552",
+   "name": "易華電",
+   "listing_date": "2017-01-10"
+  },
+  {
+   "code": "6558",
+   "name": "興能高",
+   "listing_date": "2018-12-05"
+  },
+  {
+   "code": "6573",
+   "name": "虹揚-KY",
+   "listing_date": "2017-09-26"
+  },
+  {
+   "code": "6579",
+   "name": "研揚",
+   "listing_date": "2017-08-21"
+  },
+  {
+   "code": "6581",
+   "name": "鋼聯",
+   "listing_date": "2018-01-30"
+  },
+  {
+   "code": "6582",
+   "name": "申豐",
+   "listing_date": "2017-06-14"
+  },
+  {
+   "code": "6585",
+   "name": "鼎基",
+   "listing_date": "2022-05-20"
+  },
+  {
+   "code": "6589",
+   "name": "台康生技",
+   "listing_date": "2025-07-21"
+  },
+  {
+   "code": "6591",
+   "name": "動力-KY",
+   "listing_date": "2017-12-28"
+  },
+  {
+   "code": "6592",
+   "name": "和潤企業",
+   "listing_date": "2019-12-09"
+  },
+  {
+   "code": "6598",
+   "name": "ABC-KY",
+   "listing_date": "2020-06-09"
+  },
+  {
+   "code": "6605",
+   "name": "帝寶",
+   "listing_date": "2004-03-17"
+  },
+  {
+   "code": "6606",
+   "name": "建德工業",
+   "listing_date": "2023-03-24"
+  },
+  {
+   "code": "6614",
+   "name": "資拓宏宇",
+   "listing_date": "2025-11-25"
+  },
+  {
+   "code": "6625",
+   "name": "必應",
+   "listing_date": "2018-02-07"
+  },
+  {
+   "code": "6641",
+   "name": "基士德-KY",
+   "listing_date": "2018-09-21"
+  },
+  {
+   "code": "6645",
+   "name": "金萬林-創",
+   "listing_date": "2023-12-21"
+  },
+  {
+   "code": "6655",
+   "name": "科定",
+   "listing_date": "2018-11-28"
+  },
+  {
+   "code": "6657",
+   "name": "華安",
+   "listing_date": "2023-06-12"
+  },
+  {
+   "code": "6658",
+   "name": "聯策",
+   "listing_date": "2023-11-02"
+  },
+  {
+   "code": "6666",
+   "name": "羅麗芬-KY",
+   "listing_date": "2018-11-19"
+  },
+  {
+   "code": "6668",
+   "name": "中揚光",
+   "listing_date": "2018-12-12"
+  },
+  {
+   "code": "6669",
+   "name": "緯穎",
+   "listing_date": "2019-03-27"
+  },
+  {
+   "code": "6670",
+   "name": "復盛應用",
+   "listing_date": "2018-12-18"
+  },
+  {
+   "code": "6671",
+   "name": "三能-KY",
+   "listing_date": "2018-12-11"
+  },
+  {
+   "code": "6672",
+   "name": "騰輝電子-KY",
+   "listing_date": "2019-04-17"
+  },
+  {
+   "code": "6674",
+   "name": "鋐寶科技",
+   "listing_date": "2018-11-28"
+  },
+  {
+   "code": "6689",
+   "name": "伊雲谷",
+   "listing_date": "2022-09-13"
+  },
+  {
+   "code": "6691",
+   "name": "洋基工程",
+   "listing_date": "2022-01-03"
+  },
+  {
+   "code": "6695",
+   "name": "芯鼎",
+   "listing_date": "2022-11-04"
+  },
+  {
+   "code": "6698",
+   "name": "旭暉應材",
+   "listing_date": "2019-11-25"
+  },
+  {
+   "code": "6706",
+   "name": "惠特",
+   "listing_date": "2019-12-19"
+  },
+  {
+   "code": "6715",
+   "name": "嘉基",
+   "listing_date": "2019-12-12"
+  },
+  {
+   "code": "6719",
+   "name": "力智",
+   "listing_date": "2022-01-13"
+  },
+  {
+   "code": "6722",
+   "name": "輝創",
+   "listing_date": "2026-01-16"
+  },
+  {
+   "code": "6742",
+   "name": "澤米",
+   "listing_date": "2023-12-05"
+  },
+  {
+   "code": "6743",
+   "name": "安普新",
+   "listing_date": "2020-12-14"
+  },
+  {
+   "code": "6753",
+   "name": "龍德造船",
+   "listing_date": "2023-03-10"
+  },
+  {
+   "code": "6754",
+   "name": "匯僑設計",
+   "listing_date": "2020-08-25"
+  },
+  {
+   "code": "6756",
+   "name": "威鋒電子",
+   "listing_date": "2020-12-24"
+  },
+  {
+   "code": "6757",
+   "name": "台灣虎航",
+   "listing_date": "2023-08-15"
+  },
+  {
+   "code": "6768",
+   "name": "志強-KY",
+   "listing_date": "2021-04-22"
+  },
+  {
+   "code": "6770",
+   "name": "力積電",
+   "listing_date": "2021-12-06"
+  },
+  {
+   "code": "6771",
+   "name": "平和環保-創",
+   "listing_date": "2024-05-17"
+  },
+  {
+   "code": "6776",
+   "name": "展碁國際",
+   "listing_date": "2021-03-31"
+  },
+  {
+   "code": "6781",
+   "name": "AES-KY",
+   "listing_date": "2021-03-22"
+  },
+  {
+   "code": "6782",
+   "name": "視陽",
+   "listing_date": "2022-11-28"
+  },
+  {
+   "code": "6789",
+   "name": "采鈺",
+   "listing_date": "2022-06-30"
+  },
+  {
+   "code": "6790",
+   "name": "永豐實",
+   "listing_date": "2021-09-29"
+  },
+  {
+   "code": "6792",
+   "name": "詠業",
+   "listing_date": "2021-12-08"
+  },
+  {
+   "code": "6794",
+   "name": "向榮生技",
+   "listing_date": "2024-05-21"
+  },
+  {
+   "code": "6796",
+   "name": "晉弘",
+   "listing_date": "2022-06-01"
+  },
+  {
+   "code": "6799",
+   "name": "來頡",
+   "listing_date": "2022-05-12"
+  },
+  {
+   "code": "6805",
+   "name": "富世達",
+   "listing_date": "2023-11-09"
+  },
+  {
+   "code": "6807",
+   "name": "峰源-KY",
+   "listing_date": "2022-04-25"
+  },
+  {
+   "code": "6830",
+   "name": "汎銓",
+   "listing_date": "2022-08-31"
+  },
+  {
+   "code": "6831",
+   "name": "邁科",
+   "listing_date": "2025-11-25"
+  },
+  {
+   "code": "6834",
+   "name": "天二科技",
+   "listing_date": "2022-09-01"
+  },
+  {
+   "code": "6835",
+   "name": "圓裕",
+   "listing_date": "2022-11-10"
+  },
+  {
+   "code": "6838",
+   "name": "台新藥",
+   "listing_date": "2024-08-13"
+  },
+  {
+   "code": "6854",
+   "name": "錼創科技-KY創",
+   "listing_date": "2022-08-18"
+  },
+  {
+   "code": "6861",
+   "name": "睿生光電",
+   "listing_date": "2023-03-27"
+  },
+  {
+   "code": "6862",
+   "name": "三集瑞-KY",
+   "listing_date": "2024-10-23"
+  },
+  {
+   "code": "6863",
+   "name": "永道-KY",
+   "listing_date": "2023-03-21"
+  },
+  {
+   "code": "6869",
+   "name": "雲豹能源",
+   "listing_date": "2023-03-14"
+  },
+  {
+   "code": "6873",
+   "name": "泓德能源",
+   "listing_date": "2024-09-26"
+  },
+  {
+   "code": "6885",
+   "name": "全福生技",
+   "listing_date": "2024-12-16"
+  },
+  {
+   "code": "6887",
+   "name": "寶綠特-KY",
+   "listing_date": "2025-03-10"
+  },
+  {
+   "code": "6890",
+   "name": "來億-KY",
+   "listing_date": "2024-06-12"
+  },
+  {
+   "code": "6901",
+   "name": "鑽石投資",
+   "listing_date": "2023-09-19"
+  },
+  {
+   "code": "6902",
+   "name": "GOGOLOOK",
+   "listing_date": "2023-07-13"
+  },
+  {
+   "code": "6906",
+   "name": "現觀科",
+   "listing_date": "2024-01-15"
+  },
+  {
+   "code": "6908",
+   "name": "宏碁遊戲-創",
+   "listing_date": "2026-03-25"
+  },
+  {
+   "code": "6909",
+   "name": "創控",
+   "listing_date": "2025-05-21"
+  },
+  {
+   "code": "6914",
+   "name": "阜爾運通",
+   "listing_date": "2024-05-03"
+  },
+  {
+   "code": "6916",
+   "name": "華凌",
+   "listing_date": "2023-12-05"
+  },
+  {
+   "code": "6918",
+   "name": "愛派司",
+   "listing_date": "2025-06-10"
+  },
+  {
+   "code": "6919",
+   "name": "康霈*",
+   "listing_date": "2024-10-02"
+  },
+  {
+   "code": "6921",
+   "name": "嘉雨思-創",
+   "listing_date": "2025-12-23"
+  },
+  {
+   "code": "6923",
+   "name": "中台",
+   "listing_date": "2024-09-25"
+  },
+  {
+   "code": "6924",
+   "name": "榮惠-KY創",
+   "listing_date": "2024-12-03"
+  },
+  {
+   "code": "6928",
+   "name": "攸泰科技",
+   "listing_date": "2024-05-16"
+  },
+  {
+   "code": "6931",
+   "name": "青松健康",
+   "listing_date": "2025-01-15"
+  },
+  {
+   "code": "6933",
+   "name": "AMAX-KY",
+   "listing_date": "2023-11-08"
+  },
+  {
+   "code": "6934",
+   "name": "心誠鎂",
+   "listing_date": "2026-02-02"
+  },
+  {
+   "code": "6936",
+   "name": "永鴻生技",
+   "listing_date": "2025-04-28"
+  },
+  {
+   "code": "6937",
+   "name": "天虹",
+   "listing_date": "2023-12-12"
+  },
+  {
+   "code": "6944",
+   "name": "兆聯實業",
+   "listing_date": "2025-05-28"
+  },
+  {
+   "code": "6947",
+   "name": "台鎔科技",
+   "listing_date": "2026-07-23"
+  },
+  {
+   "code": "6949",
+   "name": "沛爾生醫-創",
+   "listing_date": "2024-03-08"
+  },
+  {
+   "code": "6951",
+   "name": "青新-創",
+   "listing_date": "2024-06-18"
+  },
+  {
+   "code": "6952",
+   "name": "大武山",
+   "listing_date": "2024-06-13"
+  },
+  {
+   "code": "6955",
+   "name": "邦睿生技-創",
+   "listing_date": "2024-12-06"
+  },
+  {
+   "code": "6957",
+   "name": "裕慶-KY",
+   "listing_date": "2024-06-25"
+  },
+  {
+   "code": "6958",
+   "name": "日盛台駿",
+   "listing_date": "2024-08-20"
+  },
+  {
+   "code": "6962",
+   "name": "奕力-KY",
+   "listing_date": "2024-11-26"
+  },
+  {
+   "code": "6965",
+   "name": "中傑-KY",
+   "listing_date": "2025-03-07"
+  },
+  {
+   "code": "6969",
+   "name": "成信實業*-創",
+   "listing_date": "2024-09-09"
+  },
+  {
+   "code": "6988",
+   "name": "威力暘-創",
+   "listing_date": "2024-10-23"
+  },
+  {
+   "code": "6994",
+   "name": "富威電力",
+   "listing_date": "2025-01-15"
+  },
+  {
+   "code": "7610",
+   "name": "聯友金屬-創",
+   "listing_date": "2025-09-09"
+  },
+  {
+   "code": "7631",
+   "name": "聚賢研發-創",
+   "listing_date": "2025-03-13"
+  },
+  {
+   "code": "7689",
+   "name": "大鵬科CLMX",
+   "listing_date": "2026-07-28"
+  },
+  {
+   "code": "7705",
+   "name": "三商餐飲",
+   "listing_date": "2024-11-26"
+  },
+  {
+   "code": "7711",
+   "name": "永擎",
+   "listing_date": "2025-11-19"
+  },
+  {
+   "code": "7721",
+   "name": "微程式",
+   "listing_date": "2025-07-29"
+  },
+  {
+   "code": "7722",
+   "name": "LINEPAY",
+   "listing_date": "2024-12-05"
+  },
+  {
+   "code": "7730",
+   "name": "暉盛-創",
+   "listing_date": "2025-11-04"
+  },
+  {
+   "code": "7732",
+   "name": "金興精密",
+   "listing_date": "2025-01-14"
+  },
+  {
+   "code": "7736",
+   "name": "虎山",
+   "listing_date": "2025-03-18"
+  },
+  {
+   "code": "7740",
+   "name": "熙特爾-創",
+   "listing_date": "2025-06-16"
+  },
+  {
+   "code": "7749",
+   "name": "意騰-KY",
+   "listing_date": "2025-06-13"
+  },
+  {
+   "code": "7750",
+   "name": "新代",
+   "listing_date": "2025-09-17"
+  },
+  {
+   "code": "7760",
+   "name": "享溫馨",
+   "listing_date": "2026-04-28"
+  },
+  {
+   "code": "7765",
+   "name": "中華資安",
+   "listing_date": "2025-09-08"
+  },
+  {
+   "code": "7768",
+   "name": "頌勝科技",
+   "listing_date": "2026-05-07"
+  },
+  {
+   "code": "7769",
+   "name": "鴻勁",
+   "listing_date": "2025-11-27"
+  },
+  {
+   "code": "7780",
+   "name": "大研生醫*",
+   "listing_date": "2025-09-09"
+  },
+  {
+   "code": "7786",
+   "name": "東方風能",
+   "listing_date": "2025-11-18"
+  },
+  {
+   "code": "7788",
+   "name": "松川精密",
+   "listing_date": "2025-10-16"
+  },
+  {
+   "code": "7791",
+   "name": "皇家可口",
+   "listing_date": "2025-10-28"
+  },
+  {
+   "code": "7795",
+   "name": "長廣",
+   "listing_date": "2026-01-16"
+  },
+  {
+   "code": "7799",
+   "name": "禾榮科",
+   "listing_date": "2025-09-15"
+  },
+  {
+   "code": "7803",
+   "name": "雲象科技-創",
+   "listing_date": "2026-05-20"
+  },
+  {
+   "code": "7818",
+   "name": "溢泰實業",
+   "listing_date": "2026-05-18"
+  },
+  {
+   "code": "7821",
+   "name": "神數",
+   "listing_date": "2026-04-20"
+  },
+  {
+   "code": "7822",
+   "name": "倍利科",
+   "listing_date": "2026-03-30"
+  },
+  {
+   "code": "7823",
+   "name": "奧義賽博-KY創",
+   "listing_date": "2026-02-05"
+  },
+  {
+   "code": "7827",
+   "name": "漢康-KY創",
+   "listing_date": "2026-05-29"
+  },
+  {
+   "code": "7835",
+   "name": "永悅健康-創",
+   "listing_date": "2026-07-24"
+  },
+  {
+   "code": "7855",
+   "name": "和運租車",
+   "listing_date": "2026-08-11"
+  },
+  {
+   "code": "8011",
+   "name": "台通",
+   "listing_date": "2011-09-19"
+  },
+  {
+   "code": "8016",
+   "name": "矽創",
+   "listing_date": "2003-12-25"
+  },
+  {
+   "code": "8021",
+   "name": "尖點",
+   "listing_date": "2008-01-21"
+  },
+  {
+   "code": "8028",
+   "name": "昇陽半導體",
+   "listing_date": "2018-07-10"
+  },
+  {
+   "code": "8033",
+   "name": "雷虎",
+   "listing_date": "2007-06-21"
+  },
+  {
+   "code": "8039",
+   "name": "台虹",
+   "listing_date": "2009-12-17"
+  },
+  {
+   "code": "8045",
+   "name": "達運光電",
+   "listing_date": "2024-12-11"
+  },
+  {
+   "code": "8046",
+   "name": "南電",
+   "listing_date": "2006-04-07"
+  },
+  {
+   "code": "8070",
+   "name": "長華*",
+   "listing_date": "2007-12-31"
+  },
+  {
+   "code": "8072",
+   "name": "陞泰",
+   "listing_date": "2005-08-19"
+  },
+  {
+   "code": "8081",
+   "name": "致新",
+   "listing_date": "2008-12-30"
+  },
+  {
+   "code": "8101",
+   "name": "華冠",
+   "listing_date": "2004-07-01"
+  },
+  {
+   "code": "8103",
+   "name": "瀚荃",
+   "listing_date": "2009-09-29"
+  },
+  {
+   "code": "8104",
+   "name": "錸寶",
+   "listing_date": "2019-01-17"
+  },
+  {
+   "code": "8105",
+   "name": "凌巨",
+   "listing_date": "2006-12-27"
+  },
+  {
+   "code": "8110",
+   "name": "華東",
+   "listing_date": "2007-10-31"
+  },
+  {
+   "code": "8112",
+   "name": "至上",
+   "listing_date": "2007-12-31"
+  },
+  {
+   "code": "8114",
+   "name": "振樺電",
+   "listing_date": "2012-11-26"
+  },
+  {
+   "code": "8131",
+   "name": "福懋科",
+   "listing_date": "2007-11-29"
+  },
+  {
+   "code": "8150",
+   "name": "南茂",
+   "listing_date": "2014-04-11"
+  },
+  {
+   "code": "8162",
+   "name": "微矽電子-創",
+   "listing_date": "2024-03-07"
+  },
+  {
+   "code": "8163",
+   "name": "達方",
+   "listing_date": "2007-11-28"
+  },
+  {
+   "code": "8201",
+   "name": "無敵",
+   "listing_date": "2007-10-29"
+  },
+  {
+   "code": "8210",
+   "name": "勤誠",
+   "listing_date": "2011-12-01"
+  },
+  {
+   "code": "8213",
+   "name": "志超",
+   "listing_date": "2009-12-25"
+  },
+  {
+   "code": "8215",
+   "name": "明基材",
+   "listing_date": "2010-11-12"
+  },
+  {
+   "code": "8222",
+   "name": "寶一",
+   "listing_date": "2015-01-27"
+  },
+  {
+   "code": "8249",
+   "name": "菱光",
+   "listing_date": "2005-05-17"
+  },
+  {
+   "code": "8261",
+   "name": "富鼎",
+   "listing_date": "2009-12-11"
+  },
+  {
+   "code": "8271",
+   "name": "宇瞻",
+   "listing_date": "2010-12-29"
+  },
+  {
+   "code": "8341",
+   "name": "日友",
+   "listing_date": "2015-03-23"
+  },
+  {
+   "code": "8367",
+   "name": "建新國際",
+   "listing_date": "2018-09-12"
+  },
+  {
+   "code": "8374",
+   "name": "羅昇",
+   "listing_date": "2008-12-25"
+  },
+  {
+   "code": "8404",
+   "name": "百和興業-KY",
+   "listing_date": "2011-05-18"
+  },
+  {
+   "code": "8411",
+   "name": "福貞-KY",
+   "listing_date": "2011-11-01"
+  },
+  {
+   "code": "8422",
+   "name": "可寧衛*",
+   "listing_date": "2011-10-05"
+  },
+  {
+   "code": "8429",
+   "name": "金麗-KY",
+   "listing_date": "2012-12-20"
+  },
+  {
+   "code": "8438",
+   "name": "昶昕",
+   "listing_date": "2022-03-11"
+  },
+  {
+   "code": "8442",
+   "name": "威宏-KY",
+   "listing_date": "2016-11-08"
+  },
+  {
+   "code": "8443",
+   "name": "阿瘦",
+   "listing_date": "2014-09-15"
+  },
+  {
+   "code": "8454",
+   "name": "富邦媒",
+   "listing_date": "2014-12-19"
+  },
+  {
+   "code": "8462",
+   "name": "柏文",
+   "listing_date": "2019-03-15"
+  },
+  {
+   "code": "8463",
+   "name": "潤泰材",
+   "listing_date": "2015-07-13"
+  },
+  {
+   "code": "8464",
+   "name": "億豐",
+   "listing_date": "2015-12-22"
+  },
+  {
+   "code": "8466",
+   "name": "美吉吉-KY",
+   "listing_date": "2016-11-01"
+  },
+  {
+   "code": "8467",
+   "name": "波力-KY",
+   "listing_date": "2015-12-15"
+  },
+  {
+   "code": "8473",
+   "name": "山林水",
+   "listing_date": "2016-09-08"
+  },
+  {
+   "code": "8476",
+   "name": "台境*",
+   "listing_date": "2023-10-31"
+  },
+  {
+   "code": "8478",
+   "name": "東哥遊艇",
+   "listing_date": "2017-12-11"
+  },
+  {
+   "code": "8481",
+   "name": "政伸",
+   "listing_date": "2017-02-24"
+  },
+  {
+   "code": "8482",
+   "name": "商億-KY",
+   "listing_date": "2018-08-15"
+  },
+  {
+   "code": "8487",
+   "name": "愛爾達-創",
+   "listing_date": "2024-03-26"
+  },
+  {
+   "code": "8488",
+   "name": "吉源-KY",
+   "listing_date": "2016-12-13"
+  },
+  {
+   "code": "8499",
+   "name": "鼎炫-KY",
+   "listing_date": "2017-11-24"
+  },
+  {
+   "code": "8926",
+   "name": "台汽電",
+   "listing_date": "2003-08-25"
+  },
+  {
+   "code": "8940",
+   "name": "新天地",
+   "listing_date": "2009-05-15"
+  },
+  {
+   "code": "8996",
+   "name": "高力",
+   "listing_date": "2014-02-14"
+  },
+  {
+   "code": "9103",
+   "name": "美德醫療-DR",
+   "listing_date": "2002-12-13"
+  },
+  {
+   "code": "9105",
+   "name": "泰金寶-DR",
+   "listing_date": "2003-09-22"
+  },
+  {
+   "code": "9110",
+   "name": "越南控-DR",
+   "listing_date": "2009-12-03"
+  },
+  {
+   "code": "9136",
+   "name": "巨騰-DR",
+   "listing_date": "2009-05-25"
+  },
+  {
+   "code": "9802",
+   "name": "鈺齊-KY",
+   "listing_date": "2012-10-18"
+  },
+  {
+   "code": "9902",
+   "name": "台火",
+   "listing_date": "1964-07-14"
+  },
+  {
+   "code": "9904",
+   "name": "寶成",
+   "listing_date": "1990-01-19"
+  },
+  {
+   "code": "9905",
+   "name": "大華",
+   "listing_date": "1990-08-08"
+  },
+  {
+   "code": "9906",
+   "name": "欣巴巴",
+   "listing_date": "1990-12-15"
+  },
+  {
+   "code": "9907",
+   "name": "統一實",
+   "listing_date": "1991-01-29"
+  },
+  {
+   "code": "9908",
+   "name": "大台北",
+   "listing_date": "1991-02-06"
+  },
+  {
+   "code": "9910",
+   "name": "豐泰",
+   "listing_date": "1992-02-18"
+  },
+  {
+   "code": "9911",
+   "name": "櫻花",
+   "listing_date": "1992-07-16"
+  },
+  {
+   "code": "9912",
+   "name": "偉聯",
+   "listing_date": "1992-08-08"
+  },
+  {
+   "code": "9914",
+   "name": "美利達",
+   "listing_date": "1992-09-30"
+  },
+  {
+   "code": "9917",
+   "name": "中保科",
+   "listing_date": "1993-12-08"
+  },
+  {
+   "code": "9918",
+   "name": "欣天然",
+   "listing_date": "1994-04-26"
+  },
+  {
+   "code": "9919",
+   "name": "康那香",
+   "listing_date": "1994-11-04"
+  },
+  {
+   "code": "9921",
+   "name": "巨大",
+   "listing_date": "1994-12-29"
+  },
+  {
+   "code": "9924",
+   "name": "福興",
+   "listing_date": "1995-03-15"
+  },
+  {
+   "code": "9925",
+   "name": "新保",
+   "listing_date": "1995-12-09"
+  },
+  {
+   "code": "9926",
+   "name": "新海",
+   "listing_date": "1998-04-08"
+  },
+  {
+   "code": "9927",
+   "name": "泰銘",
+   "listing_date": "1999-03-12"
+  },
+  {
+   "code": "9928",
+   "name": "中視",
+   "listing_date": "1999-08-09"
+  },
+  {
+   "code": "9929",
+   "name": "秋雨",
+   "listing_date": "1999-06-28"
+  },
+  {
+   "code": "9930",
+   "name": "中聯資源",
+   "listing_date": "1999-11-22"
+  },
+  {
+   "code": "9931",
+   "name": "欣高",
+   "listing_date": "2000-03-21"
+  },
+  {
+   "code": "9933",
+   "name": "中鼎",
+   "listing_date": "1993-05-28"
+  },
+  {
+   "code": "9934",
+   "name": "成霖",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "9935",
+   "name": "慶豐富",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "9937",
+   "name": "全國",
+   "listing_date": "2000-09-11"
+  },
+  {
+   "code": "9938",
+   "name": "百和",
+   "listing_date": "2001-01-12"
+  },
+  {
+   "code": "9939",
+   "name": "宏全",
+   "listing_date": "2001-03-02"
+  },
+  {
+   "code": "9940",
+   "name": "信義",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "9941",
+   "name": "裕融",
+   "listing_date": "2001-09-17"
+  },
+  {
+   "code": "9942",
+   "name": "茂順",
+   "listing_date": "2002-01-28"
+  },
+  {
+   "code": "9943",
+   "name": "好樂迪",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "9944",
+   "name": "新麗",
+   "listing_date": "2002-08-26"
+  },
+  {
+   "code": "9945",
+   "name": "潤泰新",
+   "listing_date": "1992-04-30"
+  },
+  {
+   "code": "9946",
+   "name": "三發地產",
+   "listing_date": "2013-09-17"
+  },
+  {
+   "code": "9955",
+   "name": "佳龍",
+   "listing_date": "2008-01-21"
+  },
+  {
+   "code": "9958",
+   "name": "世紀鋼",
+   "listing_date": "2008-03-12"
+  }
+ ]
+}
