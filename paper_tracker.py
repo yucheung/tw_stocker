@@ -115,16 +115,33 @@ def recompute_tp_sl(order, open_price, atr_val):
     ai_report.py 產出的 order 以收盤價為錨，這裡修正（開盤跳空時避免整組偏移）。
     舊訂單缺欄位時（None）由 _opt_float 退回保守預設值。
     """
-    if atr_val is None or atr_val <= 0:
+    # A1: NaN ATR 防護 — NaN 與任何數值比較恆為 False（NaN > 0 / <= 0 皆 False），
+    #     必須用「不等於自身」偵測，避免 NaN 穿透 `atr_val <= 0` 檢查。
+    if atr_val is None or atr_val != atr_val or atr_val <= 0:
         # ATR 不可用，退回固定百分比 fallback
-        tp_pct = _opt_float(order.get('tp_pct'), 0.20) or 0.20
-        sl_pct = _opt_float(order.get('sl_pct'), 0.20) or 0.20
-        return open_price * (1 + tp_pct), open_price * (1 - sl_pct)
-
-    tp_mult = _opt_float(order.get('tp_atr_mult'), 4.0) or 4.0
-    sl_mult = _opt_float(order.get('sl_atr_mult'), 2.0) or 2.0
-    tp_price = open_price + atr_val * tp_mult
-    sl_price = open_price - atr_val * sl_mult
+        # A2: 避免 `or default` 覆寫合法 0 值（_opt_float 回傳 0.0 時須保留）
+        tp_pct = _opt_float(order.get('tp_pct'), 0.20)
+        tp_pct = tp_pct if tp_pct is not None else 0.20
+        sl_pct = _opt_float(order.get('sl_pct'), 0.20)
+        sl_pct = sl_pct if sl_pct is not None else 0.20
+        tp_price = open_price * (1 + tp_pct)
+        sl_price = open_price * (1 - sl_pct)
+    else:
+        # ATR 可用：以開盤價為錨 ± ATR × multiplier
+        tp_mult = _opt_float(order.get('tp_atr_mult'), 4.0)
+        tp_mult = tp_mult if tp_mult is not None else 4.0
+        sl_mult = _opt_float(order.get('sl_atr_mult'), 2.0)
+        sl_mult = sl_mult if sl_mult is not None else 2.0
+        tp_price = open_price + atr_val * tp_mult
+        sl_price = open_price - atr_val * sl_mult
+    # A3: SL ≤ 0 sanity check — ATR 過大或 sl_pct ≥ 1 皆可能讓 SL 非正，
+    #     退回保守百分比 fallback（並對 sl_pct 再加一層保險）
+    if sl_price <= 0:
+        sl_pct = _opt_float(order.get('sl_pct'), 0.20)
+        sl_pct = sl_pct if sl_pct is not None else 0.20
+        if sl_pct >= 1:
+            sl_pct = 0.20  # sl_pct ≥ 1 時 SL 恆 ≤ 0，強制退回 20%
+        sl_price = open_price * (1 - sl_pct)
     return tp_price, sl_price
 
 
@@ -369,7 +386,10 @@ def update_tracker(data):
             ticker = sig['ticker']
             data['capital'] -= (actual_trade_amount + buy_cost)
             # TP/SL 以實際開盤價為錨重算（ai_report 以收盤價為錨，開盤跳空時修正）
-            open_price = bars.get(ticker, {}).get('open', entry_price)
+            # B1: bar 存在但 open 值為 None 時，dict.get 的 default 不生效，
+            #     改用 `or` 語意退回 entry_price（open=0 亦屬無效報價，一併退回）。
+            bar = bars.get(ticker, {})
+            open_price = bar.get('open') or entry_price
             atr_for_tp = _opt_float(sig.get('atr'))
             tp_new, sl_new = recompute_tp_sl(sig, open_price, atr_for_tp)
             data['positions'][ticker] = {
