@@ -341,7 +341,16 @@ class BacktestQueue:
                 job.error = f"ai_report.py 結束碼 {returncode}（詳見 log）"
             job.progress = 1.0
         except asyncio.CancelledError:
-            # 服務關閉中
+            # 服務關閉中：先強制結束並回收子程序（P1-5 補強 — 若只靠 stop()
+            # 的 SIGKILL 迴圈，任務被 wait_for 取消時已在 finally 移出
+            # _running，stop() 掃不到 proc 可殺 → 忽略 SIGTERM 的子程序
+            # 會變成孤兒）
+            if job._proc is not None:
+                try:
+                    job._proc.kill()
+                    await job._proc.wait()
+                except ProcessLookupError:
+                    pass
             job.status = STATUS_FAILED
             job.error = "服務關閉（job 被取消）"
             raise
