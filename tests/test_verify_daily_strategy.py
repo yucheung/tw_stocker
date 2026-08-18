@@ -424,3 +424,178 @@ def test_time_rule_future_entry_date():
     }
     result = vds.validate_time_rule(positions, "2026-08-14", calendar=cal)
     assert result.severity == "CRITICAL"
+
+
+# ========================================================
+# Task 3 Tests: Regime, Sector & Position Count Validators
+# ========================================================
+
+@pytest.mark.parametrize(
+    ("above_60", "above_20", "expected_cap"),
+    [
+        (True, True, 1.0),
+        (True, False, 0.7),
+        (False, True, 0.4),
+        (False, False, 0.1),
+    ],
+)
+def test_regime_cap_mapping(above_60, above_20, expected_cap):
+    assert vds.regime_cap(above_60, above_20) == expected_cap
+
+
+def test_regime_exposure_pass_within_tolerance():
+    # 0050 close=100.0, MA20=90.0, MA60=80.0 -> above both -> cap 100%
+    dates = pd.date_range("2026-05-01", "2026-08-14", freq="B")
+    close_df = pd.DataFrame(
+        {
+            "0050": [80.0] * 50 + [90.0] * 15 + [100.0] * (len(dates) - 65),
+            "2330": [1000.0] * len(dates),
+        },
+        index=dates,
+    )
+    md = vds.MarketData(
+        close=close_df,
+        open=close_df,
+        high=close_df,
+        low=close_df,
+        volume=pd.DataFrame(1000, index=dates, columns=close_df.columns),
+    )
+
+    positions = {
+        "2330": {"entry": 1000.0, "tp": 1100.0, "sl": 900.0, "entry_date": "2026-08-10", "shares": 70, "day_count": 4}
+    }
+    # position_value = 70 * 1000 = 70,000. capital = 30,000 -> total = 100,000 -> exposure = 70%
+    snapshot = {
+        "capital": 30000.0,
+        "positions": positions,
+        "closed_trades": [],
+        "equity_curve": [{"date": "2026-08-14", "equity": 100000.0}],
+        "daily_signals": [],
+    }
+
+    result = vds.validate_regime_exposure(snapshot, md, "2026-08-14")
+    assert result.severity == "PASS"
+    assert result.rule_id == "regime_exposure"
+    assert result.metrics["regime_cap"] == 1.0
+
+
+def test_regime_exposure_exceeded():
+    # 0050: MA60=100, MA20=80, close=90 -> close <= MA60, close > MA20 -> cap 40% (0.40)
+    dates = pd.date_range("2026-05-01", "2026-08-14", freq="B")
+    n = len(dates)
+    # Create price series for 0050: 60 bars avg ~ 100, last 20 avg ~ 80, current close = 90
+    p_0050 = [100.0] * (n - 21) + [75.0] * 20 + [90.0]
+    close_df = pd.DataFrame(
+        {
+            "0050": p_0050,
+            "2330": [1000.0] * n,
+        },
+        index=dates,
+    )
+    md = vds.MarketData(
+        close=close_df,
+        open=close_df,
+        high=close_df,
+        low=close_df,
+        volume=pd.DataFrame(1000, index=dates, columns=close_df.columns),
+    )
+
+    # position value = 50 * 1000 = 50,000. Capital = 50,000. Total = 100,000 -> exposure = 50% > 40% (+0.5% tol)
+    positions = {
+        "2330": {"entry": 1000.0, "tp": 1100.0, "sl": 900.0, "entry_date": "2026-08-10", "shares": 50, "day_count": 4}
+    }
+    snapshot = {
+        "capital": 50000.0,
+        "positions": positions,
+        "closed_trades": [],
+        "equity_curve": [{"date": "2026-08-14", "equity": 100000.0}],
+        "daily_signals": [],
+    }
+
+    result = vds.validate_regime_exposure(snapshot, md, "2026-08-14")
+    assert result.severity == "CRITICAL"
+    assert result.metrics["regime_cap"] == 0.4
+    assert result.metrics["exposure"] == 0.5
+
+
+def test_regime_exposure_missing_data():
+    # 0050 has only 10 bars (< 60 bars)
+    dates = pd.date_range("2026-08-01", "2026-08-14", freq="B")
+    close_df = pd.DataFrame({"0050": [100.0] * len(dates), "2330": [1000.0] * len(dates)}, index=dates)
+    md = vds.MarketData(
+        close=close_df, open=close_df, high=close_df, low=close_df, volume=pd.DataFrame(100, index=dates, columns=close_df.columns)
+    )
+    positions = {
+        "2330": {"entry": 1000.0, "tp": 1100.0, "sl": 900.0, "entry_date": "2026-08-10", "shares": 50, "day_count": 4}
+    }
+    snapshot = {
+        "capital": 50000.0,
+        "positions": positions,
+        "closed_trades": [],
+        "equity_curve": [{"date": "2026-08-14", "equity": 100000.0}],
+        "daily_signals": [],
+    }
+    result = vds.validate_regime_exposure(snapshot, md, "2026-08-14")
+    assert result.severity == "WARNING"
+
+
+def test_sector_concentration_pass():
+    # 2330 (semiconductor), 2603 (shipping)
+    # 2330: 50,000 value (50%), 2603: 50,000 value (50%) -> <= 75% -> PASS
+    positions = {
+        "2330": {"entry": 500.0, "tp": 600.0, "sl": 400.0, "entry_date": "2026-08-10", "shares": 100, "day_count": 4},
+        "2603": {"entry": 100.0, "tp": 120.0, "sl": 80.0, "entry_date": "2026-08-10", "shares": 500, "day_count": 4},
+    }
+    prices = {"2330": 500.0, "2603": 100.0}
+    result = vds.validate_sector_concentration(positions, prices)
+    assert result.severity == "PASS"
+    assert result.rule_id == "sector_concentration"
+    assert result.metrics["max_sector_pct"] == 0.5
+
+
+def test_sector_concentration_boundary_75_tolerance():
+    # Semiconductor: 75.4% (within 75% + 0.5% tolerance) -> PASS
+    positions = {
+        "2330": {"entry": 754.0, "tp": 800.0, "sl": 700.0, "entry_date": "2026-08-10", "shares": 100, "day_count": 4},
+        "2603": {"entry": 246.0, "tp": 300.0, "sl": 200.0, "entry_date": "2026-08-10", "shares": 100, "day_count": 4},
+    }
+    prices = {"2330": 754.0, "2603": 246.0}
+    result = vds.validate_sector_concentration(positions, prices)
+    assert result.severity == "PASS"
+
+    # Semiconductor: 76.0% (> 75.5%) -> CRITICAL
+    prices_crit = {"2330": 760.0, "2603": 240.0}
+    positions_crit = {
+        "2330": {"entry": 760.0, "tp": 800.0, "sl": 700.0, "entry_date": "2026-08-10", "shares": 100, "day_count": 4},
+        "2603": {"entry": 240.0, "tp": 300.0, "sl": 200.0, "entry_date": "2026-08-10", "shares": 100, "day_count": 4},
+    }
+    result_crit = vds.validate_sector_concentration(positions_crit, prices_crit)
+    assert result_crit.severity == "CRITICAL"
+
+
+def test_sector_concentration_missing_price():
+    positions = {
+        "2330": {"entry": 500.0, "tp": 600.0, "sl": 400.0, "entry_date": "2026-08-10", "shares": 100, "day_count": 4},
+        "2603": {"entry": 100.0, "tp": 120.0, "sl": 80.0, "entry_date": "2026-08-10", "shares": 500, "day_count": 4},
+    }
+    # 2603 price missing
+    prices = {"2330": 500.0}
+    result = vds.validate_sector_concentration(positions, prices)
+    assert result.severity == "WARNING"
+
+
+def test_position_count_pass_and_exceeded():
+    positions_6 = {f"233{i}": {"shares": 10} for i in range(6)}
+    res_6 = vds.validate_position_count(positions_6, limit=7)
+    assert res_6.severity == "PASS"
+    assert res_6.summary == "6 / 7"
+
+    positions_7 = {f"233{i}": {"shares": 10} for i in range(7)}
+    res_7 = vds.validate_position_count(positions_7, limit=7)
+    assert res_7.severity == "PASS"
+    assert res_7.summary == "7 / 7"
+
+    positions_8 = {f"233{i}": {"shares": 10} for i in range(8)}
+    res_8 = vds.validate_position_count(positions_8, limit=7)
+    assert res_8.severity == "CRITICAL"
+    assert "超出上限" in res_8.summary
