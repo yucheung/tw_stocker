@@ -34,7 +34,7 @@ def run_backtest_range(start_date, end_date, eval_start=None, extra_args=''):
            f'{extra_args}')
     if eval_start:
         cmd += f' --eval-start {eval_start}'
-    r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
+    r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=900)
     out = r.stdout + r.stderr
     if r.returncode != 0:
         raise RuntimeError(
