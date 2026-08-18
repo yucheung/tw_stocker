@@ -8,11 +8,13 @@ tw_stocker 每日策略驗證腳本 (verify_daily_strategy.py)
 
 from __future__ import annotations
 
+import fcntl
 import json
 import math
 import os
 import re
 import sys
+import tempfile
 import time
 import urllib.request
 from dataclasses import dataclass, field
@@ -33,7 +35,7 @@ except ImportError:
 try:
     from strategy.universe import get_twse_common_stocks
 except ImportError:
-    def get_twse_common_stocks() -> list[dict[str, Any]]:
+    def get_twse_common_stocks(verbose: bool = True, **kwargs: Any) -> list[dict[str, Any] | str]:
         # Fallback to local data/twse_listed_common_stocks.json if exists
         p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "twse_listed_common_stocks.json")
         if os.path.exists(p):
@@ -435,14 +437,14 @@ def validate_time_rule(
                 f"{ticker} day_count={day_count} 與日曆天數 {calendar_days} 不一致"
             )
 
-        if effective_days > 20:
+        if effective_days >= 20:
             violations += 1
-            details.append(f"{ticker} 持倉 {effective_days} 天（超過上限 20 天）")
+            details.append(f"{ticker} 持倉 {effective_days} 天（達/超過上限 20 天應已出場）")
 
     if schema_errors > 0 or violations > 0:
         severity: Literal["PASS", "WARNING", "CRITICAL"] = "CRITICAL"
         if violations > 0:
-            summary = f"最長持倉 {max_holding_days} 天（超出上限 20 天）"
+            summary = f"最長持倉 {max_holding_days} 天（達到或超出上限 20 天）"
         else:
             summary = f"發現 {schema_errors} 個部位日期異常"
     elif mismatches > 0:
@@ -784,7 +786,7 @@ def validate_signal_consistency(
     1. Score >= 2.0 (基於 Top-60 流動性母體)
     2. 股價 > 60MA
     3. Gap < 1.5 * ATR20 (次一交易日開盤價)
-    4. 數量 <= 7、無 duplicate、排名一致
+    4. 數量 <= 7、無 duplicate、排名與合格候選一致
     """
     if calendar is None:
         calendar = xcals.get_calendar("XTAI")
@@ -808,7 +810,7 @@ def validate_signal_consistency(
 
     signal_entry = matching_signals[-1]
     raw_tickers = signal_entry.get("tickers", [])
-    tickers = [str(t) for t in raw_tickers]
+    tickers = [str(t).replace(".TW", "").replace(".TWO", "") for t in raw_tickers]
 
     violations: list[str] = []
     unknown_reasons: list[str] = []
@@ -846,15 +848,23 @@ def validate_signal_consistency(
                 break
 
     universe_coverage_insufficient = False
+    active_universe_count = 0
+    download_coverage = 0.0
+
     if snap_idx is None or len(market_data.close.columns) < 48:
         universe_coverage_insufficient = True
     else:
-        active_universe_count = universe_mask.loc[snap_idx].sum()
-        if active_universe_count < 48:
+        active_universe_count = int(universe_mask.loc[snap_idx].sum()) if not universe_mask.empty else 0
+        valid_close_count = int(market_data.close.loc[snap_idx].notna().sum())
+        total_cols = len(market_data.close.columns)
+        download_coverage = valid_close_count / total_cols if total_cols > 0 else 0.0
+        if active_universe_count < 48 or download_coverage < 0.70:
             universe_coverage_insufficient = True
 
     if universe_coverage_insufficient:
-        unknown_reasons.append("全市場流動性母體不足 (< 48 檔)，無法完整重算 Top-60 score 排名")
+        unknown_reasons.append(
+            f"全市場流動性母體不足 (有效 {active_universe_count} 檔 < 48 或 coverage {download_coverage*100:.1f}% < 70%)，無法完整重算 Top-60 score 排名"
+        )
 
     try:
         snap_ts = pd.Timestamp(snapshot_date)
@@ -867,25 +877,69 @@ def validate_signal_consistency(
         next_session = None
         next_session_str = "下一交易日"
 
+    # Step 1: 若母體充足，自完整 Top-60 建立合格候選池並排序
+    eligible_candidates: list[tuple[str, float, float]] = []
+    expected_top_tickers: list[str] = []
+
+    if not universe_coverage_insufficient and snap_idx is not None:
+        for col in universe_mask.columns:
+            if universe_mask.loc[snap_idx, col]:
+                sc = scores_df.loc[snap_idx, col] if col in scores_df.columns else None
+                if sc is not None and pd.notna(sc) and float(sc) >= 2.0:
+                    c_series = market_data.close[col].dropna()
+                    c_filtered = c_series[
+                        c_series.index.map(lambda x: (x.strftime("%Y-%m-%d") if hasattr(x, "strftime") else str(x)[:10]) <= snapshot_date)
+                    ]
+                    if len(c_filtered) >= 60:
+                        c_val = float(c_filtered.iloc[-1])
+                        ma60_val = float(c_filtered.rolling(60).mean().iloc[-1])
+                        if c_val > ma60_val:
+                            ticker_clean = str(col).replace(".TW", "").replace(".TWO", "")
+                            eligible_candidates.append((ticker_clean, float(sc), c_val))
+
+        # 排序：score 降冪，score 相同時依代號排序以保證確定性
+        eligible_candidates.sort(key=lambda x: (-x[1], x[0]))
+        expected_top_tickers = [c[0] for c in eligible_candidates[:7]]
+
+        # 比對排名與選股清單
+        expected_set = set(expected_top_tickers)
+        actual_set = set(tickers)
+
+        omitted = [t for t in expected_top_tickers if t not in actual_set]
+        unwarranted = [t for t in tickers if t not in expected_set]
+
+        if omitted or unwarranted:
+            violations.append(
+                f"選股名單不符 Top-7 排名：選入未入選/低分股 {unwarranted}，遺漏高分合格股 {omitted}（預期 Top-{len(expected_top_tickers)}: {expected_top_tickers}，實際: {tickers}）"
+            )
+        elif tickers != expected_top_tickers:
+            violations.append(
+                f"選股順序不符排名：預期順序 {expected_top_tickers}，實際順序 {tickers}"
+            )
+
+    # Step 2: 驗證 actual tickers 各項指標
     for ticker in tickers:
         ticker_passed = True
-        t_col = ticker if ticker in market_data.close.columns else (f"{ticker}.TW" if f"{ticker}.TW" in market_data.close.columns else None)
+        t_col = ticker if ticker in market_data.close.columns else (f"{ticker}.TW" if f"{ticker}.TW" in market_data.close.columns else (f"{ticker}.TWO" if f"{ticker}.TWO" in market_data.close.columns else None))
 
         # 1. 驗證 Score
         if universe_coverage_insufficient:
-            pass
+            ticker_passed = False
         else:
-            in_universe = bool(universe_mask.loc[snap_idx].get(ticker, False) or universe_mask.loc[snap_idx].get(f"{ticker}.TW", False))
+            in_universe = False
             sc = None
-            if ticker in scores_df.columns:
-                sc = scores_df.loc[snap_idx, ticker]
-            elif f"{ticker}.TW" in scores_df.columns:
-                sc = scores_df.loc[snap_idx, f"{ticker}.TW"]
+            for probe_col in [ticker, f"{ticker}.TW", f"{ticker}.TWO"]:
+                if probe_col in universe_mask.columns and bool(universe_mask.loc[snap_idx, probe_col]):
+                    in_universe = True
+                if probe_col in scores_df.columns:
+                    sc = scores_df.loc[snap_idx, probe_col]
+                    if pd.notna(sc):
+                        break
 
             if not in_universe:
                 violations.append(f"{ticker} 不在當日 Top-60 流動性池")
                 ticker_passed = False
-            elif sc is None or pd.isna(sc) or sc < 2.0:
+            elif sc is None or pd.isna(sc) or float(sc) < 2.0:
                 sc_str = f"{sc:.4f}" if sc is not None and pd.notna(sc) else "None"
                 violations.append(f"{ticker} score={sc_str} 未達門檻 2.0")
                 ticker_passed = False
@@ -911,7 +965,7 @@ def validate_signal_consistency(
 
         # 3. 驗證 Gap
         next_open = None
-        t_open_col = ticker if ticker in market_data.open.columns else (f"{ticker}.TW" if f"{ticker}.TW" in market_data.open.columns else None)
+        t_open_col = ticker if ticker in market_data.open.columns else (f"{ticker}.TW" if f"{ticker}.TW" in market_data.open.columns else (f"{ticker}.TWO" if f"{ticker}.TWO" in market_data.open.columns else None))
         if t_open_col is not None and next_session is not None:
             o_series = market_data.open[t_open_col].dropna()
             for idx_val, val in o_series.items():
@@ -966,15 +1020,21 @@ def validate_signal_consistency(
     elif violations:
         severity = "CRITICAL"
         summary = f"訊號不符策略規則（{len(violations)} 項違規）"
-    elif universe_coverage_insufficient or unknown_reasons or gap_pending_tickers:
+    elif universe_coverage_insufficient:
+        severity = "WARNING"
+        if gap_pending_tickers:
+            summary = f"母體資料不足 (< 48 檔或 coverage < 70%)；Gap 待 {next_session_str} 開盤驗證"
+        else:
+            summary = "母體資料不足 (< 48 檔或 coverage < 70%)，無法完整判定 score/MA"
+    elif unknown_reasons or gap_pending_tickers:
         severity = "WARNING"
         if gap_pending_tickers:
             summary = f"{len(passed_tickers)}/{len(tickers)} score/MA 通過；Gap 待 {next_session_str} 開盤驗證"
         else:
-            summary = "母體資料不足，無法完整判定 score/MA"
+            summary = "部分資料不足，無法完整判定"
     else:
         severity = "PASS"
-        summary = f"{len(passed_tickers)}/{len(tickers)} score 與 MA 合格；Gap 已驗證"
+        summary = f"{len(passed_tickers)}/{len(tickers)} score 與 MA 合格；排名一致；Gap 已驗證"
 
     return CheckResult(
         rule_id="signal_consistency",
@@ -988,6 +1048,8 @@ def validate_signal_consistency(
             "violations_count": len(violations),
             "gap_pending_count": len(gap_pending_tickers),
             "universe_coverage_insufficient": universe_coverage_insufficient,
+            "active_universe_count": active_universe_count,
+            "download_coverage": download_coverage,
         },
     )
 
@@ -1014,7 +1076,7 @@ def fetch_market_data(
         return MarketData(close=empty, open=empty, high=empty, low=empty, volume=empty)
 
     tw_symbols = [f"{t}.TW" if not t.endswith((".TW", ".TWO")) else t for t in tickers]
-    
+
     # 批次下載
     batch_size = 100
     all_dfs = []
@@ -1158,70 +1220,97 @@ def render_report(context: dict[str, Any], results: list[CheckResult]) -> str:
 def append_verify_log(path: str, context: dict[str, Any], results: list[CheckResult]) -> None:
     """
     使用暫存檔 + os.replace 原子性追加驗證紀錄至 verify_log.json。
+    包含跨程序 fcntl.flock 排他鎖、tempfile 暫存檔、以及 directory fsync。
     """
-    data: dict[str, Any] = {"schema_version": 1, "runs": []}
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if content:
-                    loaded = json.loads(content)
-                    if isinstance(loaded, dict) and "runs" in loaded:
-                        data = loaded
-                    else:
-                        raise ValueError("Invalid schema: missing 'runs' field")
-        except Exception as e:
-            raise RuntimeError(f"Failed to read existing verify_log.json at {path}: {e}") from e
-
-    run_entry = {
-        "run_id": context.get("run_id"),
-        "run_at": context.get("run_at"),
-        "run_date": context.get("run_date"),
-        "snapshot_date": context.get("snapshot_date"),
-        "overall_status": context.get("overall_status"),
-        "source": {
-            "paper": context.get("paper_source", "github_raw"),
-            "paper_url": context.get("paper_url", DEFAULT_PAPER_URL),
-            "market": "yfinance",
-            "auto_adjust": False,
-        },
-        "summary": {
-            "critical": context.get("critical_count", 0),
-            "warning": context.get("warning_count", 0),
-            "pass": context.get("pass_count", 0),
-        },
-        "checks": [
-            {
-                "rule_id": r.rule_id,
-                "title": r.title,
-                "severity": r.severity,
-                "summary": r.summary,
-                "details": r.details,
-                "metrics": r.metrics,
-            }
-            for r in results
-        ],
-    }
-
-    data["runs"].append(run_entry)
-
     log_dir = os.path.dirname(os.path.abspath(path)) or "."
     os.makedirs(log_dir, exist_ok=True)
-    temp_path = os.path.join(log_dir, f".verify_log_{os.getpid()}_{time.time_ns()}.tmp")
+    lock_path = f"{os.path.abspath(path)}.lock"
 
-    try:
-        with open(temp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(temp_path, path)
-    except Exception as e:
-        if os.path.exists(temp_path):
+    with open(lock_path, "w", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            data: dict[str, Any] = {"schema_version": 1, "runs": []}
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        content = f.read().strip()
+                        if content:
+                            loaded = json.loads(content)
+                            if isinstance(loaded, dict) and "runs" in loaded:
+                                data = loaded
+                            else:
+                                raise ValueError("Invalid schema: missing 'runs' field")
+                except Exception as e:
+                    raise RuntimeError(f"Failed to read existing verify_log.json at {path}: {e}") from e
+
+            run_entry = {
+                "run_id": context.get("run_id"),
+                "run_at": context.get("run_at"),
+                "run_date": context.get("run_date"),
+                "snapshot_date": context.get("snapshot_date"),
+                "overall_status": context.get("overall_status"),
+                "source": {
+                    "paper": context.get("paper_source", "github_raw"),
+                    "paper_url": context.get("paper_url", DEFAULT_PAPER_URL),
+                    "market": "yfinance",
+                    "auto_adjust": False,
+                },
+                "summary": {
+                    "critical": context.get("critical_count", 0),
+                    "warning": context.get("warning_count", 0),
+                    "pass": context.get("pass_count", 0),
+                },
+                "checks": [
+                    {
+                        "rule_id": r.rule_id,
+                        "title": r.title,
+                        "severity": r.severity,
+                        "summary": r.summary,
+                        "details": r.details,
+                        "metrics": r.metrics,
+                    }
+                    for r in results
+                ],
+            }
+
+            data["runs"].append(run_entry)
+
+            temp_path = None
             try:
-                os.remove(temp_path)
-            except OSError:
-                pass
-        raise RuntimeError(f"Failed to write verify log atomically to {path}: {e}") from e
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    dir=log_dir,
+                    delete=False,
+                    encoding="utf-8",
+                    prefix=".verify_log_",
+                    suffix=".tmp",
+                ) as tf:
+                    temp_path = tf.name
+                    json.dump(data, tf, indent=2, ensure_ascii=False)
+                    tf.flush()
+                    os.fsync(tf.fileno())
+
+                os.replace(temp_path, path)
+                temp_path = None
+
+                # Directory fsync to persist directory entry metadata
+                try:
+                    dir_fd = os.open(log_dir, os.O_RDONLY)
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
+                except OSError:
+                    pass
+            except Exception as e:
+                if temp_path and os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
+                raise RuntimeError(f"Failed to write verify log atomically to {path}: {e}") from e
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def run_verification(
@@ -1236,7 +1325,7 @@ def run_verification(
     1. 交易日 gate
     2. 載入 paper snapshot
     3. 下載市場資料
-    4. 執行 6 項驗證器
+    4. 執行驗證器與 freshness/schema check
     5. 產出報告與寫入 log
     """
     if config is None:
@@ -1258,11 +1347,35 @@ def run_verification(
     run_at = now.isoformat()
 
     # 2. 載入 paper snapshot
-    snapshot, paper_source, fetch_warnings = load_paper_snapshot(
-        url=config.paper_url,
-        local_path=config.paper_local_path,
-        fetcher=fetcher,
-    )
+    try:
+        snapshot, paper_source, fetch_warnings = load_paper_snapshot(
+            url=config.paper_url,
+            local_path=config.paper_local_path,
+            fetcher=fetcher,
+        )
+    except Exception as e:
+        crit_check = CheckResult(
+            rule_id="paper_snapshot",
+            title="Paper Snapshot 載入",
+            severity="CRITICAL",
+            summary=f"無法載入或解析 Paper Snapshot: {e}",
+            details=[str(e)],
+        )
+        context = {
+            "run_id": run_id,
+            "run_at": run_at,
+            "run_date": run_date,
+            "snapshot_date": run_date,
+            "overall_status": "CRITICAL",
+            "paper_source": "none",
+            "paper_url": config.paper_url,
+            "critical_count": 1,
+            "warning_count": 0,
+            "pass_count": 0,
+        }
+        report = render_report(context, [crit_check])
+        append_verify_log(config.log_path, context, [crit_check])
+        return report
 
     is_valid, snapshot_date, schema_errors, schema_warnings = validate_snapshot(snapshot)
     if snapshot_date is None:
@@ -1281,8 +1394,8 @@ def run_verification(
             for t in s.get("tickers", []):
                 needed_tickers.add(str(t))
 
-    # 加入 TWSE 全市場股票以供 Top-60 universe 重算
-    twse_stocks = get_twse_common_stocks()
+    # 加入 TWSE 全市場股票以供 Top-60 universe 重算 (傳 verbose=False 避免 stdout 污染)
+    twse_stocks = get_twse_common_stocks(verbose=False)
     for stock in twse_stocks:
         code = stock.get("code") if isinstance(stock, dict) else str(stock)
         if code:
@@ -1308,8 +1421,32 @@ def run_verification(
         fetcher=market_fetcher,
     )
 
-    # 5. 執行 6 項驗證器
+    # 5. 執行 6 項驗證器 + snapshot health / freshness checks
     results: list[CheckResult] = []
+
+    if schema_errors:
+        results.append(
+            CheckResult(
+                rule_id="snapshot_schema",
+                title="Paper Snapshot 格式",
+                severity="CRITICAL",
+                summary=f"Snapshot 包含 {len(schema_errors)} 項 Schema 錯誤",
+                details=schema_errors + schema_warnings,
+                metrics={"schema_errors": schema_errors},
+            )
+        )
+
+    if snapshot_date != run_date:
+        results.append(
+            CheckResult(
+                rule_id="snapshot_freshness",
+                title="Snapshot 時效性",
+                severity="CRITICAL",
+                summary=f"Stale snapshot ({snapshot_date} != {run_date})",
+                details=[f"snapshot_date ({snapshot_date}) != run_date ({run_date}) (stale snapshot)"],
+                metrics={"snapshot_date": snapshot_date, "run_date": run_date},
+            )
+        )
 
     # Rule 1: TP/SL 價格
     try:
@@ -1352,18 +1489,6 @@ def run_verification(
     except Exception as e:
         r_count = CheckResult("position_count", "持倉數量", "WARNING", f"驗證器執行異常: {e}", [str(e)])
     results.append(r_count)
-
-    # 若 snapshot stale，追加警告或標記
-    if snapshot_date != run_date:
-        # Check if any rule needs stale warning
-        results[0] = CheckResult(
-            results[0].rule_id,
-            results[0].title,
-            results[0].severity,
-            results[0].summary,
-            results[0].details + [f"注意：snapshot_date ({snapshot_date}) != run_date ({run_date}) (stale snapshot)"],
-            results[0].metrics,
-        )
 
     # 6. 計算總體狀態
     crit_cnt = sum(1 for r in results if r.severity == "CRITICAL")

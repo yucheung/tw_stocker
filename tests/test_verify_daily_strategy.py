@@ -334,22 +334,40 @@ def test_time_rule_normal_pass():
 def test_time_rule_boundary_20_days():
     cal = xcals.get_calendar("XTAI")
     sessions = cal.sessions_in_range("2026-07-01", "2026-08-14")
-    entry_date = sessions[-21].strftime("%Y-%m-%d")
     snapshot_date = sessions[-1].strftime("%Y-%m-%d")
 
-    positions = {
+    # 19 days holding -> PASS
+    entry_date_19 = sessions[-20].strftime("%Y-%m-%d")
+    positions_19 = {
         "2330": {
             "entry": 1000.0,
             "tp": 1100.0,
             "sl": 900.0,
-            "entry_date": entry_date,
+            "entry_date": entry_date_19,
+            "shares": 10,
+            "day_count": 19,
+        }
+    }
+    res_19 = vds.validate_time_rule(positions_19, snapshot_date, calendar=cal)
+    assert res_19.severity == "PASS"
+    assert res_19.metrics["max_holding_days"] == 19
+
+    # 20 days holding -> CRITICAL (must exit on/at day 20)
+    entry_date_20 = sessions[-21].strftime("%Y-%m-%d")
+    positions_20 = {
+        "2330": {
+            "entry": 1000.0,
+            "tp": 1100.0,
+            "sl": 900.0,
+            "entry_date": entry_date_20,
             "shares": 10,
             "day_count": 20,
         }
     }
-    result = vds.validate_time_rule(positions, snapshot_date, calendar=cal)
-    assert result.severity == "PASS"
+    result = vds.validate_time_rule(positions_20, snapshot_date, calendar=cal)
+    assert result.severity == "CRITICAL"
     assert result.metrics["max_holding_days"] == 20
+    assert result.metrics["violations"] == 1
 
 
 def test_time_rule_exceeded_21_days():
@@ -924,3 +942,229 @@ def test_run_verification_orchestration_pass(tmp_path):
     log_data = json.loads(log_file.read_text(encoding="utf-8"))
     assert len(log_data["runs"]) == 1
     assert len(log_data["runs"][0]["checks"]) == 6
+
+
+def test_signal_consistency_ranking_violation_low_score_selected_high_score_omitted():
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")
+    signal_date = "2026-08-14"
+
+    tickers = [f"T{i:02d}" for i in range(60)]
+    data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
+    close_df = pd.DataFrame(data, index=sessions)
+    open_df = close_df.copy()
+    high_df = close_df * 1.05
+    low_df = close_df * 0.95
+    vol_df = pd.DataFrame(100000.0, index=sessions, columns=tickers)
+
+    md = vds.MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
+
+    # Actual signals omit T00 (highest score) and include T07 (rank 8)
+    bad_signals = ["T01", "T02", "T03", "T04", "T05", "T06", "T07"]
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": bad_signals}]
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "CRITICAL"
+    assert any("遺漏高分合格股" in d or "不符 Top-7 排名" in d for d in result.details)
+    assert "T00" in str(result.details)
+    assert "T07" in str(result.details)
+
+
+def test_signal_consistency_ranking_violation_wrong_order():
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")
+    signal_date = "2026-08-14"
+
+    tickers = [f"T{i:02d}" for i in range(60)]
+    data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
+    close_df = pd.DataFrame(data, index=sessions)
+    open_df = close_df.copy()
+    high_df = close_df * 1.05
+    low_df = close_df * 0.95
+    vol_df = pd.DataFrame(100000.0, index=sessions, columns=tickers)
+
+    md = vds.MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
+
+    # Correct top 7 stocks but in reversed order
+    reversed_signals = ["T06", "T05", "T04", "T03", "T02", "T01", "T00"]
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": reversed_signals}]
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "CRITICAL"
+    assert any("順序不符排名" in d or "不一致" in d for d in result.details)
+
+
+def test_signal_consistency_ranking_pass_when_fewer_than_7_eligible():
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")
+    signal_date = "2026-08-14"
+
+    tickers = [f"T{i:02d}" for i in range(60)]
+    # Only T00, T01, T02 have strong upward momentum; others are flat/downward (scores < 2.0 or price <= MA60)
+    data = {}
+    for i, t in enumerate(tickers):
+        if i < 3:
+            data[t] = [100.0 + (10 - i) * (j / len(sessions)) for j in range(len(sessions))]
+        else:
+            # Downward trend, below MA60
+            data[t] = [200.0 - (j / len(sessions)) * 50 for j in range(len(sessions))]
+
+    close_df = pd.DataFrame(data, index=sessions)
+    open_df = close_df.copy()
+    high_df = close_df * 1.05
+    low_df = close_df * 0.95
+    vol_df = pd.DataFrame(100000.0, index=sessions, columns=tickers)
+
+    md = vds.MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
+
+    # Actual signals has only the 3 eligible stocks
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": ["T00", "T01", "T02"]}]
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "PASS"
+    assert result.metrics["passed_count"] == 3
+
+
+def test_signal_consistency_coverage_gate_warning():
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")
+    signal_date = "2026-08-14"
+
+    # Only 30 stocks in market data (< 48 required)
+    tickers = [f"T{i:02d}" for i in range(30)]
+    data = {t: [100.0 + (30 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
+    close_df = pd.DataFrame(data, index=sessions)
+    open_df = close_df.copy()
+    high_df = close_df * 1.05
+    low_df = close_df * 0.95
+    vol_df = pd.DataFrame(100000.0, index=sessions, columns=tickers)
+
+    md = vds.MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
+
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": ["T00", "T01", "T02"]}]
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "WARNING"
+    assert result.metrics["universe_coverage_insufficient"] is True
+    assert "母體資料不足" in result.summary
+    assert "score/MA 通過" not in result.summary
+
+
+def test_run_verification_stale_snapshot_elevates_to_critical(tmp_path):
+    log_file = tmp_path / "verify_log.json"
+    cfg = vds.VerifyConfig(log_path=str(log_file))
+
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-19")
+    run_dt = datetime(2026, 8, 19, 17, 30, tzinfo=vds.TAIPEI_TZ)
+
+    tickers = ["0050", "2330"] + [f"T{i:02d}" for i in range(58)]
+    data = {t: [100.0] * len(sessions) for t in tickers}
+    close_df = pd.DataFrame(data, index=sessions)
+    md = vds.MarketData(close=close_df, open=close_df, high=close_df, low=close_df, volume=pd.DataFrame(1000, index=sessions, columns=tickers))
+
+    # Snapshot is from 2026-08-18 (yesterday), run_date is 2026-08-19
+    snapshot = {
+        "capital": 100000.0,
+        "positions": {},
+        "closed_trades": [],
+        "equity_curve": [{"date": "2026-08-18", "equity": 100000.0}],
+        "daily_signals": [],
+    }
+
+    report = vds.run_verification(
+        config=cfg,
+        now=run_dt,
+        fetcher=Mock(return_value=json.dumps(snapshot)),
+        market_fetcher=Mock(return_value=md),
+        calendar=cal,
+    )
+
+    assert "🚨 CRITICAL" in report
+    assert "Stale snapshot" in report or "stale snapshot" in report
+    log_data = json.loads(log_file.read_text(encoding="utf-8"))
+    assert log_data["runs"][0]["overall_status"] == "CRITICAL"
+    assert any(c["rule_id"] == "snapshot_freshness" and c["severity"] == "CRITICAL" for c in log_data["runs"][0]["checks"])
+
+
+def test_run_verification_schema_error_elevates_to_critical(tmp_path):
+    log_file = tmp_path / "verify_log.json"
+    cfg = vds.VerifyConfig(log_path=str(log_file))
+
+    cal = xcals.get_calendar("XTAI")
+    run_dt = datetime(2026, 8, 19, 17, 30, tzinfo=vds.TAIPEI_TZ)
+
+    # Missing "capital" field
+    corrupt_snapshot = {
+        "positions": {},
+        "closed_trades": [],
+        "equity_curve": [{"date": "2026-08-19", "equity": 100000.0}],
+        "daily_signals": [],
+    }
+
+    md = vds.MarketData(close=pd.DataFrame(), open=pd.DataFrame(), high=pd.DataFrame(), low=pd.DataFrame(), volume=pd.DataFrame())
+
+    report = vds.run_verification(
+        config=cfg,
+        now=run_dt,
+        fetcher=Mock(return_value=json.dumps(corrupt_snapshot)),
+        market_fetcher=Mock(return_value=md),
+        calendar=cal,
+    )
+
+    assert "🚨 CRITICAL" in report
+    log_data = json.loads(log_file.read_text(encoding="utf-8"))
+    assert log_data["runs"][0]["overall_status"] == "CRITICAL"
+    assert any(c["rule_id"] == "snapshot_schema" and c["severity"] == "CRITICAL" for c in log_data["runs"][0]["checks"])
+
+
+def test_run_verification_json_decode_error_elevates_to_critical(tmp_path):
+    log_file = tmp_path / "verify_log.json"
+    cfg = vds.VerifyConfig(log_path=str(log_file), paper_local_path="/nonexistent/paper.json")
+
+    cal = xcals.get_calendar("XTAI")
+    run_dt = datetime(2026, 8, 19, 17, 30, tzinfo=vds.TAIPEI_TZ)
+
+    report = vds.run_verification(
+        config=cfg,
+        now=run_dt,
+        fetcher=Mock(return_value="NOT_VALID_JSON{"),
+        calendar=cal,
+    )
+
+    assert "🚨 CRITICAL" in report
+    assert "Paper Snapshot 載入" in report
+    log_data = json.loads(log_file.read_text(encoding="utf-8"))
+    assert log_data["runs"][0]["overall_status"] == "CRITICAL"
+    assert log_data["runs"][0]["checks"][0]["rule_id"] == "paper_snapshot"
+    assert log_data["runs"][0]["checks"][0]["severity"] == "CRITICAL"
+
+
+def test_append_verify_log_locking(tmp_path):
+    log_file = tmp_path / "verify_log.json"
+    lock_file = tmp_path / "verify_log.json.lock"
+
+    context = {
+        "run_id": "RUN_LOCK_TEST",
+        "run_at": "2026-08-19T17:30:00+08:00",
+        "run_date": "2026-08-19",
+        "snapshot_date": "2026-08-19",
+        "overall_status": "PASS",
+        "critical_count": 0,
+        "warning_count": 0,
+        "pass_count": 6,
+    }
+    vds.append_verify_log(str(log_file), context, [])
+    assert log_file.exists()
+    assert lock_file.exists()
+    data = json.loads(log_file.read_text(encoding="utf-8"))
+    assert len(data["runs"]) == 1
+
