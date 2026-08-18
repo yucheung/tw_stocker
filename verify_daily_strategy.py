@@ -798,10 +798,10 @@ def validate_signal_consistency(
         return CheckResult(
             rule_id="signal_consistency",
             title="Top-7 信號一致性",
-            severity="PASS",
-            summary="當日無信號",
-            details=[],
-            metrics={"signal_count": 0},
+            severity="WARNING",
+            summary="當日無信號資料（snapshot 中 daily_signals 無符合日期）",
+            details=["snapshot_date 有持倉但無對應 daily_signals，可能是資料缺失"],
+            metrics={"signal_count": 0, "indeterminate": True},
         )
 
     warnings_list: list[str] = []
@@ -830,10 +830,10 @@ def validate_signal_consistency(
         return CheckResult(
             rule_id="signal_consistency",
             title="Top-7 信號一致性",
-            severity="PASS",
-            summary="0/0 score 與 MA 合格",
-            details=warnings_list,
-            metrics={"signal_count": 0},
+            severity="CRITICAL",
+            summary="當日信號存在但 tickers 為空（schema 異常）",
+            details=warnings_list + ["signal entry 存在但 tickers 陣列為空或缺失"],
+            metrics={"signal_count": 0, "schema_error": True},
         )
 
     # 計算全市場分數
@@ -851,7 +851,7 @@ def validate_signal_consistency(
     active_universe_count = 0
     download_coverage = 0.0
 
-    if snap_idx is None or len(market_data.close.columns) < 48:
+    if snap_idx is None or len(market_data.close.columns) < 54:
         universe_coverage_insufficient = True
     else:
         active_universe_count = int(universe_mask.loc[snap_idx].sum()) if not universe_mask.empty else 0
