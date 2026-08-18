@@ -599,3 +599,164 @@ def test_position_count_pass_and_exceeded():
     res_8 = vds.validate_position_count(positions_8, limit=7)
     assert res_8.severity == "CRITICAL"
     assert "超出上限" in res_8.summary
+
+
+# ============================================
+# Task 4 Tests: Top-7 Signal Consistency Tests
+# ============================================
+
+def test_compute_v85_scores():
+    # Construct 60 stocks with 70 trading days of data
+    dates = pd.date_range("2026-05-01", "2026-08-14", freq="B")
+    tickers = [f"stock_{i:02d}" for i in range(60)]
+
+    # stock_00 has highest momentum and trend
+    data = {}
+    for i, t in enumerate(tickers):
+        # Stock base price
+        base = 100.0 + i
+        # Upward drift proportional to -i (so stock_00 drifts most up)
+        drift = (60 - i) * 0.5
+        series = [base + drift * (j / len(dates)) for j in range(len(dates))]
+        data[t] = series
+
+    close_df = pd.DataFrame(data, index=dates)
+    vol_df = pd.DataFrame(100000.0, index=dates, columns=tickers)
+    md = vds.MarketData(close=close_df, open=close_df, high=close_df * 1.01, low=close_df * 0.99, volume=vol_df)
+
+    scores_df, ma60_df, universe_mask = vds.compute_v85_scores(md, top_n=60)
+    assert not scores_df.empty
+    # stock_00 should have score = 4.0
+    last_scores = scores_df.iloc[-1]
+    assert pytest.approx(last_scores["stock_00"], rel=1e-3) == 4.0
+    assert last_scores["stock_00"] > last_scores["stock_59"]
+
+
+def test_signal_consistency_pass_with_matured_gap():
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")  # includes next session 2026-08-17
+    signal_date = "2026-08-14"
+
+    tickers = [f"T{i:02d}" for i in range(60)]
+    data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
+    close_df = pd.DataFrame(data, index=sessions)
+    open_df = close_df.copy()  # gap = 0 < 1.5 * ATR
+    high_df = close_df * 1.05
+    low_df = close_df * 0.95
+    vol_df = pd.DataFrame(100000.0, index=sessions, columns=tickers)
+
+    md = vds.MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}]
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "PASS"
+    assert result.rule_id == "signal_consistency"
+    assert "合格" in result.summary
+
+
+def test_signal_consistency_gap_pending():
+    cal = xcals.get_calendar("XTAI")
+    # Data only up to signal_date (2026-08-14), no next session 2026-08-17
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-14")
+    signal_date = "2026-08-14"
+
+    tickers = [f"T{i:02d}" for i in range(60)]
+    data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
+    close_df = pd.DataFrame(data, index=sessions)
+    open_df = close_df.copy()
+    high_df = close_df * 1.05
+    low_df = close_df * 0.95
+    vol_df = pd.DataFrame(100000.0, index=sessions, columns=tickers)
+
+    md = vds.MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}]
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "WARNING"
+    assert any("待" in d or "PENDING" in d for d in result.details) or "待" in result.summary
+
+
+def test_signal_consistency_gap_violation():
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")
+    signal_date = "2026-08-14"
+
+    tickers = [f"T{i:02d}" for i in range(60)]
+    data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
+    close_df = pd.DataFrame(data, index=sessions)
+    open_df = close_df.copy()
+    high_df = close_df * 1.02
+    low_df = close_df * 0.98
+    vol_df = pd.DataFrame(100000.0, index=sessions, columns=tickers)
+
+    # Make T00 have huge gap on 2026-08-17 open (e.g. open at 300, close on 14th was ~160, ATR ~ 3.0 -> gap 140 >> 1.5 * 3)
+    open_df.loc[sessions[-1], "T00"] = 300.0
+
+    md = vds.MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}]
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "CRITICAL"
+    assert any("gap" in d.lower() or "開盤" in d for d in result.details)
+
+
+def test_signal_consistency_ma60_violation():
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")
+    signal_date = "2026-08-14"
+
+    tickers = [f"T{i:02d}" for i in range(60)]
+    data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
+    # Make T00 close below MA60 on 2026-08-14
+    data["T00"] = [200.0] * (len(sessions) - 5) + [50.0] * 5  # MA60 ~ 180, current close = 50 < 180
+    close_df = pd.DataFrame(data, index=sessions)
+    open_df = close_df.copy()
+    high_df = close_df * 1.05
+    low_df = close_df * 0.95
+    vol_df = pd.DataFrame(100000.0, index=sessions, columns=tickers)
+
+    md = vds.MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}]
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "CRITICAL"
+
+
+def test_signal_consistency_duplicates_and_count_violation():
+    cal = xcals.get_calendar("XTAI")
+    md = vds.MarketData(close=pd.DataFrame(), open=pd.DataFrame(), high=pd.DataFrame(), low=pd.DataFrame(), volume=pd.DataFrame())
+
+    # Duplicate tickers
+    snap_dup = {"daily_signals": [{"date": "2026-08-14", "tickers": ["2330", "2330", "2454"]}]}
+    res_dup = vds.validate_signal_consistency(snap_dup, md, "2026-08-14", calendar=cal)
+    assert res_dup.severity == "CRITICAL"
+    assert "重複" in res_dup.summary or any("重複" in d for d in res_dup.details)
+
+    # 8 tickers
+    snap_8 = {"daily_signals": [{"date": "2026-08-14", "tickers": [f"233{i}" for i in range(8)]}]}
+    res_8 = vds.validate_signal_consistency(snap_8, md, "2026-08-14", calendar=cal)
+    assert res_8.severity == "CRITICAL"
+    assert "超過" in res_8.summary or "7" in res_8.summary
+
+
+def test_v85_score_matches_order_artifact():
+    # Load orders_20260814.json artifact
+    with open("artifacts/orders_20260814.json", "r", encoding="utf-8") as f:
+        artifact = json.load(f)
+    orders = artifact["orders"]
+    assert len(orders) == 7
+
+    # Verify score formula on rank 1 and 2
+    # In 60 stocks universe:
+    # Rank 1: rank_mom=1.0, rank_trend=1.0 -> 3*1.0 + 1*1.0 = 4.0
+    assert orders[0]["score"] == 4.0
+    # Rank 2: 3*(59/60) + 1*(59/60) = 3.9333...
+    assert pytest.approx(orders[1]["score"], abs=1e-4) == 4 * 59 / 60

@@ -210,16 +210,13 @@ def compute_atr20(ticker: str, market_data: MarketData) -> pd.Series:
     TR[t] = max(High[t] - Low[t], abs(High[t] - Close[t-1]), abs(Low[t] - Close[t-1]))
     ATR20[t] = SMA(TR[t-19:t])
     """
-    if (
-        ticker not in market_data.close.columns
-        or ticker not in market_data.high.columns
-        or ticker not in market_data.low.columns
-    ):
+    t_col = ticker if ticker in market_data.close.columns else (f"{ticker}.TW" if f"{ticker}.TW" in market_data.close.columns else None)
+    if t_col is None or t_col not in market_data.high.columns or t_col not in market_data.low.columns:
         return pd.Series(dtype=float)
 
-    close = market_data.close[ticker].dropna()
-    high = market_data.high[ticker].dropna()
-    low = market_data.low[ticker].dropna()
+    close = market_data.close[t_col].dropna()
+    high = market_data.high[t_col].dropna()
+    low = market_data.low[t_col].dropna()
 
     common_idx = close.index.intersection(high.index).intersection(low.index).sort_values()
     if len(common_idx) < 21:
@@ -471,7 +468,6 @@ def validate_regime_exposure(
     positions = snapshot.get("positions", {})
     details: list[str] = []
 
-    # 1. 取得 0050 系列
     col_0050 = "0050" if "0050" in market_data.close.columns else ("0050.TW" if "0050.TW" in market_data.close.columns else None)
     if col_0050 is None:
         details.append("0050 不在市場資料中，無法判定市場 regime")
@@ -485,7 +481,6 @@ def validate_regime_exposure(
         )
 
     close_0050_series = market_data.close[col_0050].dropna()
-    # 截取到 snapshot_date
     close_0050_filtered = close_0050_series[
         close_0050_series.index.map(lambda x: (x.strftime("%Y-%m-%d") if hasattr(x, "strftime") else str(x)[:10]) <= snapshot_date)
     ]
@@ -509,7 +504,6 @@ def validate_regime_exposure(
     above_20 = bool(last_0050_close > ma20_0050)
     allowed_cap = regime_cap(above_60, above_20)
 
-    # 2. 計算各部位市值
     missing_prices = []
     total_position_val = 0.0
 
@@ -606,7 +600,6 @@ def validate_sector_concentration(
             metrics={"max_sector_pct": 0.0, "sectors": {}},
         )
 
-    # 提取價格
     resolved_prices: dict[str, float] = {}
     missing_prices: list[str] = []
 
@@ -639,7 +632,6 @@ def validate_sector_concentration(
             metrics={"missing_prices": missing_prices},
         )
 
-    # 依板塊計算市值
     sector_values: dict[str, float] = {}
     total_value = 0.0
 
@@ -714,4 +706,263 @@ def validate_position_count(positions: dict[str, dict[str, Any]], limit: int = 7
         summary=summary,
         details=details,
         metrics={"position_count": count, "limit": limit},
+    )
+
+
+# =====================================================================
+# Top-7 信號一致性驗證
+# =====================================================================
+
+def compute_v85_scores(
+    market_data: MarketData,
+    top_n: int = 60,
+    lookback: int = 20,
+    ma_period: int = 60,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    精確重算 v8.5 baseline AI 綜合評分：
+    turnover20 = SMA20(close * volume)
+    universe = snapshot_date turnover20 Top-60
+    momentum20 = close[t] / close[t-20]
+    trend_bias = close[t] / SMA60(close)[t]
+    score = 3 * percentile_rank(momentum20) + 1 * percentile_rank(trend_bias)
+    """
+    close_df = market_data.close
+    vol_df = market_data.volume
+
+    if close_df.empty or vol_df.empty:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    turnover = (close_df * vol_df).rolling(lookback).mean()
+    universe_mask = (turnover.rank(axis=1, ascending=False) <= top_n) & close_df.notna() & (close_df > 0)
+
+    mom_20 = close_df / close_df.shift(20)
+    ma60 = close_df.rolling(ma_period).mean()
+    trend_bias = close_df / ma60
+
+    rank_mom = mom_20.where(universe_mask).rank(axis=1, pct=True)
+    rank_trend = trend_bias.where(universe_mask).rank(axis=1, pct=True)
+
+    scores = rank_mom * 3 + rank_trend * 1
+    return scores, ma60, universe_mask
+
+
+def validate_signal_consistency(
+    snapshot: dict[str, Any],
+    market_data: MarketData,
+    snapshot_date: str,
+    calendar: Any = None,
+) -> CheckResult:
+    """
+    驗證 snapshot_date 的 Top-7 訊號一致性：
+    1. Score >= 2.0 (基於 Top-60 流動性母體)
+    2. 股價 > 60MA
+    3. Gap < 1.5 * ATR20 (次一交易日開盤價)
+    4. 數量 <= 7、無 duplicate、排名一致
+    """
+    if calendar is None:
+        calendar = xcals.get_calendar("XTAI")
+
+    daily_signals = snapshot.get("daily_signals", [])
+    matching_signals = [s for s in daily_signals if isinstance(s, dict) and s.get("date") == snapshot_date]
+
+    if not matching_signals:
+        return CheckResult(
+            rule_id="signal_consistency",
+            title="Top-7 信號一致性",
+            severity="PASS",
+            summary="當日無信號",
+            details=[],
+            metrics={"signal_count": 0},
+        )
+
+    warnings_list: list[str] = []
+    if len(matching_signals) > 1:
+        warnings_list.append(f"存在重複日期的 daily_signals (count={len(matching_signals)})，採用最後一筆")
+
+    signal_entry = matching_signals[-1]
+    raw_tickers = signal_entry.get("tickers", [])
+    tickers = [str(t) for t in raw_tickers]
+
+    violations: list[str] = []
+    unknown_reasons: list[str] = []
+    gap_pending_tickers: list[str] = []
+    passed_tickers: list[str] = []
+
+    # 檢查數量與重複
+    count_violation = len(tickers) > 7
+    dup_violation = len(tickers) != len(set(tickers))
+
+    if count_violation:
+        violations.append(f"信號數量 {len(tickers)} 超過上限 7: {tickers}")
+    if dup_violation:
+        violations.append(f"信號包含重複代號: {tickers}")
+
+    if not tickers:
+        return CheckResult(
+            rule_id="signal_consistency",
+            title="Top-7 信號一致性",
+            severity="PASS",
+            summary="0/0 score 與 MA 合格",
+            details=warnings_list,
+            metrics={"signal_count": 0},
+        )
+
+    # 計算全市場分數
+    scores_df, ma60_df, universe_mask = compute_v85_scores(market_data, top_n=60)
+
+    # 檢查 snapshot_date 是否在 market data 中
+    snap_idx = None
+    if not scores_df.empty:
+        for idx in scores_df.index:
+            dt_str = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
+            if dt_str == snapshot_date:
+                snap_idx = idx
+                break
+
+    universe_coverage_insufficient = False
+    if snap_idx is None or len(market_data.close.columns) < 48:
+        universe_coverage_insufficient = True
+    else:
+        active_universe_count = universe_mask.loc[snap_idx].sum()
+        if active_universe_count < 48:
+            universe_coverage_insufficient = True
+
+    if universe_coverage_insufficient:
+        unknown_reasons.append("全市場流動性母體不足 (< 48 檔)，無法完整重算 Top-60 score 排名")
+
+    # 次一交易日判定
+    try:
+        snap_ts = pd.Timestamp(snapshot_date)
+        if calendar.is_session(snap_ts):
+            next_session = calendar.next_session(snap_ts)
+        else:
+            next_session = calendar.session_offset(snap_ts, 1)
+        next_session_str = next_session.strftime("%Y-%m-%d")
+    except Exception:
+        next_session = None
+        next_session_str = "下一交易日"
+
+    for ticker in tickers:
+        ticker_passed = True
+        t_col = ticker if ticker in market_data.close.columns else (f"{ticker}.TW" if f"{ticker}.TW" in market_data.close.columns else None)
+
+        # 1. 驗證 Score
+        if universe_coverage_insufficient:
+            pass
+        else:
+            in_universe = bool(universe_mask.loc[snap_idx].get(ticker, False) or universe_mask.loc[snap_idx].get(f"{ticker}.TW", False))
+            sc = None
+            if ticker in scores_df.columns:
+                sc = scores_df.loc[snap_idx, ticker]
+            elif f"{ticker}.TW" in scores_df.columns:
+                sc = scores_df.loc[snap_idx, f"{ticker}.TW"]
+
+            if not in_universe:
+                violations.append(f"{ticker} 不在當日 Top-60 流動性池")
+                ticker_passed = False
+            elif sc is None or pd.isna(sc) or sc < 2.0:
+                sc_str = f"{sc:.4f}" if sc is not None and pd.notna(sc) else "None"
+                violations.append(f"{ticker} score={sc_str} 未達門檻 2.0")
+                ticker_passed = False
+
+        # 2. 驗證 MA60
+        if t_col is None:
+            unknown_reasons.append(f"{ticker} 缺收盤價，無法判定 MA60")
+            ticker_passed = False
+        else:
+            c_series = market_data.close[t_col].dropna()
+            c_filtered = c_series[
+                c_series.index.map(lambda x: (x.strftime("%Y-%m-%d") if hasattr(x, "strftime") else str(x)[:10]) <= snapshot_date)
+            ]
+            if len(c_filtered) < 60:
+                unknown_reasons.append(f"{ticker} 收盤價資料少於 60 根，無法計算 MA60")
+                ticker_passed = False
+            else:
+                c_val = float(c_filtered.iloc[-1])
+                ma60_val = float(c_filtered.rolling(60).mean().iloc[-1])
+                if c_val <= ma60_val:
+                    violations.append(f"{ticker} 收盤價 {c_val:.2f} <= 60MA {ma60_val:.2f}")
+                    ticker_passed = False
+
+        # 3. 驗證 Gap
+        next_open = None
+        t_open_col = ticker if ticker in market_data.open.columns else (f"{ticker}.TW" if f"{ticker}.TW" in market_data.open.columns else None)
+        if t_open_col is not None and next_session is not None:
+            o_series = market_data.open[t_open_col].dropna()
+            for idx_val, val in o_series.items():
+                dt_str = idx_val.strftime("%Y-%m-%d") if hasattr(idx_val, "strftime") else str(idx_val)[:10]
+                if dt_str == next_session_str and pd.notna(val):
+                    next_open = float(val)
+                    break
+
+        if next_open is None:
+            gap_pending_tickers.append(ticker)
+        else:
+            atr_series = compute_atr20(ticker, market_data)
+            atr_val = None
+            for idx_val, val in atr_series.items():
+                dt_str = idx_val.strftime("%Y-%m-%d") if hasattr(idx_val, "strftime") else str(idx_val)[:10]
+                if dt_str == snapshot_date and pd.notna(val):
+                    atr_val = float(val)
+                    break
+
+            if atr_val is None:
+                unknown_reasons.append(f"{ticker} 缺截至 {snapshot_date} 的 ATR 資料，無法判定 Gap")
+            elif t_col is not None:
+                c_series = market_data.close[t_col].dropna()
+                c_snap_val = None
+                for idx_val, val in c_series.items():
+                    dt_str = idx_val.strftime("%Y-%m-%d") if hasattr(idx_val, "strftime") else str(idx_val)[:10]
+                    if dt_str == snapshot_date and pd.notna(val):
+                        c_snap_val = float(val)
+                        break
+                if c_snap_val is not None:
+                    gap = abs(next_open - c_snap_val)
+                    gap_limit = 1.5 * atr_val
+                    if gap >= gap_limit:
+                        violations.append(
+                            f"{ticker} 此訊號不得成交（開盤 Gap {gap:.2f} >= 1.5×ATR {gap_limit:.2f}）"
+                        )
+                        ticker_passed = False
+
+        if ticker_passed:
+            passed_tickers.append(ticker)
+
+    all_details = warnings_list + violations + unknown_reasons
+    if gap_pending_tickers:
+        all_details.append(f"Gap PENDING：{', '.join(gap_pending_tickers)} 待 {next_session_str} 開盤驗證")
+
+    if count_violation:
+        severity: Literal["PASS", "WARNING", "CRITICAL"] = "CRITICAL"
+        summary = f"信號數量 {len(tickers)} 超過上限 7"
+    elif dup_violation:
+        severity = "CRITICAL"
+        summary = "信號包含重複代號"
+    elif violations:
+        severity = "CRITICAL"
+        summary = f"訊號不符策略規則（{len(violations)} 項違規）"
+    elif universe_coverage_insufficient or unknown_reasons or gap_pending_tickers:
+        severity = "WARNING"
+        if gap_pending_tickers:
+            summary = f"{len(passed_tickers)}/{len(tickers)} score/MA 通過；Gap 待 {next_session_str} 開盤驗證"
+        else:
+            summary = "母體資料不足，無法完整判定 score/MA"
+    else:
+        severity = "PASS"
+        summary = f"{len(passed_tickers)}/{len(tickers)} score 與 MA 合格；Gap 已驗證"
+
+    return CheckResult(
+        rule_id="signal_consistency",
+        title="Top-7 信號一致性",
+        severity=severity,
+        summary=summary,
+        details=all_details,
+        metrics={
+            "total_signals": len(tickers),
+            "passed_count": len(passed_tickers),
+            "violations_count": len(violations),
+            "gap_pending_count": len(gap_pending_tickers),
+            "universe_coverage_insufficient": universe_coverage_insufficient,
+        },
     )
