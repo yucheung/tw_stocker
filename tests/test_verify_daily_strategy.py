@@ -760,3 +760,167 @@ def test_v85_score_matches_order_artifact():
     assert orders[0]["score"] == 4.0
     # Rank 2: 3*(59/60) + 1*(59/60) = 3.9333...
     assert pytest.approx(orders[1]["score"], abs=1e-4) == 4 * 59 / 60
+
+
+# ========================================================
+# Task 5 Tests: Renderer, JSON Logger & CLI Orchestration
+# ========================================================
+
+def test_non_trading_day_is_completely_silent(tmp_path, capsys):
+    fetcher = Mock()
+    log_file = tmp_path / "verify_log.json"
+    cfg = vds.VerifyConfig(log_path=str(log_file))
+
+    # 2026-08-23 is Sunday (non-trading day)
+    now_sunday = datetime(2026, 8, 23, 17, 30, tzinfo=vds.TAIPEI_TZ)
+    report = vds.run_verification(
+        config=cfg,
+        now=now_sunday,
+        fetcher=fetcher,
+    )
+    assert report == ""
+    assert capsys.readouterr() == ("", "")
+    fetcher.assert_not_called()
+    assert not log_file.exists()
+
+
+def test_render_report_all_pass():
+    context = {
+        "run_date": "2026-08-19",
+        "snapshot_date": "2026-08-19",
+        "run_id": "20260819T173012+0800",
+        "overall_status": "PASS",
+        "paper_source": "github_raw",
+        "critical_count": 0,
+        "warning_count": 0,
+        "pass_count": 6,
+    }
+    results = [
+        vds.CheckResult("tp_sl", "TP/SL 價格", "PASS", "6/6 符合 ATR 4×/3×", []),
+        vds.CheckResult("time_rule", "20 天 TIME rule", "PASS", "最長持倉 8 天", []),
+        vds.CheckResult("regime_exposure", "Regime 曝險", "PASS", "實際 66.4% <= 上限 70.0%", []),
+        vds.CheckResult("sector_concentration", "Sector concentration", "PASS", "最高半導體 41.8% <= 75.0%", []),
+        vds.CheckResult("signal_consistency", "Top-7 信號一致性", "PASS", "7/7 score 與 MA 合格；Gap 已驗證", []),
+        vds.CheckResult("position_count", "持倉數量", "PASS", "6 / 7", []),
+    ]
+    report = vds.render_report(context, results)
+    assert "📋 tw_stocker v8.5 每日策略驗證" in report
+    assert "總結：✅ PASS｜6 pass" in report
+    assert "✅ PASS TP/SL 價格｜6/6 符合 ATR 4×/3×" in report
+    assert "稽核 ID：20260819T173012+0800" in report
+
+
+def test_render_report_mixed_severity():
+    context = {
+        "run_date": "2026-08-19",
+        "snapshot_date": "2026-08-19",
+        "run_id": "20260819T173012+0800",
+        "overall_status": "CRITICAL",
+        "paper_source": "github_raw",
+        "critical_count": 2,
+        "warning_count": 2,
+        "pass_count": 2,
+    }
+    results = [
+        vds.CheckResult("tp_sl", "TP/SL 價格", "CRITICAL", "1/6 部位不符", ["2330 SL=920.00，預期 905.40"]),
+        vds.CheckResult("time_rule", "20 天 TIME rule", "PASS", "最長持倉 12 天", []),
+        vds.CheckResult("regime_exposure", "Regime 曝險", "CRITICAL", "實際 73.2% > 上限 70.0%", ["0050 close=198.40"]),
+        vds.CheckResult("sector_concentration", "Sector concentration", "WARNING", "2454 缺收盤價，無法完整判定", []),
+        vds.CheckResult("signal_consistency", "Top-7 信號一致性", "WARNING", "score/MA 通過；Gap 待 2026-08-20 開盤驗證", []),
+        vds.CheckResult("position_count", "持倉數量", "PASS", "6 / 7", []),
+    ]
+    report = vds.render_report(context, results)
+    assert "總結：🚨 CRITICAL｜2 critical / 2 warning / 2 pass" in report
+    assert "🚨 CRITICAL TP/SL 價格｜1/6 部位不符" in report
+    assert "  2330 SL=920.00，預期 905.40" in report
+
+
+def test_append_verify_log_creates_and_appends(tmp_path):
+    log_file = tmp_path / "verify_log.json"
+    context1 = {
+        "run_id": "RUN_01",
+        "run_at": "2026-08-19T17:30:00+08:00",
+        "run_date": "2026-08-19",
+        "snapshot_date": "2026-08-19",
+        "overall_status": "PASS",
+        "paper_source": "github_raw",
+        "paper_url": "https://example.com/paper.json",
+        "critical_count": 0,
+        "warning_count": 0,
+        "pass_count": 6,
+    }
+    results = [vds.CheckResult("tp_sl", "TP/SL 價格", "PASS", "all pass", [], {"checked": 1})]
+    vds.append_verify_log(str(log_file), context1, results)
+
+    assert log_file.exists()
+    data = json.loads(log_file.read_text(encoding="utf-8"))
+    assert data["schema_version"] == 1
+    assert len(data["runs"]) == 1
+    assert data["runs"][0]["run_id"] == "RUN_01"
+
+    # Append second run
+    context2 = dict(context1, run_id="RUN_02")
+    vds.append_verify_log(str(log_file), context2, results)
+    data2 = json.loads(log_file.read_text(encoding="utf-8"))
+    assert len(data2["runs"]) == 2
+    assert data2["runs"][1]["run_id"] == "RUN_02"
+
+
+def test_append_verify_log_corrupt_file_raises(tmp_path):
+    log_file = tmp_path / "verify_log.json"
+    log_file.write_text("INVALID_JSON{", encoding="utf-8")
+    context = {
+        "run_id": "RUN_01",
+        "run_at": "2026-08-19T17:30:00+08:00",
+        "run_date": "2026-08-19",
+        "snapshot_date": "2026-08-19",
+        "overall_status": "PASS",
+        "critical_count": 0,
+        "warning_count": 0,
+        "pass_count": 6,
+    }
+    with pytest.raises(RuntimeError):
+        vds.append_verify_log(str(log_file), context, [])
+
+
+def test_run_verification_orchestration_pass(tmp_path):
+    log_file = tmp_path / "verify_log.json"
+    cfg = vds.VerifyConfig(log_path=str(log_file))
+
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-19")
+    run_dt = datetime(2026, 8, 19, 17, 30, tzinfo=vds.TAIPEI_TZ)
+
+    # 60 tickers
+    tickers = ["0050", "2330", "2454", "2603"] + [f"T{i:02d}" for i in range(56)]
+    data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
+    close_df = pd.DataFrame(data, index=sessions)
+    open_df = close_df.copy()
+    high_df = close_df * 1.05
+    low_df = close_df * 0.95
+    vol_df = pd.DataFrame(100000.0, index=sessions, columns=tickers)
+    md = vds.MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
+
+    snapshot = {
+        "capital": 100000.0,
+        "positions": {},
+        "closed_trades": [],
+        "equity_curve": [{"date": "2026-08-19", "equity": 100000.0}],
+        "daily_signals": [{"date": "2026-08-19", "tickers": tickers[:7]}],
+    }
+
+    mock_fetcher = Mock(return_value=json.dumps(snapshot))
+    mock_market_fetcher = Mock(return_value=md)
+
+    report = vds.run_verification(
+        config=cfg,
+        now=run_dt,
+        fetcher=mock_fetcher,
+        market_fetcher=mock_market_fetcher,
+        calendar=cal,
+    )
+    assert "📋 tw_stocker v8.5 每日策略驗證" in report
+    assert log_file.exists()
+    log_data = json.loads(log_file.read_text(encoding="utf-8"))
+    assert len(log_data["runs"]) == 1
+    assert len(log_data["runs"][0]["checks"]) == 6

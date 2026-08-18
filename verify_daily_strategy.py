@@ -30,6 +30,18 @@ except ImportError:
     def classify_sector(ticker: str) -> str:
         return "traditional"
 
+try:
+    from strategy.universe import get_twse_common_stocks
+except ImportError:
+    def get_twse_common_stocks() -> list[dict[str, Any]]:
+        # Fallback to local data/twse_listed_common_stocks.json if exists
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "twse_listed_common_stocks.json")
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                return d.get("stocks", [])
+        return []
+
 DEFAULT_PAPER_URL = "https://raw.githubusercontent.com/yucheung/tw_stocker/main/paper_equity.json"
 DEFAULT_LOCAL_PAPER_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "paper_equity.json"
@@ -38,6 +50,12 @@ DEFAULT_LOG_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "verify_log.json"
 )
 TAIPEI_TZ = timezone(timedelta(hours=8))
+
+SEVERITY_EMOJI: dict[str, str] = {
+    "PASS": "✅ PASS",
+    "WARNING": "⚠️ WARNING",
+    "CRITICAL": "🚨 CRITICAL",
+}
 
 
 @dataclass(frozen=True)
@@ -57,6 +75,14 @@ class MarketData:
     high: pd.DataFrame
     low: pd.DataFrame
     volume: pd.DataFrame
+
+
+@dataclass
+class VerifyConfig:
+    paper_url: str = DEFAULT_PAPER_URL
+    paper_local_path: str = DEFAULT_LOCAL_PAPER_PATH
+    log_path: str = DEFAULT_LOG_PATH
+    auto_adjust: bool = False
 
 
 def is_trading_day(date_or_dt: str | datetime | None = None, calendar: Any = None) -> bool:
@@ -811,7 +837,6 @@ def validate_signal_consistency(
     # 計算全市場分數
     scores_df, ma60_df, universe_mask = compute_v85_scores(market_data, top_n=60)
 
-    # 檢查 snapshot_date 是否在 market data 中
     snap_idx = None
     if not scores_df.empty:
         for idx in scores_df.index:
@@ -831,7 +856,6 @@ def validate_signal_consistency(
     if universe_coverage_insufficient:
         unknown_reasons.append("全市場流動性母體不足 (< 48 檔)，無法完整重算 Top-60 score 排名")
 
-    # 次一交易日判定
     try:
         snap_ts = pd.Timestamp(snapshot_date)
         if calendar.is_session(snap_ts):
@@ -966,3 +990,426 @@ def validate_signal_consistency(
             "universe_coverage_insufficient": universe_coverage_insufficient,
         },
     )
+
+
+# =====================================================================
+# 下載與資料整合
+# =====================================================================
+
+def fetch_market_data(
+    tickers: list[str],
+    start_date: str,
+    end_date: str,
+    fetcher: Callable[..., MarketData] | None = None,
+) -> MarketData:
+    """
+    使用 yfinance 批次取得指定 ticker 集合的 OHLCV 日 K 資料。
+    強制 auto_adjust=False, progress=False。
+    """
+    if fetcher is not None:
+        return fetcher(tickers, start_date=start_date, end_date=end_date)
+
+    if not tickers:
+        empty = pd.DataFrame()
+        return MarketData(close=empty, open=empty, high=empty, low=empty, volume=empty)
+
+    tw_symbols = [f"{t}.TW" if not t.endswith((".TW", ".TWO")) else t for t in tickers]
+    
+    # 批次下載
+    batch_size = 100
+    all_dfs = []
+    for i in range(0, len(tw_symbols), batch_size):
+        batch = tw_symbols[i : i + batch_size]
+        for retry in range(3):
+            try:
+                df = yf.download(
+                    batch,
+                    start=start_date,
+                    end=end_date,
+                    auto_adjust=False,
+                    progress=False,
+                )
+                if not df.empty:
+                    all_dfs.append(df)
+                break
+            except Exception:
+                if retry < 2:
+                    time.sleep(1.0 * (retry + 1))
+
+    if not all_dfs:
+        empty = pd.DataFrame()
+        return MarketData(close=empty, open=empty, high=empty, low=empty, volume=empty)
+
+    merged = all_dfs[0] if len(all_dfs) == 1 else pd.concat(all_dfs, axis=1)
+
+    def _extract(field_name: str) -> pd.DataFrame:
+        if merged.empty:
+            return pd.DataFrame()
+        if isinstance(merged.columns, pd.MultiIndex):
+            try:
+                ext = merged.xs(field_name, level=0, axis=1)
+            except KeyError:
+                return pd.DataFrame(index=merged.index)
+        elif field_name in merged.columns:
+            ext = merged[[field_name]]
+        else:
+            return pd.DataFrame(index=merged.index)
+        ext = ext.copy()
+        ext.columns = [str(c).replace(".TW", "").replace(".TWO", "") for c in ext.columns]
+        if ext.columns.duplicated().any():
+            ext = ext.T.groupby(level=0).first().T
+        return ext
+
+    close_df = _extract("Close")
+    open_df = _extract("Open")
+    high_df = _extract("High")
+    low_df = _extract("Low")
+    vol_df = _extract("Volume")
+
+    # 檢查缺資料之 ticker，重試 .TWO
+    missing = [t for t in tickers if t not in close_df.columns or close_df[t].dropna().empty]
+    if missing:
+        two_symbols = [f"{t}.TWO" for t in missing]
+        for retry in range(3):
+            try:
+                two_df = yf.download(
+                    two_symbols,
+                    start=start_date,
+                    end=end_date,
+                    auto_adjust=False,
+                    progress=False,
+                )
+                if not two_df.empty:
+                    for f_name, target_df in [
+                        ("Close", close_df),
+                        ("Open", open_df),
+                        ("High", high_df),
+                        ("Low", low_df),
+                        ("Volume", vol_df),
+                    ]:
+                        if isinstance(two_df.columns, pd.MultiIndex) and f_name in two_df.columns.levels[0]:
+                            t_ext = two_df.xs(f_name, level=0, axis=1).copy()
+                            t_ext.columns = [str(c).replace(".TWO", "") for c in t_ext.columns]
+                            for col in t_ext.columns:
+                                target_df[col] = t_ext[col]
+                break
+            except Exception:
+                if retry < 2:
+                    time.sleep(1.0 * (retry + 1))
+
+    # Close 做 1 天 forward-fill
+    close_df = close_df.ffill(limit=1)
+
+    return MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
+
+
+# =====================================================================
+# 報告渲染、Log 記錄與流程串接
+# =====================================================================
+
+def render_report(context: dict[str, Any], results: list[CheckResult]) -> str:
+    """
+    格式化產出 Telegram 可直接推播的純文字報告。
+    """
+    run_date = context.get("run_date", "")
+    snapshot_date = context.get("snapshot_date", "")
+    run_id = context.get("run_id", "")
+    overall_status = context.get("overall_status", "PASS")
+    paper_source = context.get("paper_source", "github_raw")
+
+    crit_cnt = context.get("critical_count", 0)
+    warn_cnt = context.get("warning_count", 0)
+    pass_cnt = context.get("pass_count", 0)
+
+    if overall_status == "PASS":
+        summary_line = f"總結：✅ PASS｜{pass_cnt} pass"
+    else:
+        parts = []
+        if crit_cnt:
+            parts.append(f"{crit_cnt} critical")
+        if warn_cnt:
+            parts.append(f"{warn_cnt} warning")
+        if pass_cnt:
+            parts.append(f"{pass_cnt} pass")
+        emoji_status = SEVERITY_EMOJI.get(overall_status, overall_status)
+        summary_line = f"總結：{emoji_status}｜{' / '.join(parts)}"
+
+    lines = [
+        "📋 tw_stocker v8.5 每日策略驗證",
+        f"日期：{run_date}（snapshot: {snapshot_date}）",
+        summary_line,
+        "",
+    ]
+
+    for r in results:
+        emoji = SEVERITY_EMOJI.get(r.severity, r.severity)
+        lines.append(f"{emoji} {r.title}｜{r.summary}")
+        for d in r.details:
+            lines.append(f"  {d}")
+
+    lines.append("")
+    source_desc = "GitHub raw" if paper_source == "github_raw" else "本地 paper_equity.json"
+    lines.append(f"資料來源：{source_desc} + yfinance（未調整日 K）")
+    lines.append(f"稽核 ID：{run_id}")
+
+    return "\n".join(lines)
+
+
+def append_verify_log(path: str, context: dict[str, Any], results: list[CheckResult]) -> None:
+    """
+    使用暫存檔 + os.replace 原子性追加驗證紀錄至 verify_log.json。
+    """
+    data: dict[str, Any] = {"schema_version": 1, "runs": []}
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                if content:
+                    loaded = json.loads(content)
+                    if isinstance(loaded, dict) and "runs" in loaded:
+                        data = loaded
+                    else:
+                        raise ValueError("Invalid schema: missing 'runs' field")
+        except Exception as e:
+            raise RuntimeError(f"Failed to read existing verify_log.json at {path}: {e}") from e
+
+    run_entry = {
+        "run_id": context.get("run_id"),
+        "run_at": context.get("run_at"),
+        "run_date": context.get("run_date"),
+        "snapshot_date": context.get("snapshot_date"),
+        "overall_status": context.get("overall_status"),
+        "source": {
+            "paper": context.get("paper_source", "github_raw"),
+            "paper_url": context.get("paper_url", DEFAULT_PAPER_URL),
+            "market": "yfinance",
+            "auto_adjust": False,
+        },
+        "summary": {
+            "critical": context.get("critical_count", 0),
+            "warning": context.get("warning_count", 0),
+            "pass": context.get("pass_count", 0),
+        },
+        "checks": [
+            {
+                "rule_id": r.rule_id,
+                "title": r.title,
+                "severity": r.severity,
+                "summary": r.summary,
+                "details": r.details,
+                "metrics": r.metrics,
+            }
+            for r in results
+        ],
+    }
+
+    data["runs"].append(run_entry)
+
+    log_dir = os.path.dirname(os.path.abspath(path)) or "."
+    os.makedirs(log_dir, exist_ok=True)
+    temp_path = os.path.join(log_dir, f".verify_log_{os.getpid()}_{time.time_ns()}.tmp")
+
+    try:
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+    except Exception as e:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+        raise RuntimeError(f"Failed to write verify log atomically to {path}: {e}") from e
+
+
+def run_verification(
+    config: VerifyConfig | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[[str], str | bytes | dict] | None = None,
+    market_fetcher: Callable[..., MarketData] | None = None,
+    calendar: Any = None,
+) -> str:
+    """
+    執行完整的每日策略驗證流程：
+    1. 交易日 gate
+    2. 載入 paper snapshot
+    3. 下載市場資料
+    4. 執行 6 項驗證器
+    5. 產出報告與寫入 log
+    """
+    if config is None:
+        config = VerifyConfig()
+
+    if now is None:
+        now = datetime.now(TAIPEI_TZ)
+
+    if calendar is None:
+        calendar = xcals.get_calendar("XTAI")
+
+    run_date = now.strftime("%Y-%m-%d")
+
+    # 1. 交易日檢查（非交易日完全靜默）
+    if not is_trading_day(now, calendar=calendar):
+        return ""
+
+    run_id = now.strftime("%Y%m%dT%H%M%S%z")
+    run_at = now.isoformat()
+
+    # 2. 載入 paper snapshot
+    snapshot, paper_source, fetch_warnings = load_paper_snapshot(
+        url=config.paper_url,
+        local_path=config.paper_local_path,
+        fetcher=fetcher,
+    )
+
+    is_valid, snapshot_date, schema_errors, schema_warnings = validate_snapshot(snapshot)
+    if snapshot_date is None:
+        snapshot_date = run_date
+
+    positions = snapshot.get("positions", {}) if isinstance(snapshot.get("positions"), dict) else {}
+    daily_signals = snapshot.get("daily_signals", []) if isinstance(snapshot.get("daily_signals"), list) else []
+
+    # 3. 確定需抓取的 tickers
+    needed_tickers: set[str] = {"0050"}
+    for t in positions.keys():
+        needed_tickers.add(str(t))
+
+    for s in daily_signals:
+        if isinstance(s, dict) and s.get("date") == snapshot_date:
+            for t in s.get("tickers", []):
+                needed_tickers.add(str(t))
+
+    # 加入 TWSE 全市場股票以供 Top-60 universe 重算
+    twse_stocks = get_twse_common_stocks()
+    for stock in twse_stocks:
+        code = stock.get("code") if isinstance(stock, dict) else str(stock)
+        if code:
+            needed_tickers.add(str(code))
+
+    # 確定日期範圍：至少 90 個交易日
+    try:
+        sessions_back = calendar.sessions_in_range(
+            (pd.Timestamp(snapshot_date) - pd.Timedelta(days=160)).strftime("%Y-%m-%d"),
+            (pd.Timestamp(snapshot_date) + pd.Timedelta(days=5)).strftime("%Y-%m-%d"),
+        )
+        start_date = sessions_back[0].strftime("%Y-%m-%d")
+        end_date = (pd.Timestamp(snapshot_date) + pd.Timedelta(days=2)).strftime("%Y-%m-%d")
+    except Exception:
+        start_date = (pd.Timestamp(snapshot_date) - pd.Timedelta(days=160)).strftime("%Y-%m-%d")
+        end_date = (pd.Timestamp(snapshot_date) + pd.Timedelta(days=2)).strftime("%Y-%m-%d")
+
+    # 4. 下載市場資料
+    market_data = fetch_market_data(
+        list(needed_tickers),
+        start_date=start_date,
+        end_date=end_date,
+        fetcher=market_fetcher,
+    )
+
+    # 5. 執行 6 項驗證器
+    results: list[CheckResult] = []
+
+    # Rule 1: TP/SL 價格
+    try:
+        r_tp_sl = validate_tp_sl(positions, market_data, calendar=calendar)
+    except Exception as e:
+        r_tp_sl = CheckResult("tp_sl", "TP/SL 價格", "WARNING", f"驗證器執行異常: {e}", [str(e)])
+    results.append(r_tp_sl)
+
+    # Rule 2: 20 天 TIME rule
+    try:
+        r_time = validate_time_rule(positions, snapshot_date, calendar=calendar)
+    except Exception as e:
+        r_time = CheckResult("time_rule", "20 天 TIME rule", "WARNING", f"驗證器執行異常: {e}", [str(e)])
+    results.append(r_time)
+
+    # Rule 3: Regime 曝險
+    try:
+        r_regime = validate_regime_exposure(snapshot, market_data, snapshot_date)
+    except Exception as e:
+        r_regime = CheckResult("regime_exposure", "Regime 曝險", "WARNING", f"驗證器執行異常: {e}", [str(e)])
+    results.append(r_regime)
+
+    # Rule 4: Sector concentration
+    try:
+        r_sector = validate_sector_concentration(positions, market_data, snapshot_date)
+    except Exception as e:
+        r_sector = CheckResult("sector_concentration", "Sector concentration", "WARNING", f"驗證器執行異常: {e}", [str(e)])
+    results.append(r_sector)
+
+    # Rule 5: Top-7 信號一致性
+    try:
+        r_signal = validate_signal_consistency(snapshot, market_data, snapshot_date, calendar=calendar)
+    except Exception as e:
+        r_signal = CheckResult("signal_consistency", "Top-7 信號一致性", "WARNING", f"驗證器執行異常: {e}", [str(e)])
+    results.append(r_signal)
+
+    # Rule 6: 持倉數量
+    try:
+        r_count = validate_position_count(positions, limit=7)
+    except Exception as e:
+        r_count = CheckResult("position_count", "持倉數量", "WARNING", f"驗證器執行異常: {e}", [str(e)])
+    results.append(r_count)
+
+    # 若 snapshot stale，追加警告或標記
+    if snapshot_date != run_date:
+        # Check if any rule needs stale warning
+        results[0] = CheckResult(
+            results[0].rule_id,
+            results[0].title,
+            results[0].severity,
+            results[0].summary,
+            results[0].details + [f"注意：snapshot_date ({snapshot_date}) != run_date ({run_date}) (stale snapshot)"],
+            results[0].metrics,
+        )
+
+    # 6. 計算總體狀態
+    crit_cnt = sum(1 for r in results if r.severity == "CRITICAL")
+    warn_cnt = sum(1 for r in results if r.severity == "WARNING")
+    pass_cnt = sum(1 for r in results if r.severity == "PASS")
+
+    if crit_cnt > 0:
+        overall_status: Literal["PASS", "WARNING", "CRITICAL"] = "CRITICAL"
+    elif warn_cnt > 0:
+        overall_status = "WARNING"
+    else:
+        overall_status = "PASS"
+
+    context = {
+        "run_id": run_id,
+        "run_at": run_at,
+        "run_date": run_date,
+        "snapshot_date": snapshot_date,
+        "overall_status": overall_status,
+        "paper_source": paper_source,
+        "paper_url": config.paper_url,
+        "critical_count": crit_cnt,
+        "warning_count": warn_cnt,
+        "pass_count": pass_cnt,
+    }
+
+    # 7. 渲染報告與寫入 Log
+    report = render_report(context, results)
+    append_verify_log(config.log_path, context, results)
+
+    return report
+
+
+def main() -> int:
+    """
+    CLI 進入點。
+    """
+    try:
+        report = run_verification()
+        if report:
+            print(report)
+        return 0
+    except Exception as e:
+        sys.stderr.write(f"Fatal operational error in verify_daily_strategy: {e}\n")
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
