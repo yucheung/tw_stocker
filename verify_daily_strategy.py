@@ -785,7 +785,12 @@ def validate_signal_consistency(
     驗證 snapshot_date 的 Top-7 訊號一致性：
     1. Score >= 2.0 (基於 Top-60 流動性母體)
     2. 股價 > 60MA
-    3. Gap < 1.5 * ATR20 (次一交易日開盤價)
+    3. 進場執行模型（signal_close_limit_next_open_v1）：
+       limit = 訊號日 (snapshot_date) 收盤價；
+       next_open <= limit -> 預期 FILLED；next_open > limit -> 預期於 09:30 CANCELLED_OPEN_ABOVE_LIMIT；
+       缺 next_open -> WARNING / indeterminate。
+       daily_signals 本身不等於成交；若 order_events 或 positions 能證明實際結果與預期矛盾
+       （尤其 entry > limit 的不可能成交），才判定為 CRITICAL。
     4. 數量 <= 7、無 duplicate、排名與合格候選一致
     """
     if calendar is None:
@@ -821,9 +826,18 @@ def validate_signal_consistency(
         )
     tickers = [str(t).replace(".TW", "").replace(".TWO", "") for t in raw_tickers]
 
+    order_events = snapshot.get("order_events", [])
+    if not isinstance(order_events, list):
+        order_events = []
+    all_positions = snapshot.get("positions", {})
+    if not isinstance(all_positions, dict):
+        all_positions = {}
+
     violations: list[str] = []
     unknown_reasons: list[str] = []
-    gap_pending_tickers: list[str] = []
+    missing_open_tickers: list[str] = []
+    expected_fills: list[str] = []
+    expected_cancellations: list[str] = []
     passed_tickers: list[str] = []
 
     # 檢查數量與重複
@@ -972,7 +986,9 @@ def validate_signal_consistency(
                     violations.append(f"{ticker} 收盤價 {c_val:.2f} <= 60MA {ma60_val:.2f}")
                     ticker_passed = False
 
-        # 3. 驗證 Gap
+        # 3. 驗證進場執行模型（signal_close_limit_next_open_v1）
+        # limit = 訊號日 (snapshot_date) 收盤價；next_open <= limit -> 預期 FILLED，
+        # next_open > limit -> 預期於 09:30 CANCELLED_OPEN_ABOVE_LIMIT。
         next_open = None
         t_open_col = ticker if ticker in market_data.open.columns else (f"{ticker}.TW" if f"{ticker}.TW" in market_data.open.columns else (f"{ticker}.TWO" if f"{ticker}.TWO" in market_data.open.columns else None))
         if t_open_col is not None and next_session is not None:
@@ -983,33 +999,79 @@ def validate_signal_consistency(
                     next_open = float(val)
                     break
 
-        if next_open is None:
-            gap_pending_tickers.append(ticker)
-        else:
-            atr_series = compute_atr20(ticker, market_data)
-            atr_val = None
-            for idx_val, val in atr_series.items():
+        limit_price = None
+        if t_col is not None:
+            c_series = market_data.close[t_col].dropna()
+            for idx_val, val in c_series.items():
                 dt_str = idx_val.strftime("%Y-%m-%d") if hasattr(idx_val, "strftime") else str(idx_val)[:10]
                 if dt_str == snapshot_date and pd.notna(val):
-                    atr_val = float(val)
+                    limit_price = float(val)
                     break
 
-            if atr_val is None:
-                unknown_reasons.append(f"{ticker} 缺截至 {snapshot_date} 的 ATR 資料，無法判定 Gap")
-            elif t_col is not None:
-                c_series = market_data.close[t_col].dropna()
-                c_snap_val = None
-                for idx_val, val in c_series.items():
-                    dt_str = idx_val.strftime("%Y-%m-%d") if hasattr(idx_val, "strftime") else str(idx_val)[:10]
-                    if dt_str == snapshot_date and pd.notna(val):
-                        c_snap_val = float(val)
-                        break
-                if c_snap_val is not None:
-                    gap = abs(next_open - c_snap_val)
-                    gap_limit = 1.5 * atr_val
-                    if gap >= gap_limit:
+        if next_open is None:
+            missing_open_tickers.append(ticker)
+        elif limit_price is None:
+            unknown_reasons.append(f"{ticker} 缺 {snapshot_date} 收盤價，無法判定限價")
+        else:
+            tolerance = max(0.01, limit_price * 0.001)
+            if next_open <= limit_price:
+                expected_status = "FILLED"
+                expected_fills.append(ticker)
+            else:
+                expected_status = "CANCELLED_OPEN_ABOVE_LIMIT"
+                expected_cancellations.append(ticker)
+
+            # daily_signals 本身不等於成交；只有 order_events/positions 能證明實際結果，
+            # 與預期矛盾（尤其 entry > limit 的不可能成交）才判定為 CRITICAL。
+            matched_events = [
+                e for e in order_events
+                if isinstance(e, dict) and e.get("ticker") == ticker and e.get("signal_date") == snapshot_date
+            ]
+            event = matched_events[-1] if matched_events else None
+            pos = all_positions.get(ticker)
+            pos_matches_execution = (
+                isinstance(pos, dict) and str(pos.get("entry_date", "")).strip() == next_session_str
+            )
+
+            if event is not None:
+                ev_status = event.get("status")
+                if ev_status == "FILLED" and expected_status == "CANCELLED_OPEN_ABOVE_LIMIT":
+                    violations.append(
+                        f"{ticker} 預期應於 {next_session_str} 09:30 撤單（open {next_open:.2f} > limit {limit_price:.2f}），"
+                        f"但 order_events 記為 FILLED（entry > limit，不可能成交）"
+                    )
+                    ticker_passed = False
+                ev_fill = event.get("fill_price")
+                if ev_fill is not None:
+                    try:
+                        ev_fill_f = float(ev_fill)
+                    except (TypeError, ValueError):
+                        ev_fill_f = None
+                    if ev_fill_f is not None and ev_fill_f > limit_price + tolerance:
                         violations.append(
-                            f"{ticker} 此訊號不得成交（開盤 Gap {gap:.2f} >= 1.5×ATR {gap_limit:.2f}）"
+                            f"{ticker} order_events fill_price={ev_fill_f:.2f} > limit={limit_price:.2f}（entry > limit，不可能成交）"
+                        )
+                        ticker_passed = False
+            elif pos_matches_execution:
+                try:
+                    entry_f = float(pos.get("entry"))
+                except (TypeError, ValueError):
+                    entry_f = None
+                if entry_f is not None:
+                    if entry_f > limit_price + tolerance:
+                        violations.append(
+                            f"{ticker} 部位 entry={entry_f:.2f} > limit={limit_price:.2f}（entry > limit，不可能成交）"
+                        )
+                        ticker_passed = False
+                    elif expected_status == "CANCELLED_OPEN_ABOVE_LIMIT":
+                        violations.append(
+                            f"{ticker} 預期應於 {next_session_str} 09:30 撤單（open {next_open:.2f} > limit {limit_price:.2f}），"
+                            f"但已建倉 entry={entry_f:.2f}"
+                        )
+                        ticker_passed = False
+                    elif abs(entry_f - next_open) > tolerance:
+                        violations.append(
+                            f"{ticker} 部位 entry={entry_f:.2f} 與次日開盤 {next_open:.2f} 不符"
                         )
                         ticker_passed = False
 
@@ -1017,8 +1079,10 @@ def validate_signal_consistency(
             passed_tickers.append(ticker)
 
     all_details = warnings_list + violations + unknown_reasons
-    if gap_pending_tickers:
-        all_details.append(f"Gap PENDING：{', '.join(gap_pending_tickers)} 待 {next_session_str} 開盤驗證")
+    if missing_open_tickers:
+        all_details.append(
+            f"開盤成交結果 PENDING：{', '.join(missing_open_tickers)} 待 {next_session_str} 開盤驗證"
+        )
 
     if count_violation:
         severity: Literal["PASS", "WARNING", "CRITICAL"] = "CRITICAL"
@@ -1031,19 +1095,19 @@ def validate_signal_consistency(
         summary = f"訊號不符策略規則（{len(violations)} 項違規）"
     elif universe_coverage_insufficient:
         severity = "WARNING"
-        if gap_pending_tickers:
-            summary = f"母體資料不足 (< 48 檔或 coverage < 70%)；Gap 待 {next_session_str} 開盤驗證"
+        if missing_open_tickers:
+            summary = f"母體資料不足 (< 48 檔或 coverage < 70%)；開盤成交結果待 {next_session_str} 驗證"
         else:
             summary = "母體資料不足 (< 48 檔或 coverage < 70%)，無法完整判定 score/MA"
-    elif unknown_reasons or gap_pending_tickers:
+    elif unknown_reasons or missing_open_tickers:
         severity = "WARNING"
-        if gap_pending_tickers:
-            summary = f"{len(passed_tickers)}/{len(tickers)} score/MA 通過；Gap 待 {next_session_str} 開盤驗證"
+        if missing_open_tickers:
+            summary = f"{len(passed_tickers)}/{len(tickers)} score/MA 通過；開盤成交結果待 {next_session_str} 驗證"
         else:
             summary = "部分資料不足，無法完整判定"
     else:
         severity = "PASS"
-        summary = f"{len(passed_tickers)}/{len(tickers)} score 與 MA 合格；排名一致；Gap 已驗證"
+        summary = f"{len(passed_tickers)}/{len(tickers)} score 與 MA 合格；排名一致；限價成交結果已驗證"
 
     return CheckResult(
         rule_id="signal_consistency",
@@ -1055,7 +1119,10 @@ def validate_signal_consistency(
             "total_signals": len(tickers),
             "passed_count": len(passed_tickers),
             "violations_count": len(violations),
-            "gap_pending_count": len(gap_pending_tickers),
+            "expected_fills": expected_fills,
+            "expected_cancellations": expected_cancellations,
+            "missing_next_open_count": len(missing_open_tickers),
+            "indeterminate": bool(missing_open_tickers),
             "universe_coverage_insufficient": universe_coverage_insufficient,
             "active_universe_count": active_universe_count,
             "download_coverage": download_coverage,

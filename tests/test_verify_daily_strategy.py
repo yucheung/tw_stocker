@@ -650,20 +650,27 @@ def test_compute_v85_scores():
     assert last_scores["stock_00"] > last_scores["stock_59"]
 
 
-def test_signal_consistency_pass_with_matured_gap():
-    cal = xcals.get_calendar("XTAI")
-    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")  # includes next session 2026-08-17
-    signal_date = "2026-08-14"
-
+def _build_limit_order_universe(cal, end_session="2026-08-17"):
+    """60-ticker universe where score/MA60 rank T00 highest; open == close by
+    default so callers can override a specific ticker's next-session open to
+    control the FILLED / CANCELLED_OPEN_ABOVE_LIMIT decision precisely."""
+    sessions = cal.sessions_in_range("2026-05-01", end_session)
     tickers = [f"T{i:02d}" for i in range(60)]
     data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
     close_df = pd.DataFrame(data, index=sessions)
-    open_df = close_df.copy()  # gap = 0 < 1.5 * ATR
+    open_df = close_df.copy()
     high_df = close_df * 1.05
     low_df = close_df * 0.95
     vol_df = pd.DataFrame(100000.0, index=sessions, columns=tickers)
-
     md = vds.MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
+    return sessions, md
+
+
+def test_signal_consistency_pass_with_matured_gap():
+    cal = xcals.get_calendar("XTAI")
+    sessions, md = _build_limit_order_universe(cal)  # includes next session 2026-08-17
+    signal_date = "2026-08-14"
+
     snapshot = {
         "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}]
     }
@@ -674,21 +681,12 @@ def test_signal_consistency_pass_with_matured_gap():
     assert "合格" in result.summary
 
 
-def test_signal_consistency_gap_pending():
+def test_missing_next_open_is_indeterminate_warning():
     cal = xcals.get_calendar("XTAI")
     # Data only up to signal_date (2026-08-14), no next session 2026-08-17
-    sessions = cal.sessions_in_range("2026-05-01", "2026-08-14")
+    sessions, md = _build_limit_order_universe(cal, end_session="2026-08-14")
     signal_date = "2026-08-14"
 
-    tickers = [f"T{i:02d}" for i in range(60)]
-    data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
-    close_df = pd.DataFrame(data, index=sessions)
-    open_df = close_df.copy()
-    high_df = close_df * 1.05
-    low_df = close_df * 0.95
-    vol_df = pd.DataFrame(100000.0, index=sessions, columns=tickers)
-
-    md = vds.MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
     snapshot = {
         "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}]
     }
@@ -696,32 +694,97 @@ def test_signal_consistency_gap_pending():
     result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
     assert result.severity == "WARNING"
     assert any("待" in d or "PENDING" in d for d in result.details) or "待" in result.summary
+    assert result.metrics["indeterminate"] is True
 
 
-def test_signal_consistency_gap_violation():
+def test_next_open_below_signal_close_is_expected_fill():
     cal = xcals.get_calendar("XTAI")
-    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")
+    sessions, md = _build_limit_order_universe(cal)
     signal_date = "2026-08-14"
 
-    tickers = [f"T{i:02d}" for i in range(60)]
-    data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
-    close_df = pd.DataFrame(data, index=sessions)
-    open_df = close_df.copy()
-    high_df = close_df * 1.02
-    low_df = close_df * 0.98
-    vol_df = pd.DataFrame(100000.0, index=sessions, columns=tickers)
+    limit_price = float(md.close.loc[pd.Timestamp(signal_date), "T00"])
+    md.open.loc[sessions[-1], "T00"] = limit_price - 5.0  # next_open < limit -> expected FILLED
 
-    # Make T00 have huge gap on 2026-08-17 open (e.g. open at 300, close on 14th was ~160, ATR ~ 3.0 -> gap 140 >> 1.5 * 3)
-    open_df.loc[sessions[-1], "T00"] = 300.0
-
-    md = vds.MarketData(close=close_df, open=open_df, high=high_df, low=low_df, volume=vol_df)
     snapshot = {
         "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}]
     }
 
     result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity != "CRITICAL"
+    assert "T00" in result.metrics["expected_fills"]
+
+
+def test_next_open_above_limit_is_expected_cancel_not_violation():
+    cal = xcals.get_calendar("XTAI")
+    sessions, md = _build_limit_order_universe(cal)
+    signal_date = "2026-08-14"
+
+    limit_price = float(md.close.loc[pd.Timestamp(signal_date), "T00"])
+    md.open.loc[sessions[-1], "T00"] = limit_price + 140.0  # next_open > limit -> expected cancel, not a violation
+
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}]
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity != "CRITICAL"
+    assert "T00" in result.metrics["expected_cancellations"]
+
+
+def test_position_above_limit_is_critical_impossible_fill():
+    cal = xcals.get_calendar("XTAI")
+    sessions, md = _build_limit_order_universe(cal)
+    signal_date = "2026-08-14"
+    next_session_str = sessions[-1].strftime("%Y-%m-%d")
+
+    limit_price = float(md.close.loc[pd.Timestamp(signal_date), "T00"])
+    fill_above_limit = limit_price + 50.0
+    md.open.loc[sessions[-1], "T00"] = fill_above_limit  # market says open > limit -> should cancel
+
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}],
+        # ...but a position exists proving it filled anyway, above the limit.
+        "positions": {
+            "T00": {
+                "entry": fill_above_limit,
+                "tp": fill_above_limit + 200.0,
+                "sl": fill_above_limit - 50.0,
+                "entry_date": next_session_str,
+                "shares": 100,
+                "day_count": 0,
+            }
+        },
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
     assert result.severity == "CRITICAL"
-    assert any("gap" in d.lower() or "開盤" in d for d in result.details)
+    assert "entry > limit" in " ".join(result.details)
+
+
+def test_order_event_filled_despite_open_above_limit_is_critical():
+    cal = xcals.get_calendar("XTAI")
+    sessions, md = _build_limit_order_universe(cal)
+    signal_date = "2026-08-14"
+
+    limit_price = float(md.close.loc[pd.Timestamp(signal_date), "T00"])
+    fill_above_limit = limit_price + 50.0
+    md.open.loc[sessions[-1], "T00"] = fill_above_limit
+
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}],
+        "order_events": [
+            {
+                "ticker": "T00",
+                "signal_date": signal_date,
+                "status": "FILLED",
+                "fill_price": fill_above_limit,
+            }
+        ],
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "CRITICAL"
+    assert "entry > limit" in " ".join(result.details)
 
 
 def test_signal_consistency_ma60_violation():
