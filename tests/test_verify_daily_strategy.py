@@ -819,6 +819,7 @@ def test_expected_filled_but_order_event_cancelled_warns():
     cal = xcals.get_calendar("XTAI")
     sessions, md = _build_limit_order_universe(cal)
     signal_date = "2026-08-14"
+    next_session_str = sessions[-1].strftime("%Y-%m-%d")
 
     limit_price = float(md.close.loc[pd.Timestamp(signal_date), "T00"])
     actual_open = limit_price - 2.0
@@ -830,16 +831,47 @@ def test_expected_filled_but_order_event_cancelled_warns():
             {
                 "ticker": "T00",
                 "signal_date": signal_date,
+                "execution_date": next_session_str,
                 "status": "CANCELLED_NO_CAPACITY",
                 "fill_price": None,
             }
         ],
     }
 
-    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    # execution_date <= today (開盤後驗證) -> 應產生 WARNING
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal, today=next_session_str)
     assert result.severity == "WARNING"
     assert "預期應成交" in " ".join(result.details)
     assert "CANCELLED_NO_CAPACITY" in " ".join(result.details)
+
+
+def test_expected_filled_reverse_check_skipped_when_execution_date_in_future():
+    cal = xcals.get_calendar("XTAI")
+    sessions, md = _build_limit_order_universe(cal)
+    signal_date = "2026-08-14"
+    next_session_str = sessions[-1].strftime("%Y-%m-%d")
+
+    limit_price = float(md.close.loc[pd.Timestamp(signal_date), "T00"])
+    actual_open = limit_price - 2.0
+    md.open.loc[sessions[-1], "T00"] = actual_open  # open <= limit -> expected FILLED
+
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}],
+        "order_events": [
+            {
+                "ticker": "T00",
+                "signal_date": signal_date,
+                "execution_date": next_session_str,
+                "status": "CANCELLED_NO_CAPACITY",
+                "fill_price": None,
+            }
+        ],
+    }
+
+    # execution_date > today (隔天還沒開盤) -> 跳過反向檢查，不得誤報 WARNING
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal, today=signal_date)
+    assert result.severity == "PASS"
+    assert not any("預期應成交" in d for d in result.details)
 
 
 def test_event_and_position_both_present_independent_if():

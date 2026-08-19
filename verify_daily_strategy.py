@@ -780,6 +780,7 @@ def validate_signal_consistency(
     market_data: MarketData,
     snapshot_date: str,
     calendar: Any = None,
+    today: str | None = None,
 ) -> CheckResult:
     """
     驗證 snapshot_date 的 Top-7 訊號一致性：
@@ -795,6 +796,9 @@ def validate_signal_consistency(
     """
     if calendar is None:
         calendar = xcals.get_calendar("XTAI")
+
+    if today is None:
+        today = datetime.now(TAIPEI_TZ).strftime("%Y-%m-%d")
 
     daily_signals = snapshot.get("daily_signals", [])
     matching_signals = [s for s in daily_signals if isinstance(s, dict) and s.get("date") == snapshot_date]
@@ -1042,10 +1046,18 @@ def validate_signal_consistency(
                     )
                     ticker_passed = False
                 elif expected_status == "FILLED" and ev_status != "FILLED":
-                    warnings_list.append(
-                        f"{ticker} 預期應成交（open {next_open:.2f} <= limit {limit_price:.2f}），"
-                        f"但 order_events 記為撤單（{ev_status}）"
+                    execution_date = event.get("execution_date") or next_session_str
+                    # 如果 execution_date > today（隔天還沒開盤），跳過這個反向檢查
+                    is_future = (
+                        execution_date > today
+                        if re.match(r"^\d{4}-\d{2}-\d{2}$", str(execution_date)) and re.match(r"^\d{4}-\d{2}-\d{2}$", str(today))
+                        else True
                     )
+                    if not is_future:
+                        warnings_list.append(
+                            f"{ticker} 預期應成交（open {next_open:.2f} <= limit {limit_price:.2f}），"
+                            f"但 order_events 記為撤單（{ev_status}）"
+                        )
                 ev_fill = event.get("fill_price")
                 if ev_fill is not None:
                     try:
@@ -1569,7 +1581,9 @@ def run_verification(
 
     # Rule 5: Top-7 信號一致性
     try:
-        r_signal = validate_signal_consistency(snapshot, market_data, snapshot_date, calendar=calendar)
+        r_signal = validate_signal_consistency(
+            snapshot, market_data, snapshot_date, calendar=calendar, today=run_date
+        )
     except Exception as e:
         r_signal = CheckResult("signal_consistency", "Top-7 信號一致性", "WARNING", f"驗證器執行異常: {e}", [str(e)])
     results.append(r_signal)

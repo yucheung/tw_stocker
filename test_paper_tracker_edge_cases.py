@@ -307,6 +307,51 @@ class TestBuyLimitLifecycle(unittest.TestCase):
         self.assertEqual(len(data['pending_orders']), 2)
         self.assertEqual([o['ticker'] for o in data['pending_orders']], ['3000', '3001'])
 
+    def test_expired_order_records_cancelled_expired_event(self):
+        # 逾期未執行的歷史待執行單（execution_date < today）→ 產生 CANCELLED_EXPIRED 事件且離開 pending_orders
+        today = pt.date.today().isoformat()
+        yesterday = (pt.date.today() - pt.timedelta(days=1)).isoformat()
+        data = {
+            'start_date': '2026-01-01',
+            'initial_capital': 200_000,
+            'capital': 200_000,
+            'positions': {},
+            'pending_orders': [{
+                'ticker': '3231',
+                'entry': 100.0,
+                'limit_price': 100.0,
+                'tp': 120.0,
+                'sl': 80.0,
+                'reference_close': 100.0,
+                'execution_date': yesterday,
+                'signal_date': yesterday,
+                'max_hold_days': 20,
+                'position_size': 0.10,
+                'regime_scale': 1.0,
+            }],
+            'closed_trades': [],
+            'equity_curve': [],
+            'daily_signals': [],
+            'order_events': [],
+        }
+        bars = {'3231': {'open': 100.0, 'close': 100.0, 'high': 105.0, 'low': 95.0, 'date': today}}
+        mock_cal = mock.MagicMock()
+        mock_cal.is_session.return_value = True
+        with mock.patch.object(pt, 'get_current_bars', return_value=bars), \
+             mock.patch.object(pt, 'extract_signals_from_report', return_value=[]), \
+             mock.patch.object(pt.xcals, 'get_calendar', return_value=mock_cal), \
+             mock.patch.object(pt, 'save_data'), \
+             mock.patch.object(pt, 'generate_html'):
+            pt.update_tracker(data)
+
+        self.assertNotIn('3231', data['positions'])
+        self.assertEqual(data['pending_orders'], [])
+        self.assertTrue(len(data['order_events']) > 0)
+        self.assertEqual(data['order_events'][-1]['status'], 'CANCELLED_EXPIRED')
+        self.assertEqual(data['order_events'][-1]['execution_date'], yesterday)
+        self.assertIsNone(data['order_events'][-1]['open_price'])
+        self.assertIsNone(data['order_events'][-1]['fill_price'])
+
 
 if __name__ == '__main__':
     unittest.main()

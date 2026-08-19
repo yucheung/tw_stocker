@@ -397,9 +397,10 @@ def update_tracker(data):
                 'event_time': f"{today}T09:30:00+08:00",
                 'limit_price': _resolve_order_limit_price(sig),
                 'open_price': None,
-                'status': 'CANCELLED_NO_OPEN_PRICE',
+                'status': 'CANCELLED_EXPIRED',
                 'fill_price': None,
             })
+            print(f"   ⏱️ 逾期待執行單撤單 {ticker} (CANCELLED_EXPIRED)")
 
     def _rank_key(o):
         rank = o.get('rank')
