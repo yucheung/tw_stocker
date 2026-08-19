@@ -233,12 +233,30 @@ class TestStateAndInit:
         with pytest.raises(FileExistsError, match="Simulation state already exists with history"):
             sim.init_simulation(data_dir=temp_dir, capital=300000.0)
 
+    def test_init_force_overwrites_existing_history(self, temp_dir):
+        sim.init_simulation(data_dir=temp_dir, capital=200000.0)
+        state = sim.load_state(temp_dir)
+        state["closed_trades"].append({"trade_id": "test_trade"})
+        sim.save_state_atomic(state, data_dir=temp_dir)
+
+        forced_state = sim.init_simulation(data_dir=temp_dir, capital=300000.0, force=True)
+        assert forced_state["cash"] == 300000.0
+        assert len(forced_state["closed_trades"]) == 0
+
     def test_atomic_save_leaves_no_temp_files(self, temp_dir):
         state = sim.get_default_state(capital=200000.0)
         sim.save_state_atomic(state, data_dir=temp_dir)
         files = list(temp_dir.iterdir())
         file_names = {f.name for f in files if not f.name.endswith(".lock")}
         assert file_names == {"state.json"}
+
+    def test_atomic_save_cleans_up_on_failure(self, temp_dir):
+        state = sim.get_default_state(capital=200000.0)
+        with patch("json.dump", side_effect=IOError("Simulated disk error")):
+            with pytest.raises(IOError, match="Simulated disk error"):
+                sim.save_state_atomic(state, data_dir=temp_dir)
+        temp_files = [f.name for f in temp_dir.iterdir() if f.name.startswith("state.json.tmp.")]
+        assert len(temp_files) == 0
 
     def test_corrupt_state_fails_closed(self, temp_dir):
         state_file = temp_dir / "state.json"
@@ -303,6 +321,36 @@ class TestATRAndPlanning:
             assert len(state["pending_orders"]) == 0
             assert len(state["order_events"]) == 1
             assert state["order_events"][0]["status"] == "SKIPPED_NO_ATR"
+
+    def test_expire_pending_orders(self, temp_dir):
+        state = sim.get_default_state(capital=200000.0)
+        state["pending_orders"] = [
+            {
+                "order_id": "top2_score_v1:2026-08-14:2059:buy",
+                "signal_date": "2026-08-14",
+                "execution_date": "2026-08-17",
+                "ticker": "2059",
+                "limit_price": 100.0,
+                "atr": 5.0,
+            },
+            {
+                "order_id": "top2_score_v1:2026-08-17:6213:buy",
+                "signal_date": "2026-08-17",
+                "execution_date": "2026-08-18",
+                "ticker": "6213",
+                "limit_price": 400.0,
+                "atr": 10.0,
+            },
+        ]
+        # Today is 2026-08-18, order with execution_date 2026-08-17 is expired
+        expired = sim.expire_pending_orders(state, as_of="2026-08-18")
+        assert len(expired) == 1
+        assert expired[0]["ticker"] == "2059"
+        assert expired[0]["status"] == "CANCELLED_EXPIRED"
+        assert len(state["pending_orders"]) == 1
+        assert state["pending_orders"][0]["ticker"] == "6213"
+        assert len(state["order_events"]) == 1
+        assert state["order_events"][0]["status"] == "CANCELLED_EXPIRED"
 
 
 # =====================================================================
@@ -417,6 +465,29 @@ class TestOpenLimitExecution:
 # =====================================================================
 
 class TestSettlementAndEquity:
+    def test_settle_skips_entry_date_position(self, temp_dir):
+        state = sim.get_default_state(capital=200000.0)
+        state["positions"]["2059"] = {
+            "ticker": "2059",
+            "entry": 100.0,
+            "shares": 1000,
+            "tp": 120.0,
+            "sl": 85.0,
+            "atr": 5.0,
+            "entry_date": "2026-08-17",
+            "day_count": 0,
+            "max_hold_days": 20,
+            "signal_date": "2026-08-14",
+        }
+        # On entry date (2026-08-17), even if price touches SL or TP, position is not settled and day_count remains 0
+        bars = {
+            "2059": {"date": "2026-08-17", "open": 100.0, "high": 125.0, "low": 80.0, "close": 110.0}
+        }
+        trades = sim.settle_positions(state, bars, as_of="2026-08-17")
+        assert len(trades) == 0
+        assert "2059" in state["positions"]
+        assert state["positions"]["2059"]["day_count"] == 0
+
     def test_settle_sl_takes_precedence_over_tp_when_both_touched(self, temp_dir):
         state = sim.get_default_state(capital=200000.0)
         state["positions"]["2059"] = {
@@ -733,7 +804,7 @@ class TestSmokeWorkflow:
 
         state = sim.load_state(temp_dir)
         assert len(state["positions"]) == 1
-        assert state["positions"]["2059"]["day_count"] == 1
+        assert state["positions"]["2059"]["day_count"] == 0
         assert len(state["equity_curve"]) == 2
 
         # 5. Report command
@@ -769,3 +840,40 @@ class TestTelegramNotification:
             with patch("urllib.request.urlopen", side_effect=Exception("Network error")):
                 res = sim.notify_telegram("Hello Test")
                 assert res is False
+
+
+# =====================================================================
+# Market Data Query Tests (with as_of)
+# =====================================================================
+
+class TestMarketDataProviders:
+    def test_fetch_market_bars_with_as_of(self):
+        mock_df = pd.DataFrame(
+            {
+                ("Close", "2330.TW"): [1000.0, 1010.0],
+                ("Open", "2330.TW"): [990.0, 1005.0],
+                ("High", "2330.TW"): [1005.0, 1015.0],
+                ("Low", "2330.TW"): [985.0, 1000.0],
+            },
+            index=pd.to_datetime(["2026-08-14", "2026-08-17"]),
+        )
+        with patch("yfinance.download", return_value=mock_df) as mock_yf:
+            bars = sim.fetch_market_bars(["2330"], as_of="2026-08-14")
+            assert "2330" in bars
+            assert bars["2330"]["date"] == "2026-08-14"
+            assert bars["2330"]["close"] == 1000.0
+            mock_yf.assert_called_once()
+            _, kwargs = mock_yf.call_args
+            assert "start" in kwargs and "end" in kwargs
+
+    def test_fetch_benchmark_close_with_as_of(self):
+        mock_df = pd.DataFrame(
+            {"Close": [150.0, 155.0]},
+            index=pd.to_datetime(["2026-08-14", "2026-08-17"]),
+        )
+        with patch("yfinance.download", return_value=mock_df) as mock_yf:
+            bm = sim.fetch_benchmark_close(as_of="2026-08-14")
+            assert bm == 150.0
+            mock_yf.assert_called_once()
+            _, kwargs = mock_yf.call_args
+            assert "start" in kwargs and "end" in kwargs

@@ -17,6 +17,7 @@ import json
 import math
 import os
 import sys
+import tempfile
 import urllib.parse
 import urllib.request
 from datetime import date, datetime
@@ -112,8 +113,8 @@ def _opt_float(value: Any, default: Optional[float] = None) -> Optional[float]:
 # Market Data Providers (yfinance wrappers with test decoupling)
 # =====================================================================
 
-def fetch_market_bars(tickers: list[str]) -> dict[str, dict[str, Any]]:
-    """Fetch latest OHLC bar for each ticker using yfinance.
+def fetch_market_bars(tickers: list[str], as_of: Optional[str] = None) -> dict[str, dict[str, Any]]:
+    """Fetch OHLC bar for each ticker up to as_of using yfinance.
 
     Returns dict mapping ticker (e.g. '2330') to:
     {'date': 'YYYY-MM-DD', 'open': float, 'high': float, 'low': float, 'close': float}
@@ -126,6 +127,10 @@ def fetch_market_bars(tickers: list[str]) -> dict[str, dict[str, Any]]:
 
     def _download(symbols: list[str]) -> Optional[pd.DataFrame]:
         try:
+            if as_of:
+                start_dt = (pd.to_datetime(as_of) - pd.Timedelta(days=10)).strftime("%Y-%m-%d")
+                end_dt = (pd.to_datetime(as_of) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+                return yf.download(symbols, start=start_dt, end=end_dt, progress=False)
             return yf.download(symbols, period="5d", progress=False)
         except Exception:
             return None
@@ -139,13 +144,6 @@ def fetch_market_bars(tickers: list[str]) -> dict[str, dict[str, Any]]:
             return df[field].dropna()
         return None
 
-    def _field_val(df: pd.DataFrame, field: str, symbol: str) -> Optional[float]:
-        s = _get_series(df, field, symbol)
-        if s is not None and len(s) > 0:
-            val = float(s.iloc[-1])
-            return val if math.isfinite(val) else None
-        return None
-
     def _parse_bars(df: Optional[pd.DataFrame], symbol_map: dict[str, str]) -> dict[str, dict[str, Any]]:
         if df is None or df.empty:
             return {}
@@ -154,12 +152,21 @@ def fetch_market_bars(tickers: list[str]) -> dict[str, dict[str, Any]]:
             c_series = _get_series(df, "Close", sym)
             if c_series is None or len(c_series) == 0:
                 continue
+            if as_of:
+                c_series = c_series[c_series.index <= pd.to_datetime(as_of)]
+                if len(c_series) == 0:
+                    continue
             last_dt = c_series.index[-1]
             dt_str = last_dt.strftime("%Y-%m-%d") if hasattr(last_dt, "strftime") else str(last_dt)[:10]
-            o = _field_val(df, "Open", sym)
-            h = _field_val(df, "High", sym)
-            l = _field_val(df, "Low", sym)
-            c = float(c_series.iloc[-1])
+
+            o_series = _get_series(df, "Open", sym)
+            h_series = _get_series(df, "High", sym)
+            l_series = _get_series(df, "Low", sym)
+
+            o = float(o_series.loc[last_dt]) if (o_series is not None and last_dt in o_series.index and math.isfinite(float(o_series.loc[last_dt]))) else None
+            h = float(h_series.loc[last_dt]) if (h_series is not None and last_dt in h_series.index and math.isfinite(float(h_series.loc[last_dt]))) else None
+            l = float(l_series.loc[last_dt]) if (l_series is not None and last_dt in l_series.index and math.isfinite(float(l_series.loc[last_dt]))) else None
+            c = float(c_series.loc[last_dt])
             res[ticker] = {
                 "date": dt_str,
                 "open": o,
@@ -185,15 +192,21 @@ def fetch_market_bars(tickers: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def fetch_ticker_closes(
-    ticker: str, count: int = 60, end_date: Optional[str] = None
+    ticker: str, count: int = 60, end_date: Optional[str] = None, as_of: Optional[str] = None
 ) -> pd.Series:
-    """Fetch historical close series for ATR20 computation up to end_date."""
+    """Fetch historical close series for ATR20 computation up to end_date/as_of."""
     import yfinance as yf
 
+    eff_end = end_date or as_of
     for suffix in [".TW", ".TWO"]:
         sym = f"{ticker}{suffix}"
         try:
-            df = yf.download(sym, period="6mo", progress=False)
+            if eff_end:
+                start_dt = (pd.to_datetime(eff_end) - pd.Timedelta(days=180)).strftime("%Y-%m-%d")
+                end_dt = (pd.to_datetime(eff_end) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+                df = yf.download(sym, start=start_dt, end=end_dt, progress=False)
+            else:
+                df = yf.download(sym, period="6mo", progress=False)
             if df is not None and not df.empty:
                 if isinstance(df.columns, pd.MultiIndex):
                     if ("Close", sym) in df.columns:
@@ -205,8 +218,8 @@ def fetch_ticker_closes(
                 else:
                     continue
 
-                if end_date:
-                    s = s[s.index <= pd.to_datetime(end_date)]
+                if eff_end:
+                    s = s[s.index <= pd.to_datetime(eff_end)]
                 if len(s) >= 21:
                     return s
         except Exception:
@@ -215,11 +228,13 @@ def fetch_ticker_closes(
 
 
 def fetch_benchmark_close(as_of: str, benchmark_ticker: str = DEFAULT_BENCHMARK_TICKER) -> Optional[float]:
-    """Fetch 0050 close price for date as_of."""
+    """Fetch benchmark close price for date as_of."""
     import yfinance as yf
 
     try:
-        df = yf.download(benchmark_ticker, period="5d", progress=False)
+        start_dt = (pd.to_datetime(as_of) - pd.Timedelta(days=10)).strftime("%Y-%m-%d")
+        end_dt = (pd.to_datetime(as_of) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+        df = yf.download(benchmark_ticker, start=start_dt, end=end_dt, progress=False)
         if df is not None and not df.empty:
             if isinstance(df.columns, pd.MultiIndex):
                 if ("Close", benchmark_ticker) in df.columns:
@@ -230,6 +245,7 @@ def fetch_benchmark_close(as_of: str, benchmark_ticker: str = DEFAULT_BENCHMARK_
                 s = df["Close"].dropna()
             else:
                 return None
+            s = s[s.index <= pd.to_datetime(as_of)]
             if len(s) > 0:
                 val = float(s.iloc[-1])
                 return val if math.isfinite(val) and val > 0 else None
@@ -445,16 +461,27 @@ def save_state_atomic(state: dict[str, Any], data_dir: Path | str = DEFAULT_DATA
 
     with open(lock_file, "w") as lf:
         fcntl.flock(lf, fcntl.LOCK_EX)
+        tmp_path = None
         try:
-            pid = os.getpid()
-            now_ts = int(datetime.now().timestamp() * 1000)
-            tmp_file = d / f"state.json.tmp.{pid}.{now_ts}"
-            with open(tmp_file, "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2, ensure_ascii=False)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp_file, state_file)
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                dir=d,
+                prefix="state.json.tmp.",
+                delete=False,
+                encoding="utf-8",
+            ) as tf:
+                tmp_path = Path(tf.name)
+                json.dump(state, tf, indent=2, ensure_ascii=False)
+                tf.flush()
+                os.fsync(tf.fileno())
+            os.replace(tmp_path, state_file)
+            tmp_path = None
         finally:
+            if tmp_path and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
             fcntl.flock(lf, fcntl.LOCK_UN)
 
 
@@ -485,7 +512,14 @@ def init_simulation(
     if state_file.exists() and not force:
         try:
             existing = load_state(d)
-            if existing.get("closed_trades") or existing.get("equity_curve") or existing.get("positions"):
+            has_history = bool(
+                existing.get("closed_trades")
+                or existing.get("positions")
+                or existing.get("pending_orders")
+                or existing.get("order_events")
+                or existing.get("equity_curve")
+            )
+            if has_history:
                 raise FileExistsError(
                     f"Simulation state already exists with history in {d}. Use another directory or --force to overwrite."
                 )
@@ -752,6 +786,8 @@ def settle_positions(
     to_delete = []
 
     for ticker, pos in state["positions"].items():
+        if pos.get("entry_date") == as_of:
+            continue
         bar = bars.get(ticker)
         if not bar or bar.get("close") is None:
             # No valid bar today; do not increment day count or check exit
@@ -977,7 +1013,7 @@ def compute_performance(
     # Fill rate from terminal orders
     terminal_orders = [e for e in order_events if e.get("status") in [
         "FILLED", "CANCELLED_OPEN_ABOVE_LIMIT", "CANCELLED_NO_OPEN_PRICE",
-        "CANCELLED_NO_CAPACITY", "CANCELLED_INSUFFICIENT_CASH"
+        "CANCELLED_NO_CAPACITY", "CANCELLED_INSUFFICIENT_CASH", "CANCELLED_EXPIRED"
     ]]
     if terminal_orders:
         filled_count = sum(1 for e in terminal_orders if e.get("status") == "FILLED")
@@ -1164,6 +1200,41 @@ def notify_telegram(
         return False
 
 
+def expire_pending_orders(state: dict[str, Any], as_of: str) -> list[dict[str, Any]]:
+    """Expire pending orders whose execution_date is before as_of."""
+    active_pending = []
+    expired_events = []
+    for order in state.get("pending_orders", []):
+        exec_date = order.get("execution_date")
+        if exec_date and exec_date < as_of:
+            event = {
+                "order_id": order["order_id"],
+                "signal_date": order.get("signal_date", ""),
+                "execution_date": exec_date,
+                "event_time": get_taipei_now_iso(),
+                "ticker": order["ticker"],
+                "upstream_rank": order.get("upstream_rank"),
+                "score": order.get("score"),
+                "selection_mode": order.get("selection_mode", "auto"),
+                "reference_close": order.get("reference_close", order.get("limit_price")),
+                "limit_price": order.get("limit_price"),
+                "open_price": None,
+                "status": "CANCELLED_EXPIRED",
+                "fill_price": None,
+                "atr": order.get("atr"),
+                "tp_price": None,
+                "sl_price": None,
+                "shares": 0,
+                "message": f"Order expired before execution ({exec_date} < {as_of})",
+            }
+            state.setdefault("order_events", []).append(event)
+            expired_events.append(event)
+        else:
+            active_pending.append(order)
+    state["pending_orders"] = active_pending
+    return expired_events
+
+
 # =====================================================================
 # Orchestrated CLI Subcommand Runners
 # =====================================================================
@@ -1188,7 +1259,7 @@ def run_open(
 
     # Fetch fresh open bars for pending tickers
     due_tickers = list({o["ticker"] for o in state["pending_orders"] if o.get("execution_date") == today_str})
-    bars = fetch_market_bars(due_tickers) if due_tickers else {}
+    bars = fetch_market_bars(due_tickers, as_of=today_str) if due_tickers else {}
 
     events = execute_open_orders(state, bars, as_of=today_str)
     mark_run_processed(state, run_id)
@@ -1229,14 +1300,17 @@ def run_close_and_plan(
         print(f"Notice: Run {run_id} was already processed. Idempotent skip.")
         return
 
+    # 0. Expire outdated pending orders
+    expired_events = expire_pending_orders(state, as_of=today_str)
+
     # 1. Settle existing positions (SL / TP / TIME)
     held_tickers = list(state["positions"].keys())
-    bars = fetch_market_bars(held_tickers) if held_tickers else {}
+    bars = fetch_market_bars(held_tickers, as_of=today_str) if held_tickers else {}
     closed_trades = settle_positions(state, bars, as_of=today_str)
 
     # 2. Mark daily equity and 0050 benchmark
     remaining_tickers = list(state["positions"].keys())
-    rem_bars = fetch_market_bars(remaining_tickers) if remaining_tickers else {}
+    rem_bars = fetch_market_bars(remaining_tickers, as_of=today_str) if remaining_tickers else {}
     closes = {t: rem_bars[t]["close"] for t in remaining_tickers if t in rem_bars and rem_bars[t].get("close")}
     bm_close = fetch_benchmark_close(today_str) or (
         state["equity_curve"][-1]["benchmark_close"] if state["equity_curve"] else 150.0
@@ -1277,7 +1351,8 @@ def run_close_and_plan(
 
     print(
         f"✅ Close-and-plan completed for {today_str}: {len(closed_trades)} positions closed, "
-        f"{planned_count} new orders planned. Equity: {state['equity_curve'][-1]['equity']:,.0f} TWD"
+        f"{planned_count} new orders planned, {len(expired_events)} expired orders cancelled. "
+        f"Equity: {state['equity_curve'][-1]['equity']:,.0f} TWD"
     )
 
     if notify:
