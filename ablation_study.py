@@ -120,7 +120,7 @@ def run_single_ablation(label, factors, close_df, open_df, high_df, low_df, vol_
         sell_cost=0.004425,
     )
 
-    trades_df, equity_df = backtester.run(
+    trades_df, equity_df, _ = backtester.run(
         total_score, close_df, open_df, high_df, low_df, ma_60,
         top_k=top_k,
         threshold=adjusted_threshold,

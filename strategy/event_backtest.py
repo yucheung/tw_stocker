@@ -25,7 +25,7 @@ v2 改進：
 import pandas as pd
 import numpy as np
 
-from strategy.order_execution import evaluate_buy_limit_at_open
+from strategy.order_execution import DEFAULT_TP_SL, evaluate_buy_limit_at_open
 
 
 class EventDrivenBacktester:
@@ -47,9 +47,9 @@ class EventDrivenBacktester:
     tp_sl_mode : str
         'fixed' = 固定百分比 TP/SL, 'atr' = ATR 倍數
     tp_atr_mult : float
-        ATR 模式下的停利倍數（預設 3.0）
+        ATR 模式下的停利倍數（預設 4.0）
     sl_atr_mult : float
-        ATR 模式下的停損倍數（預設 1.5）
+        ATR 模式下的停損倍數（預設 3.0）
     trailing_stop : bool
         啟用移動停利。啟用時固定 TP 會被停用，改為追蹤最高點回落 sl_atr_mult × ATR 出場。
     trailing_atr_mult : float
@@ -92,9 +92,9 @@ class EventDrivenBacktester:
         賣出成本率（手續費 + 證交稅，預設 0.004425 = 0.1425% + 0.3%）
     """
 
-    def __init__(self, tp_pct=0.15, sl_pct=0.08, max_hold_days=20,
+    def __init__(self, tp_pct=DEFAULT_TP_SL['tp_pct'], sl_pct=DEFAULT_TP_SL['sl_pct'], max_hold_days=20,
                  initial_capital=1_000_000, position_size=0.10,
-                 tp_sl_mode='atr', tp_atr_mult=4.0, sl_atr_mult=3.0,
+                 tp_sl_mode='atr', tp_atr_mult=DEFAULT_TP_SL['tp_atr_mult'], sl_atr_mult=DEFAULT_TP_SL['sl_atr_mult'],
                  trailing_stop=False, trailing_atr_mult=2.0,
                  regime_filter=False, regime_graduated=False,
                  regime_floor=0.30,
@@ -493,8 +493,11 @@ class EventDrivenBacktester:
         regime_below_count = 0   # 大盤連續低於 60MA 的天數
 
         # 從第 60 天開始（確保技術指標已穩定）
+        order_events = []
         for i in range(60, len(dates)):
             date = dates[i]
+            exec_date_str = date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date)[:10]
+            sig_date_str = dates[i-1].strftime('%Y-%m-%d') if hasattr(dates[i-1], 'strftime') else str(dates[i-1])[:10]
 
             # 訊號日（t-1）收盤後、今日出場結算前的可用 slot 數。
             # 今日出場釋放的 slot 不得回補今日已掛出的委託（見 PLAN_simulation.md 1.3）。
@@ -970,7 +973,34 @@ class EventDrivenBacktester:
                     except Exception:
                         pass
 
+                candidate_pool = candidates[:effective_top_k]
+                selected_set = {s[0] for s in selected}
+                cut_candidates = [c for c in candidate_pool if c[0] not in selected_set]
+                for ticker, score, entry_price in cut_candidates:
+                    order_events.append({
+                        'order_id': f"{sig_date_str}:{ticker}:buy",
+                        'ticker': ticker,
+                        'signal_date': sig_date_str,
+                        'execution_date': exec_date_str,
+                        'event_time': f"{exec_date_str}T09:30:00+08:00",
+                        'limit_price': float(entry_price) if entry_price is not None and not pd.isna(entry_price) else None,
+                        'open_price': None,
+                        'status': 'CANCELLED_NO_CAPACITY',
+                        'fill_price': None,
+                    })
+
                 for rank_idx, (ticker, score, entry_price) in enumerate(selected):
+                    order_id = f"{sig_date_str}:{ticker}:buy"
+                    limit_price = float(entry_price) if entry_price is not None and not pd.isna(entry_price) else None
+                    event_base = {
+                        'order_id': order_id,
+                        'ticker': ticker,
+                        'signal_date': sig_date_str,
+                        'execution_date': exec_date_str,
+                        'event_time': f"{exec_date_str}T09:30:00+08:00",
+                        'limit_price': limit_price,
+                    }
+
                     # === Portfolio Heat Cap: 進場前檢查組合總風險 ===
                     if self.max_portfolio_heat < 1.0 and active_trades:
                         heat = 0
@@ -980,6 +1010,12 @@ class EventDrivenBacktester:
                             heat += t_trade['shares'] * risk_per_share
                         heat_pct = heat / current_equity if current_equity > 0 else 0
                         if heat_pct >= self.max_portfolio_heat:
+                            order_events.append({
+                                **event_base,
+                                'open_price': None,
+                                'status': 'CANCELLED_NO_CAPACITY',
+                                'fill_price': None,
+                            })
                             continue  # 組合熱度已滿，跳過新進場
 
                     # === 限價單撮合：訊號日收盤掛限價，今日開盤 <= 限價才成交，否則 09:30 取消 ===
@@ -987,6 +1023,12 @@ class EventDrivenBacktester:
                     open_price = None if pd.isna(raw_open) else float(raw_open)
                     fill_decision = evaluate_buy_limit_at_open(entry_price, open_price)
                     if not fill_decision.filled:
+                        order_events.append({
+                            **event_base,
+                            'open_price': fill_decision.open_price,
+                            'status': fill_decision.status,
+                            'fill_price': None,
+                        })
                         continue  # 開盤價高於限價（或無開盤價）：委託取消，不遞補下一名候選
 
                     fill_price = fill_decision.fill_price
@@ -1051,7 +1093,7 @@ class EventDrivenBacktester:
 
                     actual_cost = trade_amount * (1 + self.buy_cost)  # 含買入手續費
 
-                    if capital >= actual_cost:
+                    if capital >= actual_cost and (actual_entry > 0 and trade_amount / actual_entry > 0):
                         shares = trade_amount / actual_entry
                         capital -= actual_cost
 
@@ -1084,6 +1126,19 @@ class EventDrivenBacktester:
                             'days_held': 0,
                             'actual_cost': actual_cost,
                         }
+                        order_events.append({
+                            **event_base,
+                            'open_price': open_price,
+                            'status': 'FILLED',
+                            'fill_price': fill_price,
+                        })
+                    else:
+                        order_events.append({
+                            **event_base,
+                            'open_price': open_price,
+                            'status': 'CANCELLED_INSUFFICIENT_CASH',
+                            'fill_price': None,
+                        })
 
             # ── Step 4: 結算今日總權益（現金 + 所有持倉市值） ──
             today_equity = capital
@@ -1112,4 +1167,4 @@ class EventDrivenBacktester:
         else:
             print("   ⚠️  回測完成但無任何交易觸發")
 
-        return trades_df, equity_df
+        return trades_df, equity_df, order_events

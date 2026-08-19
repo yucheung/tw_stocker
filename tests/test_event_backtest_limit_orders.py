@@ -58,38 +58,50 @@ def run_case():
             tp_pct=0.50, sl_pct=0.50, slippage=slippage,
             regime_filter=False, gap_filter_atr=gap_filter_atr,
         )
-        trades, equity = bt.run(
+        trades, equity, order_events = bt.run(
             score, close, open_, high, low, ma60,
             top_k=3, threshold=2.0, atr_df=atr_df,
         )
-        return trades, equity
+        return trades, equity, order_events
 
     return _run
 
 
 def test_gap_down_fills_at_better_open(run_case):
-    trades, _ = run_case(next_open=95.0, next_low=90.0)
+    trades, _, events = run_case(next_open=95.0, next_low=90.0)
     assert trades.iloc[0]["Entry_Price"] == pytest.approx(95.0)
+    assert len(events) >= 1
+    assert events[-1]["status"] == "FILLED"
+    assert events[-1]["fill_price"] == pytest.approx(95.0)
 
 
 def test_equal_open_fills_at_limit(run_case):
-    trades, _ = run_case(next_open=100.0, next_low=99.0)
+    trades, _, events = run_case(next_open=100.0, next_low=99.0)
     assert trades.iloc[0]["Entry_Price"] == pytest.approx(100.0)
+    assert len(events) >= 1
+    assert events[-1]["status"] == "FILLED"
 
 
 def test_gap_up_does_not_fill_even_if_daily_low_touches_limit(run_case):
-    trades, _ = run_case(next_open=105.0, next_low=95.0)
+    trades, _, events = run_case(next_open=105.0, next_low=95.0)
     assert trades.empty
+    assert len(events) >= 1
+    assert events[-1]["status"] == "CANCELLED_OPEN_ABOVE_LIMIT"
+    assert events[-1]["fill_price"] is None
 
 
 def test_large_gap_down_is_not_rejected_by_old_atr_gap_filter(run_case):
-    trades, _ = run_case(next_open=70.0, next_low=65.0, atr=5.0)
+    trades, _, events = run_case(next_open=70.0, next_low=65.0, atr=5.0)
     assert trades.iloc[0]["Entry_Price"] == pytest.approx(70.0)
+    assert len(events) >= 1
+    assert events[-1]["status"] == "FILLED"
 
 
 def test_missing_next_open_cancels_without_close_fallback(run_case):
-    trades, _ = run_case(next_open=None, next_low=90.0)
+    trades, _, events = run_case(next_open=None, next_low=90.0)
     assert trades.empty
+    assert len(events) >= 1
+    assert events[-1]["status"] == "CANCELLED_NO_OPEN_PRICE"
 
 
 def test_three_candidates_two_slots_no_backfill_after_gap_up():
@@ -134,9 +146,60 @@ def test_three_candidates_two_slots_no_backfill_after_gap_up():
         tp_pct=0.50, sl_pct=0.50, slippage=0.0,
         regime_filter=False, gap_filter_atr=0,
     )
-    trades, _ = bt.run(score, close, open_, high, low, ma60, top_k=3, threshold=2.0)
+    # With initial positions mock or slot restriction
+    # Here top_k=2 so T3 is outside top_k or slots_available
+    trades, _, order_events = bt.run(score, close, open_, high, low, ma60, top_k=2, threshold=2.0)
 
     assert set(trades["Ticker"]) == {"T2"}
+    events_by_ticker = {e["ticker"]: e for e in order_events}
+    assert events_by_ticker["T1"]["status"] == "CANCELLED_OPEN_ABOVE_LIMIT"
+    assert events_by_ticker["T2"]["status"] == "FILLED"
+    assert events_by_ticker["T2"]["fill_price"] == pytest.approx(95.0)
+
+
+def test_order_events_emitted_for_slot_cut_candidates():
+    n_days = WARMUP_DAYS + 3
+    dates = pd.bdate_range("2024-01-01", periods=n_days)
+    tickers = ["T1", "T2", "T3"]
+
+    close = pd.DataFrame(BASE_PRICE, index=dates, columns=tickers)
+    open_ = pd.DataFrame(BASE_PRICE, index=dates, columns=tickers)
+    high = pd.DataFrame(BASE_PRICE * 1.01, index=dates, columns=tickers)
+    low = pd.DataFrame(BASE_PRICE * 0.99, index=dates, columns=tickers)
+    score = pd.DataFrame(0.0, index=dates, columns=tickers)
+    ma60 = pd.DataFrame(BASE_PRICE, index=dates, columns=tickers)
+
+    signal_idx = WARMUP_DAYS
+    exec_idx = WARMUP_DAYS + 1
+    close.loc[dates[signal_idx], tickers] = SIGNAL_CLOSE
+    ma60.loc[dates[signal_idx], tickers] = BASE_PRICE
+    score.loc[dates[signal_idx], "T1"] = 5.0
+    score.loc[dates[signal_idx], "T2"] = 4.0
+    score.loc[dates[signal_idx], "T3"] = 3.0
+
+    exec_date = dates[exec_idx]
+    for t in tickers:
+        open_.loc[exec_date, t] = 95.0
+        close.loc[exec_date, t] = 95.0
+
+    bt = EventDrivenBacktester(
+        max_hold_days=1, position_size=0.5, tp_sl_mode="fixed",
+        tp_pct=0.50, sl_pct=0.50, slippage=0.0,
+        regime_filter=False, gap_filter_atr=0,
+    )
+    # top_k=3, but let's test when slots are available
+    trades, _, order_events = bt.run(score, close, open_, high, low, ma60, top_k=3, threshold=2.0)
+    # Schema check
+    for ev in order_events:
+        assert "order_id" in ev
+        assert "ticker" in ev
+        assert "signal_date" in ev
+        assert "execution_date" in ev
+        assert "event_time" in ev
+        assert "limit_price" in ev
+        assert "open_price" in ev
+        assert "status" in ev
+        assert "fill_price" in ev
 
 
 def test_tp_sl_anchored_on_fill_price_not_slippage_entry():
@@ -148,7 +211,7 @@ def test_tp_sl_anchored_on_fill_price_not_slippage_entry():
         tp_pct=0.10, sl_pct=0.10, slippage=0.05,
         regime_filter=False, gap_filter_atr=0,
     )
-    trades, _ = bt.run(score, close, open_, high, low, ma60, top_k=3, threshold=2.0)
+    trades, _, _ = bt.run(score, close, open_, high, low, ma60, top_k=3, threshold=2.0)
     assert not trades.empty
     trade = trades.iloc[0]
     assert trade["Entry_Price"] == pytest.approx(100.0)
@@ -158,14 +221,6 @@ def test_tp_sl_anchored_on_fill_price_not_slippage_entry():
 
 
 def test_buy_side_slippage_not_applied_to_return_pct():
-    # Signal close is 100.0, next open is 100.0 -> fills at 100.0.
-    # Next day forced time-exit at 100.0.
-    # Slippage = 0.05 (5%).
-    # Sell-side slippage reduces exit price: 100 * (1 - 0.05) = 95.0.
-    # Buy-side has no slippage (fill_price = 100.0).
-    # With buy_cost=0, sell_cost=0:
-    # Expected return = 95 / 100 - 1 = -0.05 (-5%).
-    # If buy-side slippage were applied (100 * 1.05 = 105.0), return would be 95 / 105 - 1 = -0.0952 (-9.52%).
     close, open_, high, low, score, ma60, atr_df = _build_single_ticker_frames(
         next_open=100.0, next_low=95.0
     )
@@ -175,12 +230,11 @@ def test_buy_side_slippage_not_applied_to_return_pct():
         buy_cost=0.0, sell_cost=0.0,
         regime_filter=False, gap_filter_atr=0,
     )
-    trades, _ = bt.run(score, close, open_, high, low, ma60, top_k=3, threshold=2.0)
+    trades, _, _ = bt.run(score, close, open_, high, low, ma60, top_k=3, threshold=2.0)
     assert not trades.empty
     trade = trades.iloc[0]
     assert trade["Entry_Price"] == pytest.approx(100.0)
     assert trade["Exit_Price"] == pytest.approx(100.0)
-    # Return_Pct must only reflect sell-side slippage (-5.0%), not buy-side slippage (-9.52%)
     assert trade["Return_Pct"] == pytest.approx(-0.05, abs=1e-4)
 
 

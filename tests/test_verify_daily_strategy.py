@@ -787,6 +787,96 @@ def test_order_event_filled_despite_open_above_limit_is_critical():
     assert "entry > limit" in " ".join(result.details)
 
 
+def test_order_event_fill_price_mismatches_next_open_is_critical():
+    cal = xcals.get_calendar("XTAI")
+    sessions, md = _build_limit_order_universe(cal)
+    signal_date = "2026-08-14"
+
+    limit_price = float(md.close.loc[pd.Timestamp(signal_date), "T00"])
+    actual_open = limit_price - 5.0
+    md.open.loc[sessions[-1], "T00"] = actual_open
+
+    # fill_price differs from next_open by more than tolerance
+    bogus_fill = actual_open - 10.0
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}],
+        "order_events": [
+            {
+                "ticker": "T00",
+                "signal_date": signal_date,
+                "status": "FILLED",
+                "fill_price": bogus_fill,
+            }
+        ],
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "CRITICAL"
+    assert "與次日開盤" in " ".join(result.details)
+
+
+def test_expected_filled_but_order_event_cancelled_warns():
+    cal = xcals.get_calendar("XTAI")
+    sessions, md = _build_limit_order_universe(cal)
+    signal_date = "2026-08-14"
+
+    limit_price = float(md.close.loc[pd.Timestamp(signal_date), "T00"])
+    actual_open = limit_price - 2.0
+    md.open.loc[sessions[-1], "T00"] = actual_open  # open <= limit -> expected FILLED
+
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}],
+        "order_events": [
+            {
+                "ticker": "T00",
+                "signal_date": signal_date,
+                "status": "CANCELLED_NO_CAPACITY",
+                "fill_price": None,
+            }
+        ],
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "WARNING"
+    assert "預期應成交" in " ".join(result.details)
+    assert "CANCELLED_NO_CAPACITY" in " ".join(result.details)
+
+
+def test_event_and_position_both_present_independent_if():
+    cal = xcals.get_calendar("XTAI")
+    sessions, md = _build_limit_order_universe(cal)
+    signal_date = "2026-08-14"
+    next_session = "2026-08-17"
+
+    limit_price = float(md.close.loc[pd.Timestamp(signal_date), "T00"])
+    actual_open = limit_price - 2.0
+    md.open.loc[sessions[-1], "T00"] = actual_open
+
+    # Event looks fine, but position has invalid entry price
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}],
+        "positions": {
+            "T00": {
+                "entry": limit_price + 100.0,  # Invalid position entry > limit!
+                "entry_date": next_session,
+                "shares": 100,
+            }
+        },
+        "order_events": [
+            {
+                "ticker": "T00",
+                "signal_date": signal_date,
+                "status": "FILLED",
+                "fill_price": actual_open,
+            }
+        ],
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "CRITICAL"
+    assert "部位 entry" in " ".join(result.details)
+
+
 def test_signal_consistency_ma60_violation():
     cal = xcals.get_calendar("XTAI")
     sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")

@@ -1041,18 +1041,30 @@ def validate_signal_consistency(
                         f"但 order_events 記為 FILLED（entry > limit，不可能成交）"
                     )
                     ticker_passed = False
+                elif expected_status == "FILLED" and ev_status != "FILLED":
+                    warnings_list.append(
+                        f"{ticker} 預期應成交（open {next_open:.2f} <= limit {limit_price:.2f}），"
+                        f"但 order_events 記為撤單（{ev_status}）"
+                    )
                 ev_fill = event.get("fill_price")
                 if ev_fill is not None:
                     try:
                         ev_fill_f = float(ev_fill)
                     except (TypeError, ValueError):
                         ev_fill_f = None
-                    if ev_fill_f is not None and ev_fill_f > limit_price + tolerance:
-                        violations.append(
-                            f"{ticker} order_events fill_price={ev_fill_f:.2f} > limit={limit_price:.2f}（entry > limit，不可能成交）"
-                        )
-                        ticker_passed = False
-            elif pos_matches_execution:
+                    if ev_fill_f is not None:
+                        if ev_fill_f > limit_price + tolerance:
+                            violations.append(
+                                f"{ticker} order_events fill_price={ev_fill_f:.2f} > limit={limit_price:.2f}（entry > limit，不可能成交）"
+                            )
+                            ticker_passed = False
+                        elif abs(ev_fill_f - next_open) > tolerance:
+                            violations.append(
+                                f"{ticker} order_events fill_price={ev_fill_f:.2f} 與次日開盤 {next_open:.2f} 不符"
+                            )
+                            ticker_passed = False
+
+            if pos_matches_execution:
                 try:
                     entry_f = float(pos.get("entry"))
                 except (TypeError, ValueError):
@@ -1105,6 +1117,9 @@ def validate_signal_consistency(
             summary = f"{len(passed_tickers)}/{len(tickers)} score/MA 通過；開盤成交結果待 {next_session_str} 驗證"
         else:
             summary = "部分資料不足，無法完整判定"
+    elif warnings_list:
+        severity = "WARNING"
+        summary = f"訊號存在警示（{len(warnings_list)} 項警示）"
     else:
         severity = "PASS"
         summary = f"{len(passed_tickers)}/{len(tickers)} score 與 MA 合格；排名一致；限價成交結果已驗證"

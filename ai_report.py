@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from strategy.ai_strategy import fetch_panel_data, engineer_features, build_liquid_universe
 from strategy.universe import get_twse_common_stocks
+from strategy.order_execution import DEFAULT_TP_SL
 from strategy.event_backtest import EventDrivenBacktester
 from strategy.evaluation import slice_evaluation_window
 from strategy.risk_metrics import compute_risk_metrics, format_metrics_summary
@@ -255,10 +256,10 @@ def build_order_record(signal_date, execution_date, ticker, rank, score,
         'position_size': float(strategy_config.get('position_size', 0.10)),
         'regime_scale': float(strategy_config.get('regime_scale_effective', 1.0)),
         'tp_sl_mode': strategy_config.get('tp_sl_mode', 'atr'),
-        'tp_atr_mult': float(strategy_config.get('tp_atr_mult', 4.0)),
-        'sl_atr_mult': float(strategy_config.get('sl_atr_mult', 3.0)),
-        'tp_pct': float(strategy_config.get('tp_pct', 0.15)),
-        'sl_pct': float(strategy_config.get('sl_pct', 0.08)),
+        'tp_atr_mult': float(strategy_config.get('tp_atr_mult', DEFAULT_TP_SL['tp_atr_mult'])),
+        'sl_atr_mult': float(strategy_config.get('sl_atr_mult', DEFAULT_TP_SL['sl_atr_mult'])),
+        'tp_pct': float(strategy_config.get('tp_pct', DEFAULT_TP_SL['tp_pct'])),
+        'sl_pct': float(strategy_config.get('sl_pct', DEFAULT_TP_SL['sl_pct'])),
         'model_version': model_version,
     }
     if time_exit is not None:
@@ -443,7 +444,7 @@ def generate_report(trades_df, equity_df, total_score, close_df, config,
             ax1.plot(common_idx, bench2_scaled, color='#34c759', lw=1.5, alpha=0.85,
                      label='00981A Buy & Hold', linestyle='-.')
 
-    mode_label = f"ATR×{config.get('tp_atr_mult', 3)}/{config.get('sl_atr_mult', 1.5)}" \
+    mode_label = f"ATR×{config.get('tp_atr_mult', DEFAULT_TP_SL['tp_atr_mult'])}/{config.get('sl_atr_mult', DEFAULT_TP_SL['sl_atr_mult'])}" \
         if tp_sl_mode == 'atr' else f"TP +{tp_pct*100:.0f}% / SL -{sl_pct*100:.0f}%"
     ax1.set_title(f'AI Quant v8  |  {mode_label}  |  Top-{top_k}  |  Hold ≤{max_hold_days}D',
                   fontweight='bold', fontsize=14, color='#1d1d1f')
@@ -547,8 +548,8 @@ def generate_report(trades_df, equity_df, total_score, close_df, config,
 
             if not pd.isna(atr_val) and atr_val > 0:
                 order_atr = float(atr_val)
-                tp_price = price + atr_val * config.get('tp_atr_mult', 3.0)
-                sl_price = price - atr_val * config.get('sl_atr_mult', 2.0)
+                tp_price = price + atr_val * config.get('tp_atr_mult', DEFAULT_TP_SL['tp_atr_mult'])
+                sl_price = price - atr_val * config.get('sl_atr_mult', DEFAULT_TP_SL['sl_atr_mult'])
                 # Sanity checks
                 if sl_price <= 0:
                     sl_price = price * 0.85  # fallback: -15%
@@ -1088,7 +1089,7 @@ def generate_report(trades_df, equity_df, total_score, close_df, config,
     # === 產出 HTML ===
     report_date = latest_date.strftime('%Y-%m-%d')
     cost_desc = f"買 {config.get('buy_cost', 0.001425)*100:.3f}% + 賣 {config.get('sell_cost', 0.004425)*100:.3f}%"
-    mode_html = f"ATR×{config.get('tp_atr_mult', 3)}/{config.get('sl_atr_mult', 1.5)}" \
+    mode_html = f"ATR×{config.get('tp_atr_mult', DEFAULT_TP_SL['tp_atr_mult'])}/{config.get('sl_atr_mult', DEFAULT_TP_SL['sl_atr_mult'])}" \
         if tp_sl_mode == 'atr' else f"停利 +{tp_pct*100:.0f}% 停損 -{sl_pct*100:.0f}%"
     if config.get('trailing_stop', False):
         mode_html += f" +Trailing({config.get('trailing_atr_mult', 2.0)}×ATR)"
@@ -1658,20 +1659,20 @@ def parse_args():
         help='TP/SL 模式: fixed=固定百分比, atr=ATR倍數 (預設: atr)'
     )
     parser.add_argument(
-        '--tp', type=float, default=0.15,
-        help='固定模式停利百分比 (預設: 0.15 = +15%%)'
+        '--tp', type=float, default=DEFAULT_TP_SL['tp_pct'],
+        help=f"固定模式停利百分比 (預設: {DEFAULT_TP_SL['tp_pct']} = +{DEFAULT_TP_SL['tp_pct']*100:.0f}%%)"
     )
     parser.add_argument(
-        '--sl', type=float, default=0.08,
-        help='固定模式停損百分比 (預設: 0.08 = -8%%)'
+        '--sl', type=float, default=DEFAULT_TP_SL['sl_pct'],
+        help=f"固定模式停損百分比 (預設: {DEFAULT_TP_SL['sl_pct']} = -{DEFAULT_TP_SL['sl_pct']*100:.0f}%%)"
     )
     parser.add_argument(
-        '--tp-atr', type=float, default=4.0,
-        help='ATR 模式停利倍數 (預設: 4.0)'
+        '--tp-atr', type=float, default=DEFAULT_TP_SL['tp_atr_mult'],
+        help=f"ATR 模式停利倍數 (預設: {DEFAULT_TP_SL['tp_atr_mult']})"
     )
     parser.add_argument(
-        '--sl-atr', type=float, default=3.0,
-        help='ATR 模式停損倍數 (預設: 3.0)'
+        '--sl-atr', type=float, default=DEFAULT_TP_SL['sl_atr_mult'],
+        help=f"ATR 模式停損倍數 (預設: {DEFAULT_TP_SL['sl_atr_mult']})"
     )
 
     # Trailing Stop
@@ -2113,7 +2114,7 @@ def main():
         buy_cost=args.buy_cost,
         sell_cost=args.sell_cost,
     )
-    trades_df, equity_df = backtester.run(
+    trades_df, equity_df, _ = backtester.run(
         total_score, close_df, open_df, high_df, low_df, ma_60,
         top_k=args.top_k,
         threshold=args.threshold,

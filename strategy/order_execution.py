@@ -9,6 +9,13 @@ import math
 from dataclasses import dataclass
 from typing import Literal, Optional
 
+DEFAULT_TP_SL = {
+    'tp_atr_mult': 4.0,
+    'sl_atr_mult': 3.0,
+    'tp_pct': 0.15,
+    'sl_pct': 0.08,
+}
+
 OpenDecisionStatus = Literal[
     "FILLED",
     "CANCELLED_OPEN_ABOVE_LIMIT",
@@ -22,6 +29,7 @@ TerminalOrderStatus = Literal[
     "CANCELLED_NO_CAPACITY",
     "CANCELLED_INSUFFICIENT_CASH",
     "CANCELLED_INVALID_LIMIT",
+    "CANCELLED_EXPIRED",
 ]
 
 

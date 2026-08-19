@@ -17,62 +17,65 @@ class TestRecomputeTpSl(unittest.TestCase):
     """A1: NaN/無效 ATR 防護 + A2: 合法 0 值不被 or 覆寫 + A3: SL ≤ 0 sanity check"""
 
     def test_atr_none_fallback(self):
-        # A1: ATR 為 None → 退回百分比 fallback（100 × 1.20 / 100 × 0.80）
+        # A1: ATR 為 None → 退回百分比 fallback（100 × 1.15 / 100 × 0.92）
         tp, sl = pt.recompute_tp_sl({}, 100.0, None)
-        self.assertAlmostEqual(tp, 120.0)
-        self.assertAlmostEqual(sl, 80.0)
+        self.assertAlmostEqual(tp, 115.0)
+        self.assertAlmostEqual(sl, 92.0)
 
     def test_atr_nan_fallback(self):
         # A1: ATR 為 NaN → 必須退回百分比 fallback
         #     （NaN <= 0 恆為 False，舊碼 `atr_val <= 0` 擋不住，會產生 NaN 價位）
         tp, sl = pt.recompute_tp_sl({}, 100.0, float('nan'))
-        self.assertAlmostEqual(tp, 120.0)
-        self.assertAlmostEqual(sl, 80.0)
+        self.assertAlmostEqual(tp, 115.0)
+        self.assertAlmostEqual(sl, 92.0)
 
     def test_atr_zero_and_negative_fallback(self):
         # A1: ATR = 0 或負值 → 退回百分比 fallback
         for bad_atr in (0.0, -3.0):
             tp, sl = pt.recompute_tp_sl({}, 100.0, bad_atr)
-            self.assertAlmostEqual(tp, 120.0)
-            self.assertAlmostEqual(sl, 80.0)
+            self.assertAlmostEqual(tp, 115.0)
+            self.assertAlmostEqual(sl, 92.0)
 
     def test_tp_sl_pct_zero_not_overridden(self):
-        # A2: tp_pct / sl_pct = 0.0 是合法值，不應被 `or default` 覆寫成 0.20
+        # A2: tp_pct / sl_pct = 0.0 是合法值，不應被 `or default` 覆寫成 0.15 / 0.08
         tp, sl = pt.recompute_tp_sl({'tp_pct': 0.0, 'sl_pct': 0.0}, 100.0, None)
         self.assertAlmostEqual(tp, 100.0)
         self.assertAlmostEqual(sl, 100.0)
 
     def test_atr_mult_zero_not_overridden(self):
-        # A2: tp_atr_mult / sl_atr_mult = 0.0 不應被覆寫成預設 4.0 / 2.0
+        # A2: tp_atr_mult / sl_atr_mult = 0.0 不應被覆寫成預設 4.0 / 3.0
         order = {'tp_atr_mult': 0.0, 'sl_atr_mult': 0.0}
         tp, sl = pt.recompute_tp_sl(order, 100.0, 5.0)
         self.assertAlmostEqual(tp, 100.0)
         self.assertAlmostEqual(sl, 100.0)
 
     def test_huge_atr_sl_sanity(self):
-        # A3: ATR 過大使 SL 為負（100 - 1000×2 = -1900）→ 退回百分比 fallback 80.0
+        # A3: ATR 過大使 SL 為負（100 - 1000×3 = -2900）→ 退回百分比 fallback 92.0
         tp, sl = pt.recompute_tp_sl({}, 100.0, 1000.0)
         self.assertGreater(tp, 100.0)
-        self.assertAlmostEqual(sl, 80.0)
+        self.assertAlmostEqual(sl, 92.0)
         self.assertGreater(sl, 0)
 
     def test_sl_pct_ge_one_forced_back(self):
-        # A3 保險: sl_pct = 1.0 使 SL = 0（非正）→ 強制退回 20%
+        # A3 保險: sl_pct = 1.0 使 SL = 0（非正）→ 強制退回預設 8%
         tp, sl = pt.recompute_tp_sl({'sl_pct': 1.0}, 100.0, None)
-        self.assertAlmostEqual(sl, 80.0)
+        self.assertAlmostEqual(sl, 92.0)
         self.assertGreater(sl, 0)
 
     def test_normal_atr_path_unchanged(self):
-        # 正常 ATR 路徑不應被破壞：tp = 100 + 5×4 = 120, sl = 100 - 5×2 = 90
+        # 正常 ATR 路徑不應被破壞：tp = 100 + 5×4 = 120, sl = 100 - 5×3 = 85
         tp, sl = pt.recompute_tp_sl({}, 100.0, 5.0)
         self.assertAlmostEqual(tp, 120.0)
-        self.assertAlmostEqual(sl, 90.0)
+        self.assertAlmostEqual(sl, 85.0)
 
 
 class TestBuyLimitLifecycle(unittest.TestCase):
     """PLAN_simulation.md Task 4: 訊號日收盤限價，次日開盤 <= 限價成交，否則 09:30 撤單。"""
 
-    def _run_open(self, bar_open, limit_price=150.0, bar_low=148.0, bar_high=155.0, atr=None):
+    def _run_open(self, bar_open, limit_price=150.0, bar_low=148.0, bar_high=155.0, atr=None, bar_date=None):
+        today = pt.date.today().isoformat()
+        if bar_date is None:
+            bar_date = today
         data = {
             'start_date': '2026-01-01',
             'initial_capital': 200_000,
@@ -100,9 +103,12 @@ class TestBuyLimitLifecycle(unittest.TestCase):
             'daily_signals': [],
             'order_events': [],
         }
-        bars = {'3231': {'open': bar_open, 'close': limit_price, 'high': bar_high, 'low': bar_low}}
+        bars = {'3231': {'open': bar_open, 'close': limit_price, 'high': bar_high, 'low': bar_low, 'date': bar_date}}
+        mock_cal = mock.MagicMock()
+        mock_cal.is_session.return_value = True
         with mock.patch.object(pt, 'get_current_bars', return_value=bars), \
              mock.patch.object(pt, 'extract_signals_from_report', return_value=[]), \
+             mock.patch.object(pt.xcals, 'get_calendar', return_value=mock_cal), \
              mock.patch.object(pt, 'save_data'), \
              mock.patch.object(pt, 'generate_html'):
             pt.update_tracker(data)
@@ -114,6 +120,35 @@ class TestBuyLimitLifecycle(unittest.TestCase):
         self.assertNotIn('3231', data['positions'])
         self.assertEqual(data['pending_orders'], [])
         self.assertEqual(data['order_events'][-1]['status'], 'CANCELLED_NO_OPEN_PRICE')
+
+    def test_bar_stale_date_cancels_as_no_open_price(self):
+        # bar['date'] 不是 today（幻影成交防護）→ open_price 設為 None，走 CANCELLED_NO_OPEN_PRICE 撤單
+        data = self._run_open(149.0, limit_price=150.0, bar_date='2020-01-01')
+        self.assertNotIn('3231', data['positions'])
+        self.assertEqual(data['pending_orders'], [])
+        self.assertEqual(data['order_events'][-1]['status'], 'CANCELLED_NO_OPEN_PRICE')
+
+    def test_non_trading_day_skips_update(self):
+        # 非交易日直接 return 不處理
+        data = {
+            'start_date': '2026-01-01',
+            'initial_capital': 200_000,
+            'capital': 200_000,
+            'positions': {},
+            'pending_orders': [{'ticker': '3231', 'entry': 100.0}],
+            'closed_trades': [],
+            'equity_curve': [],
+            'daily_signals': [],
+            'order_events': [],
+        }
+        mock_cal = mock.MagicMock()
+        mock_cal.is_session.return_value = False
+        with mock.patch.object(pt.xcals, 'get_calendar', return_value=mock_cal), \
+             mock.patch.object(pt, 'get_current_bars') as mock_bars:
+            pt.update_tracker(data)
+            mock_bars.assert_not_called()
+        self.assertEqual(len(data['pending_orders']), 1)
+        self.assertEqual(data['order_events'], [])
 
     def test_open_below_limit_fills_at_open(self):
         # open 149 < limit 150 → 以較佳的 149 成交
@@ -155,6 +190,7 @@ class TestBuyLimitLifecycle(unittest.TestCase):
 
     def test_invalid_limit_records_cancelled_invalid_limit_event(self):
         # limit <= 0 / nan / inf / None -> 產生 CANCELLED_INVALID_LIMIT 事件，且離開 pending_orders
+        today = pt.date.today().isoformat()
         for bad_limit in (0.0, -10.0, float('nan'), float('inf')):
             data = {
                 'start_date': '2026-01-01',
@@ -180,9 +216,12 @@ class TestBuyLimitLifecycle(unittest.TestCase):
                 'daily_signals': [],
                 'order_events': [],
             }
-            bars = {'3231': {'open': 100.0, 'close': 100.0, 'high': 105.0, 'low': 95.0}}
+            bars = {'3231': {'open': 100.0, 'close': 100.0, 'high': 105.0, 'low': 95.0, 'date': today}}
+            mock_cal = mock.MagicMock()
+            mock_cal.is_session.return_value = True
             with mock.patch.object(pt, 'get_current_bars', return_value=bars), \
                  mock.patch.object(pt, 'extract_signals_from_report', return_value=[]), \
+                 mock.patch.object(pt.xcals, 'get_calendar', return_value=mock_cal), \
                  mock.patch.object(pt, 'save_data'), \
                  mock.patch.object(pt, 'generate_html'):
                 pt.update_tracker(data)
@@ -195,6 +234,7 @@ class TestBuyLimitLifecycle(unittest.TestCase):
 
     def test_future_deferred_orders_not_executed_today(self):
         # execution_date > today 的 deferred order 不會在今日執行，且保留在 pending_orders
+        today = pt.date.today().isoformat()
         tomorrow = '2099-01-01'
         data = {
             'start_date': '2026-01-01',
@@ -218,9 +258,12 @@ class TestBuyLimitLifecycle(unittest.TestCase):
             'daily_signals': [],
             'order_events': [],
         }
-        bars = {'3231': {'open': 95.0, 'close': 100.0, 'high': 105.0, 'low': 90.0}}
+        bars = {'3231': {'open': 95.0, 'close': 100.0, 'high': 105.0, 'low': 90.0, 'date': today}}
+        mock_cal = mock.MagicMock()
+        mock_cal.is_session.return_value = True
         with mock.patch.object(pt, 'get_current_bars', return_value=bars), \
              mock.patch.object(pt, 'extract_signals_from_report', return_value=[]), \
+             mock.patch.object(pt.xcals, 'get_calendar', return_value=mock_cal), \
              mock.patch.object(pt, 'save_data'), \
              mock.patch.object(pt, 'generate_html'):
             pt.update_tracker(data)
@@ -233,6 +276,7 @@ class TestBuyLimitLifecycle(unittest.TestCase):
     def test_submission_slots_limits_new_pending_orders(self):
         # 當已有 5 個持倉時，MAX_POSITIONS=7 剩餘 2 個 submission slots，
         # 新進入 4 個信號應只保留前 2 個進入 pending_orders
+        today = pt.date.today().isoformat()
         positions = {f"233{i}": {'entry': 100.0, 'tp': 120.0, 'sl': 80.0, 'entry_date': '2026-01-01', 'shares': 100, 'day_count': 1, 'max_hold_days': 20} for i in range(5)}
         data = {
             'start_date': '2026-01-01',
@@ -249,9 +293,12 @@ class TestBuyLimitLifecycle(unittest.TestCase):
             {'ticker': f'300{i}', 'entry': 50.0, 'limit_price': 50.0, 'tp': 60.0, 'sl': 40.0, 'execution_date': '2099-01-02', 'rank': i+1}
             for i in range(4)
         ]
-        bars = {f"233{i}": {'open': 100.0, 'close': 100.0, 'high': 105.0, 'low': 95.0} for i in range(5)}
+        bars = {f"233{i}": {'open': 100.0, 'close': 100.0, 'high': 105.0, 'low': 95.0, 'date': today} for i in range(5)}
+        mock_cal = mock.MagicMock()
+        mock_cal.is_session.return_value = True
         with mock.patch.object(pt, 'get_current_bars', return_value=bars), \
              mock.patch.object(pt, 'extract_signals_from_report', return_value=new_signals), \
+             mock.patch.object(pt.xcals, 'get_calendar', return_value=mock_cal), \
              mock.patch.object(pt, 'save_data'), \
              mock.patch.object(pt, 'generate_html'):
             pt.update_tracker(data)

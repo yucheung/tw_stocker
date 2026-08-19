@@ -22,8 +22,9 @@ import sys
 from datetime import datetime, date, timedelta
 import argparse
 import pandas as pd
+import exchange_calendars as xcals
 
-from strategy.order_execution import evaluate_buy_limit_at_open
+from strategy.order_execution import DEFAULT_TP_SL, evaluate_buy_limit_at_open
 
 DATA_FILE = 'paper_equity.json'
 HTML_FILE = 'paper_trading.html'
@@ -66,22 +67,7 @@ def get_current_bars(tickers):
             return None
 
     try:
-        def read_bars(df, symbol_map):
-            if df is None or df.empty:
-                return {}
-            parsed = {}
-            for ticker, symbol in symbol_map.items():
-                bar = {
-                    'open': field_value(df, 'Open', symbol),
-                    'high': field_value(df, 'High', symbol),
-                    'low': field_value(df, 'Low', symbol),
-                    'close': field_value(df, 'Close', symbol),
-                }
-                if bar['close'] is not None:
-                    parsed[ticker] = bar
-            return parsed
-
-        def field_value(df, field, symbol):
+        def get_series(df, field, symbol):
             if isinstance(df.columns, pd.MultiIndex):
                 if (field, symbol) not in df.columns:
                     return None
@@ -92,7 +78,33 @@ def get_current_bars(tickers):
                 return None
             if len(series) == 0:
                 return None
+            return series
+
+        def field_value(df, field, symbol):
+            series = get_series(df, field, symbol)
+            if series is None or len(series) == 0:
+                return None
             return float(series.iloc[-1])
+
+        def read_bars(df, symbol_map):
+            if df is None or df.empty:
+                return {}
+            parsed = {}
+            for ticker, symbol in symbol_map.items():
+                c_series = get_series(df, 'Close', symbol)
+                if c_series is None or len(c_series) == 0:
+                    continue
+                last_dt = c_series.index[-1]
+                dt_str = last_dt.strftime('%Y-%m-%d') if hasattr(last_dt, 'strftime') else str(last_dt)[:10]
+                bar = {
+                    'open': field_value(df, 'Open', symbol),
+                    'high': field_value(df, 'High', symbol),
+                    'low': field_value(df, 'Low', symbol),
+                    'close': float(c_series.iloc[-1]),
+                    'date': dt_str,
+                }
+                parsed[ticker] = bar
+            return parsed
 
         tw_symbols = {t: f"{t}.TW" for t in tickers}
         bars.update(read_bars(download(list(tw_symbols.values())), tw_symbols))
@@ -128,27 +140,27 @@ def recompute_tp_sl(order, open_price, atr_val):
     if atr_val is None or atr_val != atr_val or atr_val <= 0:
         # ATR 不可用，退回固定百分比 fallback
         # A2: 避免 `or default` 覆寫合法 0 值（_opt_float 回傳 0.0 時須保留）
-        tp_pct = _opt_float(order.get('tp_pct'), 0.20)
-        tp_pct = tp_pct if tp_pct is not None else 0.20
-        sl_pct = _opt_float(order.get('sl_pct'), 0.20)
-        sl_pct = sl_pct if sl_pct is not None else 0.20
+        tp_pct = _opt_float(order.get('tp_pct'), DEFAULT_TP_SL['tp_pct'])
+        tp_pct = tp_pct if tp_pct is not None else DEFAULT_TP_SL['tp_pct']
+        sl_pct = _opt_float(order.get('sl_pct'), DEFAULT_TP_SL['sl_pct'])
+        sl_pct = sl_pct if sl_pct is not None else DEFAULT_TP_SL['sl_pct']
         tp_price = open_price * (1 + tp_pct)
         sl_price = open_price * (1 - sl_pct)
     else:
         # ATR 可用：以開盤價為錨 ± ATR × multiplier
-        tp_mult = _opt_float(order.get('tp_atr_mult'), 4.0)
-        tp_mult = tp_mult if tp_mult is not None else 4.0
-        sl_mult = _opt_float(order.get('sl_atr_mult'), 2.0)
-        sl_mult = sl_mult if sl_mult is not None else 2.0
+        tp_mult = _opt_float(order.get('tp_atr_mult'), DEFAULT_TP_SL['tp_atr_mult'])
+        tp_mult = tp_mult if tp_mult is not None else DEFAULT_TP_SL['tp_atr_mult']
+        sl_mult = _opt_float(order.get('sl_atr_mult'), DEFAULT_TP_SL['sl_atr_mult'])
+        sl_mult = sl_mult if sl_mult is not None else DEFAULT_TP_SL['sl_atr_mult']
         tp_price = open_price + atr_val * tp_mult
         sl_price = open_price - atr_val * sl_mult
     # A3: SL ≤ 0 sanity check — ATR 過大或 sl_pct ≥ 1 皆可能讓 SL 非正，
     #     退回保守百分比 fallback（並對 sl_pct 再加一層保險）
     if sl_price <= 0:
-        sl_pct = _opt_float(order.get('sl_pct'), 0.20)
-        sl_pct = sl_pct if sl_pct is not None else 0.20
+        sl_pct = _opt_float(order.get('sl_pct'), DEFAULT_TP_SL['sl_pct'])
+        sl_pct = sl_pct if sl_pct is not None else DEFAULT_TP_SL['sl_pct']
         if sl_pct >= 1:
-            sl_pct = 0.20  # sl_pct ≥ 1 時 SL 恆 ≤ 0，強制退回 20%
+            sl_pct = DEFAULT_TP_SL['sl_pct']  # sl_pct ≥ 1 時 SL 恆 ≤ 0，強制退回預設
         sl_price = open_price * (1 - sl_pct)
     return tp_price, sl_price
 
@@ -267,6 +279,14 @@ def extract_signals_from_report():
 def update_tracker(data):
     """主要更新邏輯：追蹤持倉、結算已平倉、記錄新信號。"""
     today = date.today().isoformat()
+    try:
+        tw_cal = xcals.get_calendar('XTAI')
+        if not tw_cal.is_session(today):
+            print(f"   ℹ️ 今日 ({today}) 非 XTAI 交易日，跳過更新")
+            return
+    except Exception as e:
+        print(f"   ⚠️ 交易日曆檢查失敗: {e}")
+
     buy_cost_rate = 0.001425
     sell_cost_rate = 0.004425
     slippage = 0.003
@@ -429,6 +449,8 @@ def update_tracker(data):
 
             bar = bars.get(ticker)
             open_price = bar.get('open') if bar else None
+            if bar and bar.get('date') != today:
+                open_price = None
             decision = evaluate_buy_limit_at_open(limit_price, open_price)
 
             if not decision.filled:
