@@ -15,6 +15,7 @@ Paper Trading 自動追蹤器 v8.5
 
 import json
 import glob
+import math
 import os
 import re
 import sys
@@ -112,7 +113,7 @@ def _opt_float(value, default=None):
         f = float(value)
     except (TypeError, ValueError):
         return default
-    return f if f == f else default  # 排除 NaN
+    return f if f == f and math.isfinite(f) else default  # 排除 NaN 與 Inf
 
 
 def recompute_tp_sl(order, open_price, atr_val):
@@ -161,7 +162,7 @@ def _resolve_order_limit_price(order):
     """限價 legacy fallback：limit_price -> reference_close -> entry；三者皆無效回傳 None。"""
     for key in ('limit_price', 'reference_close', 'entry'):
         val = _opt_float(order.get(key))
-        if val is not None and val > 0:
+        if val is not None and math.isfinite(val) and val > 0:
             return val
     return None
 
@@ -353,11 +354,32 @@ def update_tracker(data):
     #    也不得以收盤價回補缺漏的開盤價。每筆 due order 只產生一個 terminal
     #    order_events，且執行後一律離開 pending_orders（成交/撤單皆不留到下一日）。
     due_orders = [o for o in pending_orders
-                  if not o.get('execution_date') or o['execution_date'] <= today]
+                  if not o.get('execution_date') or o['execution_date'] == today]
     deferred = [o for o in pending_orders
                 if o.get('execution_date') and o['execution_date'] > today]
     order_events = data.setdefault('order_events', [])
     existing_event_ids = {e.get('order_id') for e in order_events}
+
+    # 處理過期未執行的歷史待執行單（execution_date < today，一律記撤單，不得留存）
+    expired = [o for o in pending_orders
+               if o.get('execution_date') and o['execution_date'] < today]
+    for sig in expired:
+        ticker = sig.get('ticker', '?')
+        signal_date = sig.get('signal_date') or sig.get('execution_date')
+        order_id = f"{signal_date}:{ticker}:buy"
+        if order_id not in existing_event_ids:
+            existing_event_ids.add(order_id)
+            order_events.append({
+                'order_id': order_id,
+                'ticker': ticker,
+                'signal_date': signal_date,
+                'execution_date': sig.get('execution_date'),
+                'event_time': f"{today}T09:30:00+08:00",
+                'limit_price': _resolve_order_limit_price(sig),
+                'open_price': None,
+                'status': 'CANCELLED_NO_OPEN_PRICE',
+                'fill_price': None,
+            })
 
     def _rank_key(o):
         rank = o.get('rank')
@@ -384,7 +406,14 @@ def update_tracker(data):
 
             limit_price = _resolve_order_limit_price(sig)
             if limit_price is None:
-                print(f"   ⚠️ {ticker} 委託缺乏有效限價，略過")
+                order_events.append({
+                    **event_base,
+                    'limit_price': None,
+                    'open_price': None,
+                    'status': 'CANCELLED_INVALID_LIMIT',
+                    'fill_price': None,
+                })
+                print(f"   ⚠️ {ticker} 委託缺乏有效限價，撤單 (CANCELLED_INVALID_LIMIT)")
                 continue
 
             if ticker in data['positions'] or len(data['positions']) >= MAX_POSITIONS:
@@ -484,6 +513,13 @@ def update_tracker(data):
     # 4. 記錄今日訊號，登錄為待執行訂單（隔日開盤執行，對齊回測 next-open）
     if signals:
         data['daily_signals'].append({'date': today, 'tickers': signal_tickers})
+        submission_slots = max(0, MAX_POSITIONS - len(data['positions']))
+        target_exec_date = signals[0].get('execution_date') if signals else None
+        same_date_deferred = (
+            sum(1 for o in deferred if o.get('execution_date') == target_exec_date)
+            if target_exec_date else 0
+        )
+        available_slots = max(0, submission_slots - same_date_deferred)
         new_pending = [{
             'ticker': s['ticker'],
             'entry': s['entry'],
@@ -503,11 +539,11 @@ def update_tracker(data):
             'sl_atr_mult': s.get('sl_atr_mult'),
             'tp_pct': s.get('tp_pct'),
             'sl_pct': s.get('sl_pct'),
-        } for s in signals]
+        } for s in signals[:available_slots]]
         # 今日訊號取代舊的待執行單（每交易日重新排序）；保留尚未到期者
         data['pending_orders'] = new_pending + deferred
         exec_date = signals[0].get('execution_date') or '次一交易日'
-        print(f"   📥 已登錄 {len(new_pending)} 筆待執行訂單（{exec_date} 開盤執行）")
+        print(f"   📥 已登錄 {len(new_pending)} 筆待執行訂單（{exec_date} 開盤執行，剩餘可用名額 {available_slots}）")
     else:
         data['pending_orders'] = deferred
         print(f"   📋 今日無信號")

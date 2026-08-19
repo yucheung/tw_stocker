@@ -153,6 +153,114 @@ class TestBuyLimitLifecycle(unittest.TestCase):
             data = self._run_open(open_price)
             self.assertEqual(data['pending_orders'], [])
 
+    def test_invalid_limit_records_cancelled_invalid_limit_event(self):
+        # limit <= 0 / nan / inf / None -> 產生 CANCELLED_INVALID_LIMIT 事件，且離開 pending_orders
+        for bad_limit in (0.0, -10.0, float('nan'), float('inf')):
+            data = {
+                'start_date': '2026-01-01',
+                'initial_capital': 200_000,
+                'capital': 200_000,
+                'positions': {},
+                'pending_orders': [{
+                    'ticker': '3231',
+                    'entry': bad_limit,
+                    'limit_price': bad_limit,
+                    'tp': 100.0,
+                    'sl': 80.0,
+                    'reference_close': bad_limit,
+                    'atr': 2.0,
+                    'gap_limit_atr': 1.5,
+                    'execution_date': None,
+                    'max_hold_days': 20,
+                    'position_size': 0.10,
+                    'regime_scale': 1.0,
+                }],
+                'closed_trades': [],
+                'equity_curve': [],
+                'daily_signals': [],
+                'order_events': [],
+            }
+            bars = {'3231': {'open': 100.0, 'close': 100.0, 'high': 105.0, 'low': 95.0}}
+            with mock.patch.object(pt, 'get_current_bars', return_value=bars), \
+                 mock.patch.object(pt, 'extract_signals_from_report', return_value=[]), \
+                 mock.patch.object(pt, 'save_data'), \
+                 mock.patch.object(pt, 'generate_html'):
+                pt.update_tracker(data)
+
+            self.assertNotIn('3231', data['positions'])
+            self.assertEqual(data['pending_orders'], [])
+            self.assertTrue(len(data['order_events']) > 0)
+            self.assertEqual(data['order_events'][-1]['status'], 'CANCELLED_INVALID_LIMIT')
+            self.assertIsNone(data['order_events'][-1]['fill_price'])
+
+    def test_future_deferred_orders_not_executed_today(self):
+        # execution_date > today 的 deferred order 不會在今日執行，且保留在 pending_orders
+        tomorrow = '2099-01-01'
+        data = {
+            'start_date': '2026-01-01',
+            'initial_capital': 200_000,
+            'capital': 200_000,
+            'positions': {},
+            'pending_orders': [{
+                'ticker': '3231',
+                'entry': 100.0,
+                'limit_price': 100.0,
+                'tp': 120.0,
+                'sl': 80.0,
+                'reference_close': 100.0,
+                'execution_date': tomorrow,
+                'max_hold_days': 20,
+                'position_size': 0.10,
+                'regime_scale': 1.0,
+            }],
+            'closed_trades': [],
+            'equity_curve': [],
+            'daily_signals': [],
+            'order_events': [],
+        }
+        bars = {'3231': {'open': 95.0, 'close': 100.0, 'high': 105.0, 'low': 90.0}}
+        with mock.patch.object(pt, 'get_current_bars', return_value=bars), \
+             mock.patch.object(pt, 'extract_signals_from_report', return_value=[]), \
+             mock.patch.object(pt, 'save_data'), \
+             mock.patch.object(pt, 'generate_html'):
+            pt.update_tracker(data)
+
+        self.assertNotIn('3231', data['positions'])
+        self.assertEqual(len(data['pending_orders']), 1)
+        self.assertEqual(data['pending_orders'][0]['ticker'], '3231')
+        self.assertEqual(data['order_events'], [])
+
+    def test_submission_slots_limits_new_pending_orders(self):
+        # 當已有 5 個持倉時，MAX_POSITIONS=7 剩餘 2 個 submission slots，
+        # 新進入 4 個信號應只保留前 2 個進入 pending_orders
+        positions = {f"233{i}": {'entry': 100.0, 'tp': 120.0, 'sl': 80.0, 'entry_date': '2026-01-01', 'shares': 100, 'day_count': 1, 'max_hold_days': 20} for i in range(5)}
+        data = {
+            'start_date': '2026-01-01',
+            'initial_capital': 500_000,
+            'capital': 200_000,
+            'positions': positions,
+            'pending_orders': [],
+            'closed_trades': [],
+            'equity_curve': [],
+            'daily_signals': [],
+            'order_events': [],
+        }
+        new_signals = [
+            {'ticker': f'300{i}', 'entry': 50.0, 'limit_price': 50.0, 'tp': 60.0, 'sl': 40.0, 'execution_date': '2099-01-02', 'rank': i+1}
+            for i in range(4)
+        ]
+        bars = {f"233{i}": {'open': 100.0, 'close': 100.0, 'high': 105.0, 'low': 95.0} for i in range(5)}
+        with mock.patch.object(pt, 'get_current_bars', return_value=bars), \
+             mock.patch.object(pt, 'extract_signals_from_report', return_value=new_signals), \
+             mock.patch.object(pt, 'save_data'), \
+             mock.patch.object(pt, 'generate_html'):
+            pt.update_tracker(data)
+
+        # 7 - 5 = 2 slots -> pending_orders 應該只有 2 筆
+        self.assertEqual(len(data['pending_orders']), 2)
+        self.assertEqual([o['ticker'] for o in data['pending_orders']], ['3000', '3001'])
+
 
 if __name__ == '__main__':
     unittest.main()
+

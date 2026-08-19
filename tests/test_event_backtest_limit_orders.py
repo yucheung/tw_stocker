@@ -137,3 +137,22 @@ def test_three_candidates_two_slots_no_backfill_after_gap_up():
     trades, _ = bt.run(score, close, open_, high, low, ma60, top_k=3, threshold=2.0)
 
     assert set(trades["Ticker"]) == {"T2"}
+
+
+def test_tp_sl_anchored_on_fill_price_not_slippage_entry():
+    close, open_, high, low, score, ma60, atr_df = _build_single_ticker_frames(
+        next_open=100.0, next_low=95.0
+    )
+    bt = EventDrivenBacktester(
+        max_hold_days=1, position_size=0.5, tp_sl_mode="fixed",
+        tp_pct=0.10, sl_pct=0.10, slippage=0.05,
+        regime_filter=False, gap_filter_atr=0,
+    )
+    trades, _ = bt.run(score, close, open_, high, low, ma60, top_k=3, threshold=2.0)
+    assert not trades.empty
+    trade = trades.iloc[0]
+    assert trade["Entry_Price"] == pytest.approx(100.0)
+    # TP/SL must be based on fill_price (100.0), not actual_entry with slippage (105.0)
+    assert trade["TP_Price"] == pytest.approx(110.0)
+    assert trade["SL_Price"] == pytest.approx(90.0)
+

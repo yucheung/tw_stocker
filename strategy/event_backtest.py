@@ -1055,19 +1055,19 @@ class EventDrivenBacktester:
                         shares = trade_amount / actual_entry
                         capital -= actual_cost
 
-                        # 計算 TP/SL 價格（基於實際進場價含滑價）
+                        # 計算 TP/SL 價格（基於 fill_price，與 paper_tracker 一致）
                         if self.tp_sl_mode == 'atr' and atr is not None:
                             atr_val = atr[ticker].iloc[i - 1] if i - 1 >= 0 else np.nan
                             if pd.isna(atr_val) or atr_val <= 0:
                                 # fallback 到固定百分比
-                                tp_price = actual_entry * (1 + self.tp_pct)
-                                sl_price = actual_entry * (1 - self.sl_pct)
+                                tp_price = fill_price * (1 + self.tp_pct)
+                                sl_price = fill_price * (1 - self.sl_pct)
                             else:
-                                tp_price = actual_entry + atr_val * self.tp_atr_mult
-                                sl_price = actual_entry - atr_val * self.sl_atr_mult
+                                tp_price = fill_price + atr_val * self.tp_atr_mult
+                                sl_price = fill_price - atr_val * self.sl_atr_mult
                         else:
-                            tp_price = actual_entry * (1 + self.tp_pct)
-                            sl_price = actual_entry * (1 - self.sl_pct)
+                            tp_price = fill_price * (1 + self.tp_pct)
+                            sl_price = fill_price * (1 - self.sl_pct)
 
                         active_trades[ticker] = {
                             'shares': shares,
@@ -1076,7 +1076,7 @@ class EventDrivenBacktester:
                             'tp_price': tp_price,
                             'sl_price': sl_price,
                             'initial_sl_price': sl_price,
-                            'highest_since_entry': actual_entry,
+                            'highest_since_entry': fill_price,
                             'breakeven_activated': False,
                             'atr_at_entry': atr_val if (self.tp_sl_mode == 'atr'
                                                         and atr is not None
