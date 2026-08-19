@@ -840,6 +840,7 @@ def validate_signal_consistency(
     violations: list[str] = []
     unknown_reasons: list[str] = []
     missing_open_tickers: list[str] = []
+    missing_event_tickers: list[str] = []
     expected_fills: list[str] = []
     expected_cancellations: list[str] = []
     passed_tickers: list[str] = []
@@ -1051,7 +1052,7 @@ def validate_signal_consistency(
                     is_future = (
                         execution_date > today
                         if re.match(r"^\d{4}-\d{2}-\d{2}$", str(execution_date)) and re.match(r"^\d{4}-\d{2}-\d{2}$", str(today))
-                        else True
+                        else False
                     )
                     if not is_future:
                         warnings_list.append(
@@ -1099,6 +1100,14 @@ def validate_signal_consistency(
                         )
                         ticker_passed = False
 
+            if expected_status == "FILLED" and event is None and not pos_matches_execution and next_open is not None:
+                missing_event_tickers.append(ticker)
+                warnings_list.append(
+                    f"{ticker} 預期應成交（open {next_open:.2f} <= limit {limit_price:.2f}），"
+                    f"但 order_events 與 positions 皆無紀錄（訂單遺失）"
+                )
+                ticker_passed = False
+
         if ticker_passed:
             passed_tickers.append(ticker)
 
@@ -1123,10 +1132,12 @@ def validate_signal_consistency(
             summary = f"母體資料不足 (< 48 檔或 coverage < 70%)；開盤成交結果待 {next_session_str} 驗證"
         else:
             summary = "母體資料不足 (< 48 檔或 coverage < 70%)，無法完整判定 score/MA"
-    elif unknown_reasons or missing_open_tickers:
+    elif unknown_reasons or missing_open_tickers or missing_event_tickers:
         severity = "WARNING"
         if missing_open_tickers:
             summary = f"{len(passed_tickers)}/{len(tickers)} score/MA 通過；開盤成交結果待 {next_session_str} 驗證"
+        elif missing_event_tickers:
+            summary = f"{len(passed_tickers)}/{len(tickers)} 通過；{', '.join(missing_event_tickers)} 預期應成交但缺訂單事件與部位"
         else:
             summary = "部分資料不足，無法完整判定"
     elif warnings_list:
@@ -1149,6 +1160,8 @@ def validate_signal_consistency(
             "expected_fills": expected_fills,
             "expected_cancellations": expected_cancellations,
             "missing_next_open_count": len(missing_open_tickers),
+            "missing_event_tickers": missing_event_tickers,
+            "missing_event_count": len(missing_event_tickers),
             "indeterminate": bool(missing_open_tickers),
             "universe_coverage_insufficient": universe_coverage_insufficient,
             "active_universe_count": active_universe_count,

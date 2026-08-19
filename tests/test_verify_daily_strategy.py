@@ -874,6 +874,104 @@ def test_expected_filled_reverse_check_skipped_when_execution_date_in_future():
     assert not any("預期應成交" in d for d in result.details)
 
 
+def test_missing_order_events_and_positions_warns():
+    cal = xcals.get_calendar("XTAI")
+    sessions, md = _build_limit_order_universe(cal)
+    signal_date = "2026-08-14"
+
+    # Make T00 expected FILLED (next_open <= limit_price)
+    limit_price = float(md.close.loc[pd.Timestamp(signal_date), "T00"])
+    md.open.loc[sessions[-1], "T00"] = limit_price - 5.0
+
+    # snapshot has NO order_events and NO positions for T00
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}],
+        "positions": {},
+        "order_events": [],
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "WARNING"
+    assert "T00" in result.metrics["missing_event_tickers"]
+    assert any("T00" in d and "訂單遺失" in d for d in result.details)
+
+
+def test_order_events_or_positions_present_prevents_missing_event_warning():
+    cal = xcals.get_calendar("XTAI")
+    sessions, md = _build_limit_order_universe(cal)
+    signal_date = "2026-08-14"
+    next_session_str = sessions[-1].strftime("%Y-%m-%d")
+
+    # Make T00 expected FILLED
+    limit_price = float(md.close.loc[pd.Timestamp(signal_date), "T00"])
+    actual_open = limit_price - 5.0
+    md.open.loc[sessions[-1], "T00"] = actual_open
+
+    # Case A: order_events has FILLED event
+    snapshot_event = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}],
+        "positions": {},
+        "order_events": [
+            {
+                "ticker": "T00",
+                "signal_date": signal_date,
+                "execution_date": next_session_str,
+                "status": "FILLED",
+                "fill_price": actual_open,
+            }
+        ],
+    }
+    result_ev = vds.validate_signal_consistency(snapshot_event, md, signal_date, calendar=cal)
+    assert "T00" not in result_ev.metrics["missing_event_tickers"]
+
+    # Case B: positions has matching entry
+    snapshot_pos = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}],
+        "positions": {
+            "T00": {
+                "entry": actual_open,
+                "tp": actual_open + 50.0,
+                "sl": actual_open - 30.0,
+                "entry_date": next_session_str,
+                "shares": 100,
+                "day_count": 0,
+            }
+        },
+        "order_events": [],
+    }
+    result_pos = vds.validate_signal_consistency(snapshot_pos, md, signal_date, calendar=cal)
+    assert "T00" not in result_pos.metrics["missing_event_tickers"]
+
+
+def test_is_future_dirty_date_fail_closed_triggers_warning():
+    cal = xcals.get_calendar("XTAI")
+    sessions, md = _build_limit_order_universe(cal)
+    signal_date = "2026-08-14"
+
+    limit_price = float(md.close.loc[pd.Timestamp(signal_date), "T00"])
+    actual_open = limit_price - 2.0
+    md.open.loc[sessions[-1], "T00"] = actual_open  # open <= limit -> expected FILLED
+
+    # execution_date is corrupt / dirty (not matching YYYY-MM-DD or None)
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": [f"T{i:02d}" for i in range(7)]}],
+        "order_events": [
+            {
+                "ticker": "T00",
+                "signal_date": signal_date,
+                "execution_date": "INVALID_DATE_FORMAT",
+                "status": "CANCELLED_CORRUPT",
+                "fill_price": None,
+            }
+        ],
+    }
+
+    # Fail-closed (is_future=False): warning is NOT suppressed and dirty data is visible
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal, today=signal_date)
+    assert result.severity == "WARNING"
+    assert any("預期應成交" in d and "CANCELLED_CORRUPT" in d for d in result.details)
+
+
 def test_event_and_position_both_present_independent_if():
     cal = xcals.get_calendar("XTAI")
     sessions, md = _build_limit_order_universe(cal)
