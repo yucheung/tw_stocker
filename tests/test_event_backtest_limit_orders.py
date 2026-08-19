@@ -156,3 +156,31 @@ def test_tp_sl_anchored_on_fill_price_not_slippage_entry():
     assert trade["TP_Price"] == pytest.approx(110.0)
     assert trade["SL_Price"] == pytest.approx(90.0)
 
+
+def test_buy_side_slippage_not_applied_to_return_pct():
+    # Signal close is 100.0, next open is 100.0 -> fills at 100.0.
+    # Next day forced time-exit at 100.0.
+    # Slippage = 0.05 (5%).
+    # Sell-side slippage reduces exit price: 100 * (1 - 0.05) = 95.0.
+    # Buy-side has no slippage (fill_price = 100.0).
+    # With buy_cost=0, sell_cost=0:
+    # Expected return = 95 / 100 - 1 = -0.05 (-5%).
+    # If buy-side slippage were applied (100 * 1.05 = 105.0), return would be 95 / 105 - 1 = -0.0952 (-9.52%).
+    close, open_, high, low, score, ma60, atr_df = _build_single_ticker_frames(
+        next_open=100.0, next_low=95.0
+    )
+    bt = EventDrivenBacktester(
+        max_hold_days=1, position_size=0.5, tp_sl_mode="fixed",
+        tp_pct=0.50, sl_pct=0.50, slippage=0.05,
+        buy_cost=0.0, sell_cost=0.0,
+        regime_filter=False, gap_filter_atr=0,
+    )
+    trades, _ = bt.run(score, close, open_, high, low, ma60, top_k=3, threshold=2.0)
+    assert not trades.empty
+    trade = trades.iloc[0]
+    assert trade["Entry_Price"] == pytest.approx(100.0)
+    assert trade["Exit_Price"] == pytest.approx(100.0)
+    # Return_Pct must only reflect sell-side slippage (-5.0%), not buy-side slippage (-9.52%)
+    assert trade["Return_Pct"] == pytest.approx(-0.05, abs=1e-4)
+
+

@@ -991,8 +991,8 @@ class EventDrivenBacktester:
 
                     fill_price = fill_decision.fill_price
 
-                    # 滑價模型：買入時實際成交成本略高於掛單成交價（不影響顯示的 Entry_Price）
-                    actual_entry = fill_price * (1 + self.slippage)
+                    # 限價單模型：成交價即為 fill_price，不加買進滑價（滑價僅保留於賣出端）
+                    actual_entry = fill_price
 
                     # === Gap-aware sizing：跳空越大，倉位越小 ===
                     gap_scale = 1.0
