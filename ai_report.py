@@ -225,6 +225,53 @@ def get_next_n_trading_days(from_date, n_days):
     return approx_date.strftime('%Y-%m-%d')
 
 
+def build_order_record(signal_date, execution_date, ticker, rank, score,
+                        reference_close, strategy_config,
+                        tp_price=None, sl_price=None, atr=None,
+                        time_exit=None, model_version='v8.5'):
+    """
+    建立符合 PLAN_simulation.md 第 3 節 schema 的買進限價單 dict。
+
+    限價單模型（方案 1）：以訊號日收盤價 (reference_close) 掛買進限價單，
+    次一交易日開盤價 <= 限價才以開盤價成交，開高則於 09:30 撤單。
+    無副作用，不做網路/日曆存取，方便單元測試。
+    """
+    limit_price = round(float(reference_close), 4)
+    order = {
+        'signal_date': signal_date,
+        'execution_date': execution_date,
+        'ticker': ticker,
+        'side': 'buy',
+        'order_type': 'limit',
+        'limit_price': limit_price,
+        'reference_close': limit_price,
+        'entry_model': 'signal_close_limit_next_open_v1',
+        'time_in_force': 'DAY_UNTIL_0930',
+        'cancel_time': '09:30:00',
+        'timezone': 'Asia/Taipei',
+        'rank': rank,
+        'score': round(float(score), 4),
+        'max_hold_days': int(strategy_config.get('max_hold_days', 20)),
+        'position_size': float(strategy_config.get('position_size', 0.10)),
+        'regime_scale': float(strategy_config.get('regime_scale_effective', 1.0)),
+        'tp_sl_mode': strategy_config.get('tp_sl_mode', 'atr'),
+        'tp_atr_mult': float(strategy_config.get('tp_atr_mult', 4.0)),
+        'sl_atr_mult': float(strategy_config.get('sl_atr_mult', 3.0)),
+        'tp_pct': float(strategy_config.get('tp_pct', 0.15)),
+        'sl_pct': float(strategy_config.get('sl_pct', 0.08)),
+        'model_version': model_version,
+    }
+    if time_exit is not None:
+        order['time_exit'] = time_exit
+    if tp_price is not None:
+        order['tp_price'] = round(float(tp_price), 4)
+    if sl_price is not None:
+        order['sl_price'] = round(float(sl_price), 4)
+    if atr is not None:
+        order['atr'] = round(float(atr), 4)
+    return order
+
+
 def _build_inst_section():
     """
     建立三大法人籌碼動態 HTML section。
@@ -570,35 +617,19 @@ def generate_report(trades_df, equity_df, total_score, close_df, config,
             f'<td>{hist_badge}</td>{inst_badge}</tr>\n'
         )
         if order_valid:
-            orders.append({
-                'signal_date': latest_date.strftime('%Y-%m-%d'),
-                'execution_date': get_next_n_trading_days(latest_date, 1),
-                'ticker': ticker,
-                'side': 'buy',
-                'rank': rank,
-                'score': round(float(score), 4),
-                'model_entry_ref': 'next_open',
-                'reference_close': round(float(price), 4),
-                'limit_price': round(float(price), 4),
-                'tp_price': round(float(tp_price), 4),
-                'sl_price': round(float(sl_price), 4),
-                'atr': round(order_atr, 4) if order_atr else None,
-                'gap_limit_atr': float(config.get('gap_filter_effective',
-                                                  config.get('gap_filter', 1.5))),
-                'max_hold_days': int(max_hold_days),
-                'time_exit': time_exit,
-                # Sizing 與 TP/SL 參數：paper tracker 於實際開盤價成交後，
-                # 用這組值重算倉位大小與 TP/SL，避免沿用以 reference_close
-                # 為錨點的預估值（開盤跳空時會整組偏移）。
-                'position_size': float(config.get('position_size', 0.10)),
-                'regime_scale': float(config.get('regime_scale_effective', 1.0)),
-                'tp_sl_mode': config.get('tp_sl_mode', 'atr'),
-                'tp_atr_mult': float(config.get('tp_atr_mult', 4.0)),
-                'sl_atr_mult': float(config.get('sl_atr_mult', 3.0)),
-                'tp_pct': float(config.get('tp_pct', 0.15)),
-                'sl_pct': float(config.get('sl_pct', 0.08)),
-                'model_version': 'v8.5',
-            })
+            orders.append(build_order_record(
+                signal_date=latest_date.strftime('%Y-%m-%d'),
+                execution_date=get_next_n_trading_days(latest_date, 1),
+                ticker=ticker,
+                rank=rank,
+                score=score,
+                reference_close=price,
+                strategy_config=config,
+                tp_price=tp_price,
+                sl_price=sl_price,
+                atr=order_atr,
+                time_exit=time_exit,
+            ))
 
     # 顯示未被選入的候選（排名 > Top-K）
     for ticker, score, price in not_selected[:5]:
@@ -1417,7 +1448,7 @@ def generate_report(trades_df, equity_df, total_score, close_df, config,
 
     <h2>🚀 今日 AI 交易執行單</h2>
     <p class="section-note">
-        信號基於昨日收盤產生，建議於明日開盤價附近掛單進場。
+        信號基於今日收盤價掛買進限價單；次一交易日開盤價 &lt;= 限價以開盤價成交，開盤價 &gt; 限價則於 09:30 撤單。
         {f'最晚出場日使用 XTAI 交易日曆計算' if HAS_EXCHANGE_CAL else '最晚出場日為近似值（未安裝 exchange_calendars）'}
     </p>
     <table>
