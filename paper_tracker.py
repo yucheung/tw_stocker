@@ -22,22 +22,29 @@ from datetime import datetime, date, timedelta
 import argparse
 import pandas as pd
 
+from strategy.order_execution import evaluate_buy_limit_at_open
+
 DATA_FILE = 'paper_equity.json'
 HTML_FILE = 'paper_trading.html'
+MAX_POSITIONS = 7
 
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE) as f:
-            return json.load(f)
+            data = json.load(f)
+        data.setdefault('pending_orders', [])
+        data.setdefault('order_events', [])
+        return data
     return {
         'start_date': date.today().isoformat(),
         'initial_capital': 200_000,
         'capital': 200_000,
         'positions': {},          # {ticker: {entry, tp, sl, entry_date, shares, day_count}}
-        'pending_orders': [],     # 待執行訂單（next-open 模型：訊號隔日開盤才進場）
+        'pending_orders': [],     # 待執行訂單（訊號日收盤限價，次日開盤 <= 限價成交，否則 09:30 撤單）
         'closed_trades': [],      # [{ticker, entry, exit, pnl_pct, reason, entry_date, exit_date}]
         'equity_curve': [],       # [{date, equity, capital, n_positions}]
         'daily_signals': [],      # [{date, tickers: [...]}]
+        'order_events': [],       # append-only：每筆 due order 的最終成交/撤單事件
     }
 
 def save_data(data):
@@ -150,8 +157,17 @@ def get_current_prices(tickers):
     return {ticker: bar['close'] for ticker, bar in get_current_bars(tickers).items()}
 
 
+def _resolve_order_limit_price(order):
+    """限價 legacy fallback：limit_price -> reference_close -> entry；三者皆無效回傳 None。"""
+    for key in ('limit_price', 'reference_close', 'entry'):
+        val = _opt_float(order.get(key))
+        if val is not None and val > 0:
+            return val
+    return None
+
+
 def extract_signals_from_orders():
-    """從 artifacts/orders_YYYYMMDD.json 擷取今日機器可讀訂單。"""
+    """從 artifacts/orders_YYYYMMDD.json 擷取今日機器可讀訂單（買進限價單）。"""
     order_files = glob.glob('artifacts/orders_*.json')
     if not order_files:
         return []
@@ -167,17 +183,36 @@ def extract_signals_from_orders():
     for order in payload.get('orders', []):
         if order.get('side') != 'buy':
             continue
+        ticker = order.get('ticker', '?')
+        limit_price = _resolve_order_limit_price(order)
+        if limit_price is None:
+            print(f"   ⚠️ {ticker} 委託缺乏有效限價（limit_price/reference_close/entry 皆無效），略過")
+            continue
+        try:
+            tp = float(order['tp_price'])
+            sl = float(order['sl_price'])
+        except (KeyError, TypeError, ValueError):
+            print(f"   ⚠️ {ticker} 缺乏 tp_price/sl_price，略過")
+            continue
         ref_close = order.get('reference_close')
         atr = order.get('atr')
         signals.append({
-            'ticker': order['ticker'],
-            'entry': float(order.get('limit_price') or order.get('reference_close')),
-            'tp': float(order['tp_price']),
-            'sl': float(order['sl_price']),
+            'ticker': ticker,
+            'entry': limit_price,
+            'limit_price': limit_price,
+            'tp': tp,
+            'sl': sl,
             'reference_close': float(ref_close) if ref_close is not None else None,
             'atr': float(atr) if atr is not None else None,
             'gap_limit_atr': float(order.get('gap_limit_atr', 1.5)),
             'execution_date': order.get('execution_date'),
+            'signal_date': order.get('signal_date'),
+            'rank': order.get('rank'),
+            'order_type': order.get('order_type', 'limit'),
+            'entry_model': order.get('entry_model', 'signal_close_limit_next_open_v1'),
+            'time_in_force': order.get('time_in_force', 'DAY_UNTIL_0930'),
+            'cancel_time': order.get('cancel_time', '09:30:00'),
+            'timezone': order.get('timezone', 'Asia/Taipei'),
             'max_hold_days': int(order.get('max_hold_days', 20)),
             'time_exit': order.get('time_exit'),
             # Sizing / TP/SL 重算參數（舊 orders JSON 沒有這些欄位 → None，
@@ -284,11 +319,11 @@ def update_tracker(data):
             exit_price = bar['close']
 
         if reason:
-            # 計算 PnL
+            # 計算 PnL（買進端不再含 slippage，見下方限價單成交邏輯）
             sell_cost = exit_price * pos['shares'] * sell_cost_rate
             slippage_cost = exit_price * pos['shares'] * slippage
             proceeds = exit_price * pos['shares'] - sell_cost - slippage_cost
-            cost_basis = pos['entry'] * pos['shares'] * (1 + buy_cost_rate + slippage)
+            cost_basis = pos['entry'] * pos['shares'] * (1 + buy_cost_rate)
             pnl = proceeds - cost_basis
             pnl_pct = (exit_price / pos['entry'] - 1) * 100
 
@@ -312,47 +347,76 @@ def update_tracker(data):
     for t in to_close:
         del data['positions'][t]
 
-    # 3. 執行到期的待執行訂單（next-open 模型：訊號於前一交易日產生，今日開盤進場）
-    #    對齊回測引擎 event_backtest.py:659 —— entry_price = 當日開盤價（無條件），
-    #    再套用回測的 gap filter（開盤相對前日收盤跳空 > gap_limit×ATR 則放棄）。
+    # 3. 執行到期的待執行訂單（訊號日收盤限價單模型 signal_close_limit_next_open_v1）：
+    #    limit_price = 訊號日收盤價；今日 open <= limit_price 以 open 成交，
+    #    否則（含開盤價缺漏/非法）於 09:30 撤單。不再有雙邊 ATR gap filter，
+    #    也不得以收盤價回補缺漏的開盤價。每筆 due order 只產生一個 terminal
+    #    order_events，且執行後一律離開 pending_orders（成交/撤單皆不留到下一日）。
     due_orders = [o for o in pending_orders
                   if not o.get('execution_date') or o['execution_date'] <= today]
     deferred = [o for o in pending_orders
                 if o.get('execution_date') and o['execution_date'] > today]
-    opened = 0
-    if due_orders:
-        max_new = 7 - len(data['positions'])
-        candidates = []
-        for sig in due_orders:
-            if len(candidates) >= max_new:
-                break
-            ticker = sig['ticker']
-            if ticker in data['positions']:
-                continue
-            bar = bars.get(ticker)
-            if bar is None:
-                print(f"   ⏭️ 無報價 {ticker}: 待執行訂單無法成交")
-                continue
-            entry_price = bar.get('open')
-            if entry_price is None or entry_price <= 0:
-                entry_price = bar.get('close')  # 開盤價缺漏時退用收盤
-            if entry_price is None or entry_price <= 0:
-                continue
-            # Gap filter（對齊回測）：開盤相對前日收盤跳空過大則放棄
-            ref_close = sig.get('reference_close') or sig.get('entry')
-            atr = sig.get('atr')
-            gap_limit = sig.get('gap_limit_atr', 1.5)
-            if atr and atr > 0 and ref_close:
-                if abs(entry_price - ref_close) > gap_limit * atr:
-                    print(f"   ⏭️ 跳空過濾 {ticker}: |{entry_price:.1f}-{ref_close:.1f}| > {gap_limit:.1f}×ATR({atr:.1f})")
-                    continue
-            candidates.append((sig, entry_price))
+    order_events = data.setdefault('order_events', [])
+    existing_event_ids = {e.get('order_id') for e in order_events}
 
-        for idx, (sig, entry_price) in enumerate(candidates):
-            available_cash = max(data['capital'] - reserve_cash, 0)
-            if available_cash <= 0:
-                print(f"   💵 保留本金 10%，可投入現金不足，停止開倉")
-                break
+    def _rank_key(o):
+        rank = o.get('rank')
+        return (rank is None, rank if rank is not None else 0)
+
+    ordered_due = sorted(due_orders, key=_rank_key)
+    opened = 0
+    if ordered_due:
+        for sig in ordered_due:
+            ticker = sig['ticker']
+            signal_date = sig.get('signal_date') or today
+            order_id = f"{signal_date}:{ticker}:buy"
+            if order_id in existing_event_ids:
+                continue  # 同一 order_id 不重複寫入第二個 terminal event
+            existing_event_ids.add(order_id)
+
+            event_base = {
+                'order_id': order_id,
+                'ticker': ticker,
+                'signal_date': signal_date,
+                'execution_date': sig.get('execution_date') or today,
+                'event_time': f"{today}T09:30:00+08:00",
+            }
+
+            limit_price = _resolve_order_limit_price(sig)
+            if limit_price is None:
+                print(f"   ⚠️ {ticker} 委託缺乏有效限價，略過")
+                continue
+
+            if ticker in data['positions'] or len(data['positions']) >= MAX_POSITIONS:
+                order_events.append({
+                    **event_base,
+                    'limit_price': limit_price,
+                    'open_price': None,
+                    'status': 'CANCELLED_NO_CAPACITY',
+                    'fill_price': None,
+                })
+                print(f"   ⏭️ 額滿/已持有撤單 {ticker}")
+                continue
+
+            bar = bars.get(ticker)
+            open_price = bar.get('open') if bar else None
+            decision = evaluate_buy_limit_at_open(limit_price, open_price)
+
+            if not decision.filled:
+                order_events.append({
+                    **event_base,
+                    'limit_price': limit_price,
+                    'open_price': decision.open_price,
+                    'status': decision.status,
+                    'fill_price': None,
+                })
+                if decision.status == 'CANCELLED_OPEN_ABOVE_LIMIT':
+                    print(f"   ⏭️ 開高撤單 {ticker}: open {open_price:.1f} > limit {limit_price:.1f}")
+                else:
+                    print(f"   ⏭️ 無開盤價撤單 {ticker}")
+                continue
+
+            fill_price = decision.fill_price
 
             # ── Position sizing 對齊回測（event_backtest.py:1049）──
             # trade_amount = current_equity × position_size × regime_scale
@@ -369,31 +433,30 @@ def update_tracker(data):
                 position_size = 0.10
             if regime_scale <= 0:
                 regime_scale = 1.0
-            trade_amount = current_equity * position_size * regime_scale
-            # 現金不足時以可動用現金為上限（對齊回測的 capital >= actual_cost 檢查）
-            trade_amount = min(trade_amount, available_cash)
-            shares = int(trade_amount / entry_price)
-            if shares <= 0:
-                print(f"   💵 資金不足 {sig['ticker']}: 無法在保留本金 10% 後買進")
+            available_cash = max(data['capital'] - reserve_cash, 0)
+            trade_amount = min(current_equity * position_size * regime_scale, available_cash)
+            shares = int(trade_amount / fill_price)
+
+            actual_trade_amount = shares * fill_price
+            buy_cost = actual_trade_amount * buy_cost_rate  # 限價單買進不再加 slippage
+            if shares <= 0 or data['capital'] - actual_trade_amount - buy_cost < reserve_cash:
+                order_events.append({
+                    **event_base,
+                    'limit_price': limit_price,
+                    'open_price': open_price,
+                    'status': 'CANCELLED_INSUFFICIENT_CASH',
+                    'fill_price': None,
+                })
+                print(f"   💵 資金不足撤單 {ticker}")
                 continue
 
-            actual_trade_amount = shares * entry_price
-            buy_cost = actual_trade_amount * (buy_cost_rate + slippage)
-            if data['capital'] - actual_trade_amount - buy_cost < reserve_cash:
-                print(f"   💵 資金不足 {sig['ticker']}: 保留本金 10% 後不開倉")
-                continue
-
-            ticker = sig['ticker']
             data['capital'] -= (actual_trade_amount + buy_cost)
-            # TP/SL 以實際開盤價為錨重算（ai_report 以收盤價為錨，開盤跳空時修正）
-            # B1: bar 存在但 open 值為 None 時，dict.get 的 default 不生效，
-            #     改用 `or` 語意退回 entry_price（open=0 亦屬無效報價，一併退回）。
-            bar = bars.get(ticker, {})
-            open_price = bar.get('open') or entry_price
+            # TP/SL 以實際成交價（fill_price = open）為錨重算
+            # （ai_report 以收盤價為錨，開盤跳空時修正）
             atr_for_tp = _opt_float(sig.get('atr'))
-            tp_new, sl_new = recompute_tp_sl(sig, open_price, atr_for_tp)
+            tp_new, sl_new = recompute_tp_sl(sig, fill_price, atr_for_tp)
             data['positions'][ticker] = {
-                'entry': entry_price,
+                'entry': fill_price,
                 'tp': tp_new,
                 'sl': sl_new,
                 'entry_date': today,
@@ -401,15 +464,22 @@ def update_tracker(data):
                 'day_count': 0,
                 'max_hold_days': sig.get('max_hold_days', max_hold),
             }
+            order_events.append({
+                **event_base,
+                'limit_price': limit_price,
+                'open_price': open_price,
+                'status': 'FILLED',
+                'fill_price': fill_price,
+            })
             opened += 1
             print(
-                f"   🆕 開倉 {ticker} @ {entry_price:.1f} × {shares:,.0f} "
+                f"   🆕 開倉 {ticker} @ {fill_price:.1f} × {shares:,.0f} "
                 f"(投入 {actual_trade_amount:,.0f}, TP {tp_new:.1f} / SL {sl_new:.1f})"
             )
         if opened:
-            print(f"   ✅ 今日開倉 {opened} 檔（待執行 {len(due_orders)} 筆）")
+            print(f"   ✅ 今日開倉 {opened} 檔（待執行 {len(ordered_due)} 筆）")
         else:
-            print(f"   ⚠️ 待執行 {len(due_orders)} 筆皆未成交（跳空/資金/已持有）")
+            print(f"   ⚠️ 待執行 {len(ordered_due)} 筆皆未成交（開高/缺價/資金/額滿）")
 
     # 4. 記錄今日訊號，登錄為待執行訂單（隔日開盤執行，對齊回測 next-open）
     if signals:

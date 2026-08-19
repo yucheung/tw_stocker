@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-paper_tracker.py edge case 加固單元測試（Codex review B1 / A1 / A2 / A3）
+paper_tracker.py edge case 加固單元測試（Codex review B1 / A1 / A2 / A3 +
+PLAN_simulation.md Task 4: 買進限價單 09:30 生命週期）
 
 執行方式：
     python3 -m unittest test_paper_tracker_edge_cases -v
@@ -68,10 +69,10 @@ class TestRecomputeTpSl(unittest.TestCase):
         self.assertAlmostEqual(sl, 90.0)
 
 
-class TestOpenPriceNone(unittest.TestCase):
-    """B1: bar 存在但 open = None → 開倉不 crash，退回 entry_price"""
+class TestBuyLimitLifecycle(unittest.TestCase):
+    """PLAN_simulation.md Task 4: 訊號日收盤限價，次日開盤 <= 限價成交，否則 09:30 撤單。"""
 
-    def _run_open(self, bar_open):
+    def _run_open(self, bar_open, limit_price=150.0, bar_low=148.0, bar_high=155.0, atr=None):
         data = {
             'start_date': '2026-01-01',
             'initial_capital': 200_000,
@@ -79,11 +80,11 @@ class TestOpenPriceNone(unittest.TestCase):
             'positions': {},
             'pending_orders': [{
                 'ticker': '3231',
-                'entry': 150.0,
-                'tp': 180.0,
-                'sl': 120.0,
-                'reference_close': 150.0,
-                'atr': None,
+                'entry': limit_price,
+                'tp': limit_price * 1.2,
+                'sl': limit_price * 0.8,
+                'reference_close': limit_price,
+                'atr': atr,
                 'gap_limit_atr': 1.5,
                 'execution_date': None,
                 'max_hold_days': 20,
@@ -97,8 +98,9 @@ class TestOpenPriceNone(unittest.TestCase):
             'closed_trades': [],
             'equity_curve': [],
             'daily_signals': [],
+            'order_events': [],
         }
-        bars = {'3231': {'open': bar_open, 'close': 150.0, 'high': 155.0, 'low': 148.0}}
+        bars = {'3231': {'open': bar_open, 'close': limit_price, 'high': bar_high, 'low': bar_low}}
         with mock.patch.object(pt, 'get_current_bars', return_value=bars), \
              mock.patch.object(pt, 'extract_signals_from_report', return_value=[]), \
              mock.patch.object(pt, 'save_data'), \
@@ -106,23 +108,50 @@ class TestOpenPriceNone(unittest.TestCase):
             pt.update_tracker(data)
         return data
 
-    def test_open_none_uses_entry(self):
-        # B1: open=None → 以 entry_price（收盤 150）開倉，不 crash
+    def test_open_none_cancels_without_close_fallback(self):
+        # open 缺漏 → 09:30 撤單，不得以收盤價補開倉
         data = self._run_open(None)
-        pos = data['positions'].get('3231')
-        self.assertIsNotNone(pos, 'open=None 時仍應成功開倉')
-        self.assertAlmostEqual(pos['entry'], 150.0)
-        # TP/SL 以 150 為錨（ATR=None → 百分比 fallback）
-        self.assertAlmostEqual(pos['tp'], 180.0)
-        self.assertAlmostEqual(pos['sl'], 120.0)
+        self.assertNotIn('3231', data['positions'])
+        self.assertEqual(data['pending_orders'], [])
+        self.assertEqual(data['order_events'][-1]['status'], 'CANCELLED_NO_OPEN_PRICE')
 
-    def test_open_valid_used(self):
-        # 對照組: open 正常時以 open 為錨
-        data = self._run_open(151.5)
-        pos = data['positions']['3231']
-        self.assertAlmostEqual(pos['entry'], 151.5)
-        self.assertAlmostEqual(pos['tp'], 151.5 * 1.2)
-        self.assertAlmostEqual(pos['sl'], 151.5 * 0.8)
+    def test_open_below_limit_fills_at_open(self):
+        # open 149 < limit 150 → 以較佳的 149 成交
+        data = self._run_open(149.0, limit_price=150.0)
+        pos = data['positions'].get('3231')
+        self.assertIsNotNone(pos)
+        self.assertAlmostEqual(pos['entry'], 149.0)
+        self.assertEqual(data['order_events'][-1]['status'], 'FILLED')
+        self.assertAlmostEqual(data['order_events'][-1]['fill_price'], 149.0)
+
+    def test_open_equal_limit_fills(self):
+        # open == limit → 必須成交（含等號）
+        data = self._run_open(150.0, limit_price=150.0)
+        pos = data['positions'].get('3231')
+        self.assertIsNotNone(pos)
+        self.assertAlmostEqual(pos['entry'], 150.0)
+        self.assertEqual(data['order_events'][-1]['status'], 'FILLED')
+
+    def test_open_above_limit_cancels_even_if_low_touches_limit(self):
+        # open 151 > limit 150 → 09:30 撤單；當日 low 145 觸及限價也不得回推成交
+        data = self._run_open(151.0, limit_price=150.0, bar_low=145.0)
+        self.assertNotIn('3231', data['positions'])
+        self.assertEqual(data['pending_orders'], [])
+        self.assertEqual(data['order_events'][-1]['status'], 'CANCELLED_OPEN_ABOVE_LIMIT')
+        self.assertIsNone(data['order_events'][-1]['fill_price'])
+
+    def test_small_atr_does_not_block_fill_below_limit(self):
+        # ATR 很小、open 130 仍低於 limit 150 → 照樣成交，不受 ATR gap filter 影響
+        data = self._run_open(130.0, limit_price=150.0, atr=0.5)
+        pos = data['positions'].get('3231')
+        self.assertIsNotNone(pos)
+        self.assertAlmostEqual(pos['entry'], 130.0)
+
+    def test_due_order_never_persists_to_pending(self):
+        # 不論成交或撤單，執行過的 due order 都不得留在 pending_orders
+        for open_price in (None, 149.0, 150.0, 151.0):
+            data = self._run_open(open_price)
+            self.assertEqual(data['pending_orders'], [])
 
 
 if __name__ == '__main__':
