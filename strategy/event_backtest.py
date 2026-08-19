@@ -25,6 +25,8 @@ v2 改進：
 import pandas as pd
 import numpy as np
 
+from strategy.order_execution import evaluate_buy_limit_at_open
+
 
 class EventDrivenBacktester:
     """
@@ -354,8 +356,7 @@ class EventDrivenBacktester:
         filters = []
         if self.regime_filter:
             filters.append('Regime')
-        if self.gap_filter_atr > 0:
-            filters.append(f'Gap({self.gap_filter_atr}×ATR)')
+        filters.append('BuyLimit(signal close, cancel 09:30)')
         if self.volume_confirm:
             filters.append('VolConfirm')
         if self.blacklist_lookback > 0:
@@ -494,6 +495,10 @@ class EventDrivenBacktester:
         # 從第 60 天開始（確保技術指標已穩定）
         for i in range(60, len(dates)):
             date = dates[i]
+
+            # 訊號日（t-1）收盤後、今日出場結算前的可用 slot 數。
+            # 今日出場釋放的 slot 不得回補今日已掛出的委託（見 PLAN_simulation.md 1.3）。
+            submission_slots = max_positions - len(active_trades)
 
             # ── Step 1: 處理持倉的出場判定（根據今日盤中高低價） ──
             exited_tickers = []
@@ -691,7 +696,7 @@ class EventDrivenBacktester:
             # ── Step 3: 處理今日進場（根據昨日收盤信號，今日 open 進場） ──
             entry_allowed = (dd_pause_counter <= 0 and cl_pause_counter <= 0)
 
-            if len(active_trades) < max_positions and entry_allowed:
+            if submission_slots > 0 and entry_allowed:
                 # ── Regime Filter + Graduated Exposure ──
                 # ━━ FIX: 使用 t-1 大盤數據（避免同日 lookahead） ━━
                 regime_ok, regime_scale = self._compute_regime_scale(
@@ -700,6 +705,8 @@ class EventDrivenBacktester:
                 candidates = []
                 if regime_ok:
                     # ── 動量策略（正常模式） ──
+                    # 候選/排名只用訊號日 (t-1) 已知資料；不得讀取今日 open，
+                    # 否則等於在掛單前就先偷看是否會成交。
                     for ticker in close_df.columns:
                         if ticker in active_trades:
                             continue
@@ -714,26 +721,12 @@ class EventDrivenBacktester:
                         score = total_score[ticker].iloc[i - 1] if i - 1 >= 0 else np.nan
                         ma = ma_60[ticker].iloc[i - 1] if i - 1 >= 0 else np.nan
                         prev_close = close_df[ticker].iloc[i - 1] if i - 1 >= 0 else np.nan
-                        entry_price = open_df[ticker].iloc[i]
 
-                        if not is_tradable_bar(ticker, i):
-                            continue
-                        if pd.isna(entry_price) or pd.isna(score) or pd.isna(ma):
-                            continue
-                        if pd.isna(prev_close) or entry_price <= 0:
+                        if pd.isna(score) or pd.isna(ma) or pd.isna(prev_close):
                             continue
 
                         if not (score >= threshold and prev_close > ma):
                             continue
-
-                        if self.gap_filter_atr > 0 and atr is not None:
-                            atr_val = atr[ticker].iloc[i - 1] if i - 1 >= 0 else np.nan
-                            if not pd.isna(atr_val) and atr_val > 0:
-                                gap = abs(entry_price - prev_close)
-                                # Dynamic gap filter: 強勢 regime 放寬到 2.0 ATR
-                                eff_gap_limit = self._effective_gap_limit(regime_scale)
-                                if gap > eff_gap_limit * atr_val:
-                                    continue
 
                         # ━━ FIX: 使用 t-1 成交量（避免同日 lookahead——開盤時不知道今天總量） ━━
                         if vol_ma20 is not None and ticker in vol_df.columns:
@@ -743,7 +736,8 @@ class EventDrivenBacktester:
                                 if prev_vol < avg_vol:
                                     continue
 
-                        candidates.append((ticker, score, entry_price))
+                        # 第三個 tuple 欄位是買進限價（訊號日收盤），不是次日 open。
+                        candidates.append((ticker, score, prev_close))
 
                 elif self.mean_reversion and not regime_ok:
                     # ── 均值回歸子策略（熊市模式） ──
@@ -751,11 +745,8 @@ class EventDrivenBacktester:
                     for ticker in close_df.columns:
                         if ticker in active_trades:
                             continue
-                        entry_price = open_df[ticker].iloc[i]
                         prev_close = close_df[ticker].iloc[i - 1] if i - 1 >= 0 else np.nan
-                        if not is_tradable_bar(ticker, i):
-                            continue
-                        if pd.isna(entry_price) or pd.isna(prev_close) or entry_price <= 0:
+                        if pd.isna(prev_close):
                             continue
 
                         ticker_rsi = rsi_14[ticker].iloc[i - 1] if i - 1 >= 0 else np.nan
@@ -769,7 +760,7 @@ class EventDrivenBacktester:
                         if ticker_rsi < 30 and ticker_ret5 < -0.10:
                             # 反轉分數：RSI 越低越好
                             rev_score = (30 - ticker_rsi) + abs(ticker_ret5) * 100
-                            candidates.append((ticker, rev_score, entry_price))
+                            candidates.append((ticker, rev_score, prev_close))
 
                 # === 台指期對沖：大盤 < 60MA 時開空單 ===
                 if self.futures_hedge and market_ma60 is not None:
@@ -796,7 +787,8 @@ class EventDrivenBacktester:
 
                 # Top-K 選股：按分數排序，取前 top_k 名（含板塊分散）
                 candidates.sort(key=lambda x: x[1], reverse=True)
-                slots_available = max_positions - len(active_trades)
+                # 訊號日收盤後就固定的 slot 數，今日出場不得回補（見迴圈頂部 submission_slots）。
+                slots_available = submission_slots
 
                 # 板塊分散：電子股不超過 sector_max_pct
                 # Dynamic sector cap: regime 越弱限制越緊
@@ -990,8 +982,17 @@ class EventDrivenBacktester:
                         if heat_pct >= self.max_portfolio_heat:
                             continue  # 組合熱度已滿，跳過新進場
 
-                    # 滑價模型：買入時價格略高
-                    actual_entry = entry_price * (1 + self.slippage)
+                    # === 限價單撮合：訊號日收盤掛限價，今日開盤 <= 限價才成交，否則 09:30 取消 ===
+                    raw_open = open_df[ticker].iloc[i] if ticker in open_df.columns else np.nan
+                    open_price = None if pd.isna(raw_open) else float(raw_open)
+                    fill_decision = evaluate_buy_limit_at_open(entry_price, open_price)
+                    if not fill_decision.filled:
+                        continue  # 開盤價高於限價（或無開盤價）：委託取消，不遞補下一名候選
+
+                    fill_price = fill_decision.fill_price
+
+                    # 滑價模型：買入時實際成交成本略高於掛單成交價（不影響顯示的 Entry_Price）
+                    actual_entry = fill_price * (1 + self.slippage)
 
                     # === Gap-aware sizing：跳空越大，倉位越小 ===
                     gap_scale = 1.0
@@ -999,7 +1000,7 @@ class EventDrivenBacktester:
                         prev_close_val = close_df[ticker].iloc[i - 1] if i - 1 >= 0 else np.nan
                         atr_val_gap = atr[ticker].iloc[i - 1] if i - 1 >= 0 else np.nan
                         if not pd.isna(prev_close_val) and not pd.isna(atr_val_gap) and atr_val_gap > 0:
-                            gap_atr = abs(entry_price - prev_close_val) / atr_val_gap
+                            gap_atr = abs(fill_price - prev_close_val) / atr_val_gap
                             if gap_atr >= 1.0:
                                 gap_scale = 0.5   # 大跳空：半倉
                             elif gap_atr >= 0.5:
@@ -1070,7 +1071,7 @@ class EventDrivenBacktester:
 
                         active_trades[ticker] = {
                             'shares': shares,
-                            'entry_price': actual_entry,
+                            'entry_price': fill_price,
                             'entry_date': date,
                             'tp_price': tp_price,
                             'sl_price': sl_price,
