@@ -810,6 +810,15 @@ def validate_signal_consistency(
 
     signal_entry = matching_signals[-1]
     raw_tickers = signal_entry.get("tickers", [])
+    if not isinstance(raw_tickers, list):
+        return CheckResult(
+            rule_id="signal_consistency",
+            title="Top-7 信號一致性",
+            severity="CRITICAL",
+            summary="當日信號 tickers 型別錯誤（schema 異常）",
+            details=warnings_list + [f"tickers 欄位型別為 {type(raw_tickers).__name__}，預期 list"],
+            metrics={"signal_count": 0, "schema_error": True},
+        )
     tickers = [str(t).replace(".TW", "").replace(".TWO", "") for t in raw_tickers]
 
     violations: list[str] = []

@@ -1058,6 +1058,99 @@ def test_signal_consistency_coverage_gate_warning():
     assert "score/MA 通過" not in result.summary
 
 
+def test_signal_consistency_no_matching_date_warns():
+    """當日無匹配 daily_signals 應為 WARNING，不得 PASS。"""
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")
+    signal_date = "2026-08-14"
+
+    tickers = [f"T{i:02d}" for i in range(60)]
+    data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
+    close_df = pd.DataFrame(data, index=sessions)
+    md = vds.MarketData(close=close_df, open=close_df.copy(), high=close_df * 1.05, low=close_df * 0.95,
+                        volume=pd.DataFrame(100000.0, index=sessions, columns=tickers))
+
+    # daily_signals 只有其他日期，沒有 2026-08-14
+    snapshot = {
+        "daily_signals": [{"date": "2026-08-13", "tickers": ["T00", "T01"]}]
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "WARNING"
+    assert result.metrics["signal_count"] == 0
+    assert result.metrics.get("indeterminate") is True
+
+
+def test_signal_consistency_empty_tickers_critical():
+    """signal entry 存在但 tickers 為空陣列 → CRITICAL（schema 異常）。"""
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")
+    signal_date = "2026-08-14"
+
+    tickers = [f"T{i:02d}" for i in range(60)]
+    data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
+    close_df = pd.DataFrame(data, index=sessions)
+    md = vds.MarketData(close=close_df, open=close_df.copy(), high=close_df * 1.05, low=close_df * 0.95,
+                        volume=pd.DataFrame(100000.0, index=sessions, columns=tickers))
+
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": []}]
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "CRITICAL"
+    assert result.metrics.get("schema_error") is True
+
+
+def test_signal_consistency_null_tickers_critical():
+    """tickers: null 應為 CRITICAL（schema 異常），不得 TypeError 降級為 WARNING。"""
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")
+    signal_date = "2026-08-14"
+
+    tickers = [f"T{i:02d}" for i in range(60)]
+    data = {t: [100.0 + (60 - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
+    close_df = pd.DataFrame(data, index=sessions)
+    md = vds.MarketData(close=close_df, open=close_df.copy(), high=close_df * 1.05, low=close_df * 0.95,
+                        volume=pd.DataFrame(100000.0, index=sessions, columns=tickers))
+
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": None}]
+    }
+
+    result = vds.validate_signal_consistency(snapshot, md, signal_date, calendar=cal)
+    assert result.severity == "CRITICAL"
+    assert result.metrics.get("schema_error") is True
+    assert "型別" in result.summary
+
+
+def test_signal_consistency_coverage_boundary_53_and_54():
+    """53 欄 < 54 門檻 → WARNING；54 欄 = 門檻 → 正常評分。"""
+    cal = xcals.get_calendar("XTAI")
+    sessions = cal.sessions_in_range("2026-05-01", "2026-08-17")
+    signal_date = "2026-08-14"
+
+    def build_md(n_cols):
+        tickers = [f"T{i:02d}" for i in range(n_cols)]
+        data = {t: [100.0 + (n_cols - i) * (j / len(sessions)) for j in range(len(sessions))] for i, t in enumerate(tickers)}
+        close_df = pd.DataFrame(data, index=sessions)
+        return vds.MarketData(close=close_df, open=close_df.copy(), high=close_df * 1.05, low=close_df * 0.95,
+                              volume=pd.DataFrame(100000.0, index=sessions, columns=tickers))
+
+    snapshot = {
+        "daily_signals": [{"date": signal_date, "tickers": ["T00", "T01"]}]
+    }
+
+    # 53 欄 → WARNING (coverage insufficient)
+    r53 = vds.validate_signal_consistency(snapshot, build_md(53), signal_date, calendar=cal)
+    assert r53.severity == "WARNING"
+    assert r53.metrics.get("universe_coverage_insufficient") is True
+
+    # 54 欄 → 正常評分（非 coverage 問題）
+    r54 = vds.validate_signal_consistency(snapshot, build_md(54), signal_date, calendar=cal)
+    assert r54.metrics.get("universe_coverage_insufficient") is False or "universe_coverage_insufficient" not in r54.metrics
+
+
 def test_run_verification_stale_snapshot_elevates_to_critical(tmp_path):
     log_file = tmp_path / "verify_log.json"
     cfg = vds.VerifyConfig(log_path=str(log_file))
