@@ -85,6 +85,21 @@ def get_calendar(name: str = "XTAI") -> Optional[xcals.ExchangeCalendar]:
     return None
 
 
+def is_trading_day(dt_str: str, calendar: Optional[xcals.ExchangeCalendar] = None) -> bool:
+    """判斷指定日期 (YYYY-MM-DD) 是否為有效 XTAI 交易日。"""
+    cal = calendar or get_calendar("XTAI")
+    if cal is not None:
+        try:
+            return bool(cal.is_session(dt_str))
+        except Exception:
+            return False
+    try:
+        ts = pd.Timestamp(dt_str)
+        return ts.weekday() < 5
+    except Exception:
+        return False
+
+
 def get_next_trading_day(dt_str: str, calendar: Optional[xcals.ExchangeCalendar] = None) -> str:
     """計算 dt_str 後的次一有效交易日。"""
     cal = calendar or get_calendar("XTAI")
@@ -109,7 +124,15 @@ def get_next_trading_day(dt_str: str, calendar: Optional[xcals.ExchangeCalendar]
 
 def compute_wilder_rsi(prices: pd.Series | pd.DataFrame, period: int = 5) -> pd.Series | pd.DataFrame:
     """
-    計算 Wilder's 平滑 RSI (Relative Strength Index)。
+    計算標準 Wilder's 平滑 RSI (Relative Strength Index)。
+
+    算法規則 (P0-1)：
+    - 前 period 期以 SMA 初始化 (平均上漲 avg_gain 與平均下跌 avg_loss)
+    - 後續期數採 Wilder 平滑：
+        avg_gain[t] = (avg_gain[t-1] * (period - 1) + gain[t]) / period
+        avg_loss[t] = (avg_loss[t-1] * (period - 1) + loss[t]) / period
+    - RS = avg_gain / avg_loss
+    - RSI = 100 - 100 / (1 + RS)
 
     Parameters
     ----------
@@ -123,38 +146,78 @@ def compute_wilder_rsi(prices: pd.Series | pd.DataFrame, period: int = 5) -> pd.
     rsi : pd.Series or pd.DataFrame
         RSI 指標 (0 ~ 100)
     """
-    delta = prices.diff()
-    gain = delta.clip(lower=0.0)
-    loss = (-delta).clip(lower=0.0)
+    is_series = isinstance(prices, pd.Series)
+    df_in = prices.to_frame() if is_series else prices
 
-    # Wilder's Smoothing: ewm with alpha = 1 / period
-    avg_gain = gain.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
+    vals = df_in.to_numpy(dtype=float)
+    num_rows, num_cols = vals.shape
+    rsi_out = np.full((num_rows, num_cols), np.nan, dtype=float)
 
-    if isinstance(prices, pd.DataFrame):
-        rsi = pd.DataFrame(index=prices.index, columns=prices.columns, dtype=float)
-        for col in prices.columns:
-            ag = avg_gain[col]
-            al = avg_loss[col]
-            rs = ag / (al + 1e-12)
-            col_rsi = 100.0 - (100.0 / (1.0 + rs))
+    if num_rows <= period:
+        if is_series:
+            return pd.Series(rsi_out[:, 0], index=prices.index, name=prices.name)
+        return pd.DataFrame(rsi_out, index=prices.index, columns=prices.columns)
 
-            # 特殊邊界值處理
-            col_rsi[(al == 0.0) & (ag == 0.0)] = 50.0
-            col_rsi[(al == 0.0) & (ag > 0.0)] = 100.0
-            col_rsi[(ag == 0.0) & (al > 0.0)] = 0.0
-            # 確保未滿 min_periods 前為 NaN
-            col_rsi[ag.isna() | al.isna()] = np.nan
-            rsi[col] = col_rsi
-        return rsi
-    else:
-        rs = avg_gain / (avg_loss + 1e-12)
-        rsi = 100.0 - (100.0 / (1.0 + rs))
-        rsi[(avg_loss == 0.0) & (avg_gain == 0.0)] = 50.0
-        rsi[(avg_loss == 0.0) & (avg_gain > 0.0)] = 100.0
-        rsi[(avg_gain == 0.0) & (avg_loss > 0.0)] = 0.0
-        rsi[avg_gain.isna() | avg_loss.isna()] = np.nan
-        return rsi
+    def _calc_1d_rsi(sub_vals: np.ndarray) -> np.ndarray:
+        m = len(sub_vals)
+        res = np.full(m, np.nan, dtype=float)
+        if m <= period:
+            return res
+
+        diffs = np.diff(sub_vals)
+        gains = np.where(diffs > 0, diffs, 0.0)
+        losses = np.where(diffs < 0, -diffs, 0.0)
+
+        if np.isnan(gains[:period]).any() or np.isnan(losses[:period]).any():
+            return res
+
+        # 1. 前 period 筆 diffs 以 SMA 初始化
+        ag = float(np.mean(gains[:period]))
+        al = float(np.mean(losses[:period]))
+
+        def _to_rsi(g: float, l: float) -> float:
+            if np.isnan(g) or np.isnan(l):
+                return np.nan
+            if l == 0.0 and g == 0.0:
+                return 50.0
+            if l == 0.0:
+                return 100.0
+            if g == 0.0:
+                return 0.0
+            rs = g / l
+            return 100.0 - (100.0 / (1.0 + rs))
+
+        res[period] = _to_rsi(ag, al)
+
+        # 2. 後續以 Wilder Smoothing 平滑
+        for i in range(period + 1, m):
+            cg = gains[i - 1]
+            cl = losses[i - 1]
+            if np.isnan(cg) or np.isnan(cl):
+                ag = np.nan
+                al = np.nan
+            else:
+                ag = (ag * (period - 1) + cg) / period
+                al = (al * (period - 1) + cl) / period
+            res[i] = _to_rsi(ag, al)
+
+        return res
+
+    for col_idx in range(num_cols):
+        col_data = vals[:, col_idx]
+        valid_mask = ~np.isnan(col_data)
+        if not np.any(valid_mask):
+            continue
+        valid_indices = np.where(valid_mask)[0]
+        if len(valid_indices) <= period:
+            continue
+        first_valid = valid_indices[0]
+        sub_vals = col_data[first_valid:]
+        rsi_out[first_valid:, col_idx] = _calc_1d_rsi(sub_vals)
+
+    if is_series:
+        return pd.Series(rsi_out[:, 0], index=prices.index, name=prices.name)
+    return pd.DataFrame(rsi_out, index=prices.index, columns=prices.columns)
 
 
 def compute_v85_atr20(close: pd.Series | pd.DataFrame, period: int = 20) -> pd.Series | pd.DataFrame:
@@ -199,6 +262,7 @@ def filter_mr20_candidates(
     vol_df: pd.DataFrame,
     as_of_date: Optional[str] = None,
     config: Optional[MR20Config] = None,
+    calendar: Optional[xcals.ExchangeCalendar] = None,
 ) -> list[dict[str, Any]]:
     """
     依據 5 大核心條件篩選與排名 MR20 候選個股。
@@ -213,6 +277,8 @@ def filter_mr20_candidates(
         訊號日期 (YYYY-MM-DD)，若未提供則預設為 close_df 最後一筆日期
     config : MR20Config, optional
         策略參數設定
+    calendar : xcals.ExchangeCalendar, optional
+        交易日曆
 
     Returns
     -------
@@ -224,23 +290,37 @@ def filter_mr20_candidates(
     if close_df.empty or vol_df.empty:
         return []
 
+    cal = calendar or get_calendar("XTAI")
+
     if as_of_date is not None:
+        # P0-5: 非交易日處理：非 XTAI session 應拒絕，不靜默降級
+        if cal is not None and not cal.is_session(as_of_date):
+            raise ValueError(f"Specified as-of date '{as_of_date}' is not a valid XTAI trading session.")
         target_dt = pd.Timestamp(as_of_date)
         if target_dt not in close_df.index:
-            # 尋找最近且小於等於 target_dt 的日期
-            valid_dates = close_df.index[close_df.index <= target_dt]
-            if valid_dates.empty:
-                return []
-            target_dt = valid_dates[-1]
+            raise ValueError(f"As-of date '{as_of_date}' not found in price data index.")
     else:
         target_dt = close_df.index[-1]
+        as_of_date = target_dt.strftime("%Y-%m-%d")
+        if cal is not None and not cal.is_session(as_of_date):
+            raise ValueError(f"Latest price date '{as_of_date}' is not a valid XTAI trading session.")
 
     t_loc = close_df.index.get_loc(target_dt)
-    if isinstance(t_loc, slice) or isinstance(t_loc, np.ndarray):
+    if isinstance(t_loc, (slice, np.ndarray)):
         t_loc = t_loc[-1] if hasattr(t_loc, "__len__") else t_loc.stop - 1
 
     # 至少需要前一日資料以確認止跌 (t_loc >= 1)
     if t_loc < 1:
+        return []
+
+    # P0-3: 先建立 min_history_days (預設 60 日) 歷史門檻的 universe，再做 Top-50 流動性排序
+    eligible_tickers = []
+    for ticker in close_df.columns:
+        series_up_to_t = close_df[ticker].iloc[: t_loc + 1].dropna()
+        if len(series_up_to_t) >= cfg.min_history_days:
+            eligible_tickers.append(ticker)
+
+    if not eligible_tickers:
         return []
 
     indicators = compute_mr20_indicators(close_df, vol_df, config=cfg)
@@ -250,8 +330,8 @@ def filter_mr20_candidates(
     atr_df = indicators["atr"]
     turnover_df = indicators["turnover"]
 
-    # 1. 流動性篩選：計算當日全市場 20 日平均成交額 Top-N
-    turnover_series = turnover_df.iloc[t_loc].dropna()
+    # 條件 1: 在符合 60 日歷史門檻的 universe 內，取 20 日平均成交額 Top-N
+    turnover_series = turnover_df.loc[target_dt, eligible_tickers].dropna()
     valid_turnovers = turnover_series[turnover_series > 0]
     if valid_turnovers.empty:
         return []
@@ -263,16 +343,7 @@ def filter_mr20_candidates(
 
     passed_candidates = []
 
-    for ticker in close_df.columns:
-        # 資料長度檢查：需有至少 min_history_days 根有效收盤價
-        series_up_to_t = close_df[ticker].iloc[: t_loc + 1].dropna()
-        if len(series_up_to_t) < cfg.min_history_days:
-            continue
-
-        # 條件 1: 流動性 Top-N
-        if ticker not in top_liquid_tickers:
-            continue
-
+    for ticker in top_liquid_tickers:
         c_t = close_df[ticker].iloc[t_loc]
         c_prev = close_df[ticker].iloc[t_loc - 1]
         ma_s = ma_short_df[ticker].iloc[t_loc]
@@ -404,12 +475,19 @@ def generate_mr20_orders(
     dict: {"orders": [order_1, order_2, ...]}
     """
     cfg = config or MR20Config()
+    cal = calendar or get_calendar("XTAI")
 
     if signal_date is None:
+        if close_df.empty:
+            return {"orders": []}
         signal_date = close_df.index[-1].strftime("%Y-%m-%d")
 
-    candidates = filter_mr20_candidates(close_df, vol_df, as_of_date=signal_date, config=cfg)
-    exec_date = get_next_trading_day(signal_date, calendar=calendar)
+    # P0-5: 非交易日處理：非 XTAI session 應拒絕，不靜默降級
+    if cal is not None and not cal.is_session(signal_date):
+        raise ValueError(f"Specified signal date '{signal_date}' is not a valid XTAI trading session.")
+
+    candidates = filter_mr20_candidates(close_df, vol_df, as_of_date=signal_date, config=cfg, calendar=cal)
+    exec_date = get_next_trading_day(signal_date, calendar=cal)
 
     orders = []
     for cand in candidates:
@@ -470,7 +548,7 @@ def parse_args(args=None):
         dest="output",
         type=str,
         default=None,
-        help="訂單 JSON 輸出路徑 (例如: artifacts/orders_mr20_20260819.json)",
+        help="訂單 JSON 輸出路徑 (例如: artifacts/mr20/orders_mr20_20260819.json)",
     )
     parser.add_argument(
         "--top-n",
@@ -547,6 +625,33 @@ def main():
         ma20_dist_max=args.dist_ma20_max,
     )
 
+    cal = get_calendar("XTAI")
+
+    # 處理訊號日期
+    if args.as_of:
+        signal_date = args.as_of
+        # P0-5: 非交易日處理：非 XTAI session 應拒絕，不靜默降級
+        if cal is not None and not cal.is_session(signal_date):
+            raise ValueError(f"Specified as-of date '{signal_date}' is not a valid XTAI trading session.")
+        elif cal is None and pd.Timestamp(signal_date).weekday() >= 5:
+            raise ValueError(f"Specified as-of date '{signal_date}' is not a valid trading day (weekend).")
+    else:
+        # 若未指定，以台北時間判斷最新交易日
+        now_taipei = datetime.now(TAIPEI_TZ)
+        today_str = now_taipei.strftime("%Y-%m-%d")
+        if cal is not None:
+            if cal.is_session(today_str) and now_taipei.hour >= 14:
+                signal_date = today_str
+            else:
+                signal_date = cal.previous_session(today_str).strftime("%Y-%m-%d")
+        else:
+            signal_date = today_str
+
+    # P0-2: yfinance 日期邊界
+    # yfinance 的 end 參數不包含指定日期。改為：end = signal_date + 1 day（多抓一天）
+    end_fetch_dt = pd.Timestamp(signal_date) + timedelta(days=1)
+    end_date_str = end_fetch_dt.strftime("%Y-%m-%d")
+
     # 載入股池與歷史資料
     from strategy.ai_strategy import fetch_panel_data
     from strategy.universe import get_twse_common_stocks
@@ -559,11 +664,25 @@ def main():
         from ai_report import LEGACY_EXTENDED_TICKERS
         tickers = LEGACY_EXTENDED_TICKERS
 
-    print(f"🎯 MR20 順勢回檔策略 (股池規模: {len(tickers)} 檔)...")
-    close_df, open_df, high_df, low_df, vol_df = fetch_panel_data(tickers, days=180, end_date=args.as_of)
+    print(f"🎯 MR20 順勢回檔策略 (股池規模: {len(tickers)} 檔, 訊號日: {signal_date})...")
+    close_df, open_df, high_df, low_df, vol_df = fetch_panel_data(
+        tickers, days=180, end_date=end_date_str
+    )
 
-    signal_date = args.as_of or close_df.index[-1].strftime("%Y-%m-%d")
-    orders_dict = generate_mr20_orders(close_df, vol_df, signal_date=signal_date, config=cfg)
+    # 確保資料切齊至 signal_date
+    target_dt = pd.Timestamp(signal_date)
+    if target_dt in close_df.index:
+        close_df = close_df.loc[:target_dt]
+        vol_df = vol_df.loc[:target_dt]
+
+    # P0-2: 確認最後一筆資料的日期 == signal_date
+    if close_df.empty or close_df.index[-1] != target_dt:
+        actual_last = close_df.index[-1].strftime("%Y-%m-%d") if not close_df.empty else "None"
+        raise ValueError(
+            f"Fetched data last date ({actual_last}) does not match expected signal date ({signal_date})."
+        )
+
+    orders_dict = generate_mr20_orders(close_df, vol_df, signal_date=signal_date, calendar=cal, config=cfg)
     orders = orders_dict["orders"]
 
     print(f"\n📊 [{signal_date}] MR20 選股結果 (共 {len(orders)} 檔入選):")
@@ -575,7 +694,8 @@ def main():
         )
 
     if not args.dry_run:
-        out_path = args.output or f"artifacts/orders_mr20_{signal_date.replace('-', '')}.json"
+        # P0-4: 預設輸出路徑改為 artifacts/mr20/orders_mr20_YYYYMMDD.json，避免被 paper_tracker glob 抓到
+        out_path = args.output or f"artifacts/mr20/orders_mr20_{signal_date.replace('-', '')}.json"
         saved = save_orders_to_json(orders_dict, out_path)
         print(f"\n💾 訂單已儲存至: {saved}")
 

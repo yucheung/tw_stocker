@@ -59,6 +59,11 @@ def test_compute_wilder_rsi_basic():
     assert not pd.isna(rsi.iloc[5])
     # At index 5: all gains -> RSI should be 100.0
     assert pytest.approx(rsi.iloc[5], 0.01) == 100.0
+    # Exact step-by-step Wilder RSI values (P0-1)
+    assert pytest.approx(rsi.iloc[6], 1e-4) == 61.5385
+    assert pytest.approx(rsi.iloc[7], 1e-4) == 41.5584
+    assert pytest.approx(rsi.iloc[8], 1e-4) == 29.5612
+    assert pytest.approx(rsi.iloc[9], 1e-4) == 21.7225
     # At index 9: strong down moves -> RSI should be low (< 35)
     assert rsi.iloc[9] < 35.0
 
@@ -111,6 +116,7 @@ def test_compute_v85_atr20():
 def test_mr20_selection_5_conditions():
     """Test that all 5 conditions must be met for a stock to qualify."""
     # 70 trading days to satisfy min_history_days >= 60
+    # Use valid XTAI dates ending on a trading day (e.g. ending 2026-04-08)
     dates = pd.date_range("2026-01-01", periods=70, freq="B")
     
     # We will construct 6 test stocks:
@@ -188,6 +194,39 @@ def test_mr20_min_history_filter():
     config = MR20Config(min_history_days=60)
     candidates = filter_mr20_candidates(close_df, vol_df, as_of_date=dates[-1].strftime("%Y-%m-%d"), config=config)
     assert len(candidates) == 0
+
+
+def test_mr20_liquidity_order_with_insufficient_history_stocks():
+    """Verify P0-3: 60-day history filter must run BEFORE Top-50 liquidity ranking.
+    
+    A stock with < 60 days history and massive volume must NOT steal a Top-N liquidity slot
+    from an eligible 60-day stock.
+    """
+    dates = pd.date_range("2026-01-01", periods=70, freq="B")
+    sig_date = dates[-1].strftime("%Y-%m-%d")
+    
+    p_pass = np.linspace(60.0, 180.0, 65).tolist() + [160.0, 150.0, 140.0, 132.0, 136.0]
+    
+    # NEW_STOCK has huge volume (100x) but only 10 days of history (first 60 are NaN)
+    p_new = [np.nan] * 60 + [100.0, 102.0, 104.0, 106.0, 108.0, 110.0, 105.0, 100.0, 95.0, 96.0]
+    
+    close_df = pd.DataFrame({
+        "NEW_STOCK": p_new,
+        "PASS_STOCK": p_pass,
+    }, index=dates)
+    
+    vol_df = pd.DataFrame({
+        "NEW_STOCK": np.full(70, 1_000_000_000.0),
+        "PASS_STOCK": np.full(70, 10_000_000.0),
+    }, index=dates)
+    
+    # liquidity_top_n = 1: If 60-day filter is applied first, PASS_STOCK qualifies as the #1 eligible liquid stock.
+    # If 60-day filter is applied AFTER top_n, NEW_STOCK would take the only slot and be dropped, leaving 0 candidates.
+    config = MR20Config(liquidity_top_n=1, rsi_max=35.0, min_history_days=60)
+    candidates = filter_mr20_candidates(close_df, vol_df, as_of_date=sig_date, config=config)
+    
+    assert len(candidates) == 1
+    assert candidates[0]["ticker"] == "PASS_STOCK"
 
 
 def test_mr20_optional_distance_and_price_filters():
@@ -277,6 +316,35 @@ def test_mr20_max_candidates_cap():
     candidates = filter_mr20_candidates(close_df, vol_df, as_of_date=dates[-1].strftime("%Y-%m-%d"), config=config)
     assert len(candidates) == 7
     assert [c["rank"] for c in candidates] == list(range(1, 8))
+
+
+# =====================================================================
+# Non-Trading Day & Date Boundary Tests (P0-2 & P0-5)
+# =====================================================================
+
+def test_mr20_non_trading_day_rejected(calendar):
+    """Verify P0-5: non-XTAI sessions are rejected with ValueError (not silently downgraded)."""
+    dates = pd.date_range("2026-05-01", periods=70, freq="B")
+    close_df = pd.DataFrame({"2330": np.linspace(100, 150, 70)}, index=dates)
+    vol_df = pd.DataFrame({"2330": np.full(70, 10_000_000.0)}, index=dates)
+    
+    # 2026-08-15 is Saturday
+    with pytest.raises(ValueError, match="not a valid XTAI trading session"):
+        filter_mr20_candidates(close_df, vol_df, as_of_date="2026-08-15", calendar=calendar)
+        
+    with pytest.raises(ValueError, match="not a valid XTAI trading session"):
+        generate_mr20_orders(close_df, vol_df, signal_date="2026-08-15", calendar=calendar)
+
+
+def test_mr20_date_not_in_data_rejected(calendar):
+    """Verify missing as_of date in price data raises ValueError (not silently picking nearest date)."""
+    dates = pd.date_range("2026-05-01", periods=10, freq="B")
+    close_df = pd.DataFrame({"2330": np.linspace(100, 150, 10)}, index=dates)
+    vol_df = pd.DataFrame({"2330": np.full(10, 10_000_000.0)}, index=dates)
+    
+    # 2026-08-14 is a valid session, but not in our 10-day DataFrame
+    with pytest.raises(ValueError, match="not found in price data"):
+        filter_mr20_candidates(close_df, vol_df, as_of_date="2026-08-14", calendar=calendar)
 
 
 # =====================================================================
@@ -410,7 +478,7 @@ def test_mr20_orders_compatible_with_independent_sim(temp_dir, calendar):
 
 
 # =====================================================================
-# CLI Tests
+# CLI, Output Path & Paper Tracker Separation Tests (P0-2 & P0-4)
 # =====================================================================
 
 def test_mr20_cli_help():
@@ -419,3 +487,78 @@ def test_mr20_cli_help():
     res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(Path(__file__).parent.parent))
     assert res.returncode == 0
     assert "MR20" in res.stdout or "pullback" in res.stdout.lower()
+
+
+def test_mr20_default_output_not_caught_by_paper_tracker(temp_dir):
+    """Verify P0-4: default orders output is under artifacts/mr20/ and ignored by paper_tracker glob."""
+    import glob
+    from strategy.mr20_strategy import main as mr20_main
+
+    dates = pd.date_range("2026-05-01", periods=70, freq="B")
+    sig_date = dates[-1].strftime("%Y-%m-%d")
+    
+    p_pass = np.linspace(60.0, 180.0, 65).tolist() + [160.0, 150.0, 140.0, 132.0, 136.0]
+    close_df = pd.DataFrame({"2330": p_pass}, index=dates)
+    open_df = close_df.copy()
+    high_df = close_df.copy()
+    low_df = close_df.copy()
+    vol_df = pd.DataFrame({"2330": np.full(70, 10_000_000.0)}, index=dates)
+    
+    orig_cwd = os.getcwd()
+    try:
+        os.chdir(temp_dir)
+        (temp_dir / "artifacts").mkdir(parents=True, exist_ok=True)
+        # Simulate an existing top7 order file in artifacts/
+        (temp_dir / "artifacts" / "orders_20260819.json").write_text('{"orders": []}', encoding="utf-8")
+        
+        with patch("strategy.ai_strategy.fetch_panel_data", return_value=(close_df, open_df, high_df, low_df, vol_df)), \
+             patch("strategy.universe.get_twse_common_stocks", return_value=["2330"]), \
+             patch("sys.argv", ["mr20_strategy.py", "--as-of", sig_date]):
+            mr20_main()
+            
+        # Verify paper_tracker glob only finds the top7 orders file
+        paper_matches = glob.glob("artifacts/orders_*.json")
+        assert paper_matches == ["artifacts/orders_20260819.json"]
+        
+        # Verify MR20 file exists under artifacts/mr20/
+        mr20_order_path = temp_dir / "artifacts" / "mr20" / f"orders_mr20_{sig_date.replace('-', '')}.json"
+        assert mr20_order_path.exists()
+        mr20_content = json.loads(mr20_order_path.read_text(encoding="utf-8"))
+        assert "orders" in mr20_content
+        assert len(mr20_content["orders"]) == 1
+    finally:
+        os.chdir(orig_cwd)
+
+
+def test_mr20_yfinance_date_boundary_in_main(temp_dir):
+    """Verify P0-2: main() requests end_date = signal_date + 1 day and checks last data date."""
+    from strategy.mr20_strategy import main as mr20_main
+    
+    dates = pd.date_range("2026-05-01", periods=70, freq="B")
+    sig_date = dates[-1].strftime("%Y-%m-%d")
+    
+    p_pass = np.linspace(60.0, 180.0, 65).tolist() + [160.0, 150.0, 140.0, 132.0, 136.0]
+    close_df = pd.DataFrame({"2330": p_pass}, index=dates)
+    open_df = close_df.copy()
+    high_df = close_df.copy()
+    low_df = close_df.copy()
+    vol_df = pd.DataFrame({"2330": np.full(70, 10_000_000.0)}, index=dates)
+    
+    recorded_end_dates = []
+    def mock_fetch(tickers, days=180, end_date=None):
+        recorded_end_dates.append(end_date)
+        return (close_df, open_df, high_df, low_df, vol_df)
+        
+    orig_cwd = os.getcwd()
+    try:
+        os.chdir(temp_dir)
+        with patch("strategy.ai_strategy.fetch_panel_data", side_effect=mock_fetch), \
+             patch("strategy.universe.get_twse_common_stocks", return_value=["2330"]), \
+             patch("sys.argv", ["mr20_strategy.py", "--as-of", sig_date, "--dry-run"]):
+            mr20_main()
+            
+        expected_fetch_end = (pd.Timestamp(sig_date) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+        assert recorded_end_dates == [expected_fetch_end]
+    finally:
+        os.chdir(orig_cwd)
+
