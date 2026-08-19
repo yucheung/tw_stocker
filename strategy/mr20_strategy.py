@@ -105,7 +105,10 @@ def get_next_trading_day(dt_str: str, calendar: Optional[xcals.ExchangeCalendar]
     cal = calendar or get_calendar("XTAI")
     if cal is not None:
         try:
-            nxt = cal.next_session(dt_str)
+            if cal.is_session(dt_str):
+                nxt = cal.next_session(dt_str)
+            else:
+                nxt = cal.date_to_session(dt_str, direction="next")
             return nxt.strftime("%Y-%m-%d")
         except Exception:
             pass
@@ -126,8 +129,9 @@ def compute_wilder_rsi(prices: pd.Series | pd.DataFrame, period: int = 5) -> pd.
     """
     計算標準 Wilder's 平滑 RSI (Relative Strength Index)。
 
-    算法規則 (P0-1)：
-    - 前 period 期以 SMA 初始化 (平均上漲 avg_gain 與平均下跌 avg_loss)
+    算法規則 (P0-1 & P2-2)：
+    - 保留 NaN，只在有連續有效資料時計算 RSI，NaN 區間的 RSI 應為 NaN（不計算，避免停牌/資料缺口被當平盤）
+    - 連續有效資料區間的前 period 期以 SMA 初始化 (平均上漲 avg_gain 與平均下跌 avg_loss)
     - 後續期數採 Wilder 平滑：
         avg_gain[t] = (avg_gain[t-1] * (period - 1) + gain[t]) / period
         avg_loss[t] = (avg_loss[t-1] * (period - 1) + loss[t]) / period
@@ -158,62 +162,56 @@ def compute_wilder_rsi(prices: pd.Series | pd.DataFrame, period: int = 5) -> pd.
             return pd.Series(rsi_out[:, 0], index=prices.index, name=prices.name)
         return pd.DataFrame(rsi_out, index=prices.index, columns=prices.columns)
 
-    def _calc_1d_rsi(sub_vals: np.ndarray) -> np.ndarray:
-        m = len(sub_vals)
-        res = np.full(m, np.nan, dtype=float)
-        if m <= period:
-            return res
-
-        diffs = np.diff(sub_vals)
-        gains = np.where(diffs > 0, diffs, 0.0)
-        losses = np.where(diffs < 0, -diffs, 0.0)
-
-        if np.isnan(gains[:period]).any() or np.isnan(losses[:period]).any():
-            return res
-
-        # 1. 前 period 筆 diffs 以 SMA 初始化
-        ag = float(np.mean(gains[:period]))
-        al = float(np.mean(losses[:period]))
-
-        def _to_rsi(g: float, l: float) -> float:
-            if np.isnan(g) or np.isnan(l):
-                return np.nan
-            if l == 0.0 and g == 0.0:
-                return 50.0
-            if l == 0.0:
-                return 100.0
-            if g == 0.0:
-                return 0.0
-            rs = g / l
-            return 100.0 - (100.0 / (1.0 + rs))
-
-        res[period] = _to_rsi(ag, al)
-
-        # 2. 後續以 Wilder Smoothing 平滑
-        for i in range(period + 1, m):
-            cg = gains[i - 1]
-            cl = losses[i - 1]
-            if np.isnan(cg) or np.isnan(cl):
-                ag = np.nan
-                al = np.nan
-            else:
-                ag = (ag * (period - 1) + cg) / period
-                al = (al * (period - 1) + cl) / period
-            res[i] = _to_rsi(ag, al)
-
-        return res
+    def _to_rsi(g: float, l: float) -> float:
+        if np.isnan(g) or np.isnan(l):
+            return np.nan
+        if l == 0.0 and g == 0.0:
+            return 50.0
+        if l == 0.0:
+            return 100.0
+        if g == 0.0:
+            return 0.0
+        rs = g / l
+        return 100.0 - (100.0 / (1.0 + rs))
 
     for col_idx in range(num_cols):
         col_data = vals[:, col_idx]
         valid_mask = ~np.isnan(col_data)
         if not np.any(valid_mask):
             continue
-        valid_indices = np.where(valid_mask)[0]
-        if len(valid_indices) <= period:
-            continue
-        first_valid = valid_indices[0]
-        sub_vals = col_data[first_valid:]
-        rsi_out[first_valid:, col_idx] = _calc_1d_rsi(sub_vals)
+
+        # 找出連續非 NaN 資料段 (contiguous valid segments)
+        d = np.diff(valid_mask.astype(np.int8))
+        starts = np.where(d == 1)[0] + 1
+        ends = np.where(d == -1)[0] + 1
+
+        if valid_mask[0]:
+            starts = np.r_[0, starts]
+        if valid_mask[-1]:
+            ends = np.r_[ends, num_rows]
+
+        for start, end in zip(starts, ends):
+            seg_len = end - start
+            if seg_len <= period:
+                continue
+
+            seg_vals = col_data[start:end]
+            diffs = np.diff(seg_vals)
+            gains = np.where(diffs > 0, diffs, 0.0)
+            losses = np.where(diffs < 0, -diffs, 0.0)
+
+            # 1. 前 period 筆 diffs 以 SMA 初始化
+            ag = float(np.mean(gains[:period]))
+            al = float(np.mean(losses[:period]))
+            rsi_out[start + period, col_idx] = _to_rsi(ag, al)
+
+            # 2. 後續以 Wilder Smoothing 平滑
+            for i in range(period + 1, seg_len):
+                cg = gains[i - 1]
+                cl = losses[i - 1]
+                ag = (ag * (period - 1) + cg) / period
+                al = (al * (period - 1) + cl) / period
+                rsi_out[start + i, col_idx] = _to_rsi(ag, al)
 
     if is_series:
         return pd.Series(rsi_out[:, 0], index=prices.index, name=prices.name)
@@ -636,16 +634,25 @@ def main():
         elif cal is None and pd.Timestamp(signal_date).weekday() >= 5:
             raise ValueError(f"Specified as-of date '{signal_date}' is not a valid trading day (weekend).")
     else:
-        # 若未指定，以台北時間判斷最新交易日
+        # 若未指定，以台北時間判斷最新交易日 (P2-1)
         now_taipei = datetime.now(TAIPEI_TZ)
         today_str = now_taipei.strftime("%Y-%m-%d")
         if cal is not None:
             if cal.is_session(today_str) and now_taipei.hour >= 14:
                 signal_date = today_str
-            else:
+            elif cal.is_session(today_str):
                 signal_date = cal.previous_session(today_str).strftime("%Y-%m-%d")
+            else:
+                signal_date = cal.date_to_session(today_str, direction="previous").strftime("%Y-%m-%d")
         else:
-            signal_date = today_str
+            cur = pd.Timestamp(today_str)
+            if cur.weekday() < 5 and now_taipei.hour >= 14:
+                signal_date = today_str
+            else:
+                prev = cur - timedelta(days=1) if cur.weekday() < 5 else cur
+                while prev.weekday() >= 5:
+                    prev -= timedelta(days=1)
+                signal_date = prev.strftime("%Y-%m-%d")
 
     # P0-2: yfinance 日期邊界
     # yfinance 的 end 參數不包含指定日期。改為：end = signal_date + 1 day（多抓一天）

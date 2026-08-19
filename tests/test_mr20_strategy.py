@@ -95,6 +95,45 @@ def test_compute_wilder_rsi_dataframe():
     assert rsi_df.iloc[9]["B"] < 5.0
 
 
+def test_compute_wilder_rsi_with_nan_and_data_gap():
+    """Verify P2-2: NaN price diffs are preserved and RSI is only computed on contiguous valid data.
+    
+    Data gaps / trading suspensions (NaN) must not be treated as flat (0 diff) days.
+    """
+    # 17 days: segment 1 (6 days up), gap (5 days NaN), segment 2 (6 days up)
+    prices = pd.Series([
+        100.0, 102.0, 104.0, 106.0, 108.0, 110.0,
+        np.nan, np.nan, np.nan, np.nan, np.nan,
+        200.0, 202.0, 204.0, 206.0, 208.0, 210.0
+    ])
+    rsi = compute_wilder_rsi(prices, period=5)
+    
+    # Segment 1: first 5 indices NaN, index 5 is 100.0 (all gains)
+    assert pd.isna(rsi.iloc[0:5]).all()
+    assert pytest.approx(rsi.iloc[5], 0.01) == 100.0
+    
+    # Gap: indices 6..10 must all be NaN
+    assert pd.isna(rsi.iloc[6:11]).all()
+    
+    # Segment 2: indices 11..15 are first 5 prices of segment (not enough diffs yet -> NaN)
+    assert pd.isna(rsi.iloc[11:16]).all()
+    # Index 16 is 6th price of segment 2 (5 valid diffs -> valid RSI = 100.0)
+    assert pytest.approx(rsi.iloc[16], 0.01) == 100.0
+
+
+def test_compute_wilder_rsi_short_valid_island():
+    """Verify P2-2: A valid segment with fewer than period + 1 points produces only NaNs."""
+    prices = pd.Series([
+        100.0, 102.0, 104.0,  # 3 points <= period 5 -> all NaN
+        np.nan,
+        200.0, 202.0, 204.0, 206.0, 208.0, 210.0  # 6 points -> index 9 has valid RSI
+    ])
+    rsi = compute_wilder_rsi(prices, period=5)
+    assert pd.isna(rsi.iloc[0:4]).all()
+    assert pd.isna(rsi.iloc[4:9]).all()
+    assert pytest.approx(rsi.iloc[9], 0.01) == 100.0
+
+
 def test_compute_v85_atr20():
     """Verify close-based ATR20 definition: mean(abs(pct_change), 20) * Close."""
     dates = pd.date_range("2026-01-01", periods=25, freq="B")
@@ -559,6 +598,83 @@ def test_mr20_yfinance_date_boundary_in_main(temp_dir):
             
         expected_fetch_end = (pd.Timestamp(sig_date) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
         assert recorded_end_dates == [expected_fetch_end]
+    finally:
+        os.chdir(orig_cwd)
+
+
+def test_get_next_trading_day_weekend_and_session(calendar):
+    """Verify get_next_trading_day correctly advances from both trading days and weekends/holidays."""
+    # From Friday 2026-08-14 -> Monday 2026-08-17
+    assert get_next_trading_day("2026-08-14", calendar=calendar) == "2026-08-17"
+    # From Saturday 2026-08-15 -> Monday 2026-08-17
+    assert get_next_trading_day("2026-08-15", calendar=calendar) == "2026-08-17"
+    # From Sunday 2026-08-16 -> Monday 2026-08-17
+    assert get_next_trading_day("2026-08-16", calendar=calendar) == "2026-08-17"
+
+
+def test_mr20_main_non_trading_day_session_lookup(temp_dir, calendar):
+    """Verify P2-1: main() on non-trading days or before 14:00 resolves session without NotSessionError."""
+    from strategy.mr20_strategy import main as mr20_main
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo("Asia/Taipei")
+
+    # Friday 2026-08-14 is last trading day in data
+    dates = pd.date_range("2026-05-01", "2026-08-14", freq="B")
+    p_pass = np.linspace(60.0, 180.0, len(dates) - 5).tolist() + [160.0, 150.0, 140.0, 132.0, 136.0]
+    close_df = pd.DataFrame({"2330": p_pass}, index=dates)
+    open_df = close_df.copy()
+    high_df = close_df.copy()
+    low_df = close_df.copy()
+    vol_df = pd.DataFrame({"2330": np.full(len(dates), 10_000_000.0)}, index=dates)
+
+    # 1. Saturday run (2026-08-15 10:00:00) -> should resolve to 2026-08-14 without throwing NotSessionError
+    sat_dt = datetime(2026, 8, 15, 10, 0, 0, tzinfo=tz)
+    recorded_end_dates = []
+    def mock_fetch(tickers, days=180, end_date=None):
+        recorded_end_dates.append(end_date)
+        return (close_df, open_df, high_df, low_df, vol_df)
+
+    orig_cwd = os.getcwd()
+    try:
+        os.chdir(temp_dir)
+        with patch("strategy.mr20_strategy.datetime") as mock_dt, \
+             patch("strategy.ai_strategy.fetch_panel_data", side_effect=mock_fetch), \
+             patch("strategy.universe.get_twse_common_stocks", return_value=["2330"]), \
+             patch("sys.argv", ["mr20_strategy.py", "--dry-run"]):
+            mock_dt.now.return_value = sat_dt
+            mr20_main()
+
+        # Signal date should be Friday 2026-08-14, fetch end date = 2026-08-15
+        assert recorded_end_dates[-1] == "2026-08-15"
+
+        # 2. Friday afternoon run (2026-08-14 15:30:00) -> should resolve to today (2026-08-14)
+        fri_afternoon = datetime(2026, 8, 14, 15, 30, 0, tzinfo=tz)
+        with patch("strategy.mr20_strategy.datetime") as mock_dt, \
+             patch("strategy.ai_strategy.fetch_panel_data", side_effect=mock_fetch), \
+             patch("strategy.universe.get_twse_common_stocks", return_value=["2330"]), \
+             patch("sys.argv", ["mr20_strategy.py", "--dry-run"]):
+            mock_dt.now.return_value = fri_afternoon
+            mr20_main()
+
+        assert recorded_end_dates[-1] == "2026-08-15"
+
+        # 3. Friday morning run (2026-08-14 10:00:00) -> should resolve to Thursday (2026-08-13)
+        fri_morning = datetime(2026, 8, 14, 10, 0, 0, tzinfo=tz)
+        thurs_df = close_df.loc[:"2026-08-13"]
+        def mock_fetch_thurs(tickers, days=180, end_date=None):
+            recorded_end_dates.append(end_date)
+            return (thurs_df, open_df.loc[:"2026-08-13"], high_df.loc[:"2026-08-13"], low_df.loc[:"2026-08-13"], vol_df.loc[:"2026-08-13"])
+
+        with patch("strategy.mr20_strategy.datetime") as mock_dt, \
+             patch("strategy.ai_strategy.fetch_panel_data", side_effect=mock_fetch_thurs), \
+             patch("strategy.universe.get_twse_common_stocks", return_value=["2330"]), \
+             patch("sys.argv", ["mr20_strategy.py", "--dry-run"]):
+            mock_dt.now.return_value = fri_morning
+            mr20_main()
+
+        assert recorded_end_dates[-1] == "2026-08-14"
     finally:
         os.chdir(orig_cwd)
 
