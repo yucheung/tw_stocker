@@ -508,24 +508,11 @@ def init_simulation(
 ) -> dict[str, Any]:
     """Initialize a new simulation state."""
     d = Path(data_dir)
-    state_file = d / "state.json"
-    if state_file.exists() and not force:
-        try:
-            existing = load_state(d)
-            has_history = bool(
-                existing.get("closed_trades")
-                or existing.get("positions")
-                or existing.get("pending_orders")
-                or existing.get("order_events")
-                or existing.get("equity_curve")
-            )
-            if has_history:
-                raise FileExistsError(
-                    f"Simulation state already exists with history in {d}. Use another directory or --force to overwrite."
-                )
-        except (ValueError, FileExistsError):
-            if not force:
-                raise
+    state_path = d / "state.json"
+    if state_path.exists():
+        if not force:
+            raise FileExistsError(f"{state_path} already exists. Use --force to overwrite.")
+        # --force 時才覆寫
 
     state = get_default_state(
         capital=capital,

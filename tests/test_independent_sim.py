@@ -224,13 +224,19 @@ class TestStateAndInit:
         loaded = sim.load_state(temp_dir)
         assert loaded == state
 
+    def test_init_does_not_overwrite_existing_state(self, temp_dir):
+        sim.init_simulation(data_dir=temp_dir, capital=200000.0)
+        # Re-initializing without trades should still fail without --force
+        with pytest.raises(FileExistsError, match="already exists. Use --force to overwrite"):
+            sim.init_simulation(data_dir=temp_dir, capital=300000.0)
+
     def test_init_does_not_overwrite_existing_state_with_trades(self, temp_dir):
         sim.init_simulation(data_dir=temp_dir, capital=200000.0)
         state = sim.load_state(temp_dir)
         state["closed_trades"].append({"trade_id": "test_trade"})
         sim.save_state_atomic(state, data_dir=temp_dir)
 
-        with pytest.raises(FileExistsError, match="Simulation state already exists with history"):
+        with pytest.raises(FileExistsError, match="already exists. Use --force to overwrite"):
             sim.init_simulation(data_dir=temp_dir, capital=300000.0)
 
     def test_init_force_overwrites_existing_history(self, temp_dir):
