@@ -54,7 +54,7 @@ class MR20Config:
     ma_long: int = 60
     min_history_days: int = 60
     rsi_period: int = 5
-    rsi_max: float = 35.0
+    rsi_max: float = 40.0
     min_price: Optional[float] = None
     max_price: Optional[float] = None
     ma20_dist_min: Optional[float] = None

@@ -291,7 +291,7 @@ def update_tracker(data):
     sell_cost_rate = 0.004425
     slippage = 0.003
     max_hold = 20
-    reserve_ratio = 0.10
+    reserve_ratio = 0.20
     reserve_cash = data['initial_capital'] * reserve_ratio
 
     print(f"📊 Paper Tracker 更新 ({today})")
