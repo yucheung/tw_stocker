@@ -290,7 +290,7 @@ def update_tracker(data):
     buy_cost_rate = 0.001425
     sell_cost_rate = 0.004425
     slippage = 0.003
-    max_hold = 20
+    max_hold = 15
     reserve_ratio = 0.20
     reserve_cash = data['initial_capital'] * reserve_ratio
 
@@ -479,10 +479,10 @@ def update_tracker(data):
             for tkr, pos in data['positions'].items():
                 px = prices.get(tkr, pos['entry'])
                 current_equity += px * pos['shares']
-            position_size = _opt_float(sig.get('position_size'), 0.10)
+            position_size = _opt_float(sig.get('position_size'), 0.07)
             regime_scale = _opt_float(sig.get('regime_scale'), 1.0)
             if position_size <= 0:
-                position_size = 0.10
+                position_size = 0.07
             if regime_scale <= 0:
                 regime_scale = 1.0
             available_cash = max(data['capital'] - reserve_cash, 0)
