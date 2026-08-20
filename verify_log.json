@@ -1,0 +1,1089 @@
+{
+  "schema_version": 1,
+  "runs": [
+    {
+      "run_id": "20260819T070826+0800",
+      "run_at": "2026-08-19T07:08:26.471596+08:00",
+      "run_date": "2026-08-19",
+      "snapshot_date": "2026-08-18",
+      "overall_status": "CRITICAL",
+      "source": {
+        "paper": "github_raw",
+        "paper_url": "https://raw.githubusercontent.com/yucheung/tw_stocker/main/paper_equity.json",
+        "market": "yfinance",
+        "auto_adjust": false
+      },
+      "summary": {
+        "critical": 2,
+        "warning": 1,
+        "pass": 3
+      },
+      "checks": [
+        {
+          "rule_id": "tp_sl",
+          "title": "TP/SL 價格",
+          "severity": "CRITICAL",
+          "summary": "7/7 部位不符",
+          "details": [
+            "1303 TP=269.59，預期 276.80（entry=217.00, ATR20=14.9500, Δ=7.21）",
+            "1303 SL=165.31，預期 172.15（entry=217.00, ATR20=14.9500, Δ=6.84）",
+            "2634 TP=79.27，預期 79.08（entry=66.80, ATR20=3.0700, Δ=0.19）",
+            "2634 SL=57.97，預期 57.59（entry=66.80, ATR20=3.0700, Δ=0.38）",
+            "1301 TP=77.76，預期 78.16（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1301 SL=52.98，預期 53.38（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1326 TP=83.80，預期 84.94（entry=68.10, ATR20=4.2100, Δ=1.14）",
+            "1326 SL=54.40，預期 55.47（entry=68.10, ATR20=4.2100, Δ=1.07）",
+            "3231 TP=226.90，預期 228.90（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "3231 SL=150.95，預期 152.95（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "6669 TP=7542.00，預期 7657.00（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "6669 SL=5018.50，預期 5133.50（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "2395 TP=802.39，預期 815.70（entry=672.00, ATR20=35.9250, Δ=13.31）",
+            "2395 SL=554.96，預期 564.23（entry=672.00, ATR20=35.9250, Δ=9.27）",
+            "注意：snapshot_date (2026-08-18) != run_date (2026-08-19) (stale snapshot)"
+          ],
+          "metrics": {
+            "checked": 7,
+            "passed": 0,
+            "violations": 7,
+            "unknown": 0
+          }
+        },
+        {
+          "rule_id": "time_rule",
+          "title": "20 天 TIME rule",
+          "severity": "CRITICAL",
+          "summary": "最長持倉 24 天（超出上限 20 天）",
+          "details": [
+            "1303 day_count=9 與日曆天數 24 不一致",
+            "1303 持倉 24 天（超過上限 20 天）",
+            "2634 day_count=9 與日曆天數 24 不一致",
+            "2634 持倉 24 天（超過上限 20 天）",
+            "1301 day_count=9 與日曆天數 24 不一致",
+            "1301 持倉 24 天（超過上限 20 天）",
+            "1326 day_count=9 與日曆天數 24 不一致",
+            "1326 持倉 24 天（超過上限 20 天）"
+          ],
+          "metrics": {
+            "max_holding_days": 24,
+            "positions_checked": 7,
+            "violations": 4,
+            "mismatches": 4,
+            "schema_errors": 0
+          }
+        },
+        {
+          "rule_id": "regime_exposure",
+          "title": "Regime 曝險",
+          "severity": "PASS",
+          "summary": "實際 92.9% <= 上限 100.0%",
+          "details": [
+            "0050 close=106.45, MA20=102.54, MA60=104.23",
+            "position_val=263725.90, capital=20049.33, total_equity=283775.23, exposure=92.9%, cap=100.0%"
+          ],
+          "metrics": {
+            "exposure": 0.9293478649874126,
+            "regime_cap": 1.0,
+            "total_position_value": 263725.90408325195,
+            "total_equity": 283775.22994236817,
+            "capital": 20049.32585911623,
+            "0050_close": 106.44999694824219,
+            "0050_ma20": 102.53749923706054,
+            "0050_ma60": 104.22999979654948
+          }
+        },
+        {
+          "rule_id": "sector_concentration",
+          "title": "Sector concentration",
+          "severity": "PASS",
+          "summary": "最高傳產/其他 56.4% <= 75.0%",
+          "details": [
+            "傳產/其他: 148641.40 (56.4%)",
+            "航運: 48744.50 (18.5%)",
+            "半導體: 40740.00 (15.4%)",
+            "資訊/通訊: 25600.00 (9.7%)"
+          ],
+          "metrics": {
+            "max_sector": "traditional",
+            "max_sector_label": "傳產/其他",
+            "max_sector_pct": 0.5636207886765287,
+            "sectors": {
+              "traditional": 0.5636207886765287,
+              "shipping": 0.18483016372192043,
+              "computing": 0.09707047962917853,
+              "semiconductor": 0.1544785679723724
+            }
+          }
+        },
+        {
+          "rule_id": "signal_consistency",
+          "title": "Top-7 信號一致性",
+          "severity": "WARNING",
+          "summary": "7/7 score/MA 通過；Gap 待 2026-08-19 開盤驗證",
+          "details": [
+            "Gap PENDING：2059, 3653, 6213, 3037, 2455, 6805, 8039 待 2026-08-19 開盤驗證"
+          ],
+          "metrics": {
+            "total_signals": 7,
+            "passed_count": 7,
+            "violations_count": 0,
+            "gap_pending_count": 7,
+            "universe_coverage_insufficient": false
+          }
+        },
+        {
+          "rule_id": "position_count",
+          "title": "持倉數量",
+          "severity": "PASS",
+          "summary": "7 / 7",
+          "details": [],
+          "metrics": {
+            "position_count": 7,
+            "limit": 7
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "20260819T074439+0800",
+      "run_at": "2026-08-19T07:44:39.038087+08:00",
+      "run_date": "2026-08-19",
+      "snapshot_date": "2026-08-18",
+      "overall_status": "CRITICAL",
+      "source": {
+        "paper": "github_raw",
+        "paper_url": "https://raw.githubusercontent.com/yucheung/tw_stocker/main/paper_equity.json",
+        "market": "yfinance",
+        "auto_adjust": false
+      },
+      "summary": {
+        "critical": 4,
+        "warning": 0,
+        "pass": 3
+      },
+      "checks": [
+        {
+          "rule_id": "snapshot_freshness",
+          "title": "Snapshot 時效性",
+          "severity": "CRITICAL",
+          "summary": "Stale snapshot (2026-08-18 != 2026-08-19)",
+          "details": [
+            "snapshot_date (2026-08-18) != run_date (2026-08-19) (stale snapshot)"
+          ],
+          "metrics": {
+            "snapshot_date": "2026-08-18",
+            "run_date": "2026-08-19"
+          }
+        },
+        {
+          "rule_id": "tp_sl",
+          "title": "TP/SL 價格",
+          "severity": "CRITICAL",
+          "summary": "7/7 部位不符",
+          "details": [
+            "1303 TP=269.59，預期 276.80（entry=217.00, ATR20=14.9500, Δ=7.21）",
+            "1303 SL=165.31，預期 172.15（entry=217.00, ATR20=14.9500, Δ=6.84）",
+            "2634 TP=79.27，預期 79.08（entry=66.80, ATR20=3.0700, Δ=0.19）",
+            "2634 SL=57.97，預期 57.59（entry=66.80, ATR20=3.0700, Δ=0.38）",
+            "1301 TP=77.76，預期 78.16（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1301 SL=52.98，預期 53.38（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1326 TP=83.80，預期 84.94（entry=68.10, ATR20=4.2100, Δ=1.14）",
+            "1326 SL=54.40，預期 55.47（entry=68.10, ATR20=4.2100, Δ=1.07）",
+            "3231 TP=226.90，預期 228.90（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "3231 SL=150.95，預期 152.95（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "6669 TP=7542.00，預期 7657.00（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "6669 SL=5018.50，預期 5133.50（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "2395 TP=802.39，預期 815.70（entry=672.00, ATR20=35.9250, Δ=13.31）",
+            "2395 SL=554.96，預期 564.23（entry=672.00, ATR20=35.9250, Δ=9.27）"
+          ],
+          "metrics": {
+            "checked": 7,
+            "passed": 0,
+            "violations": 7,
+            "unknown": 0
+          }
+        },
+        {
+          "rule_id": "time_rule",
+          "title": "20 天 TIME rule",
+          "severity": "CRITICAL",
+          "summary": "最長持倉 24 天（達到或超出上限 20 天）",
+          "details": [
+            "1303 day_count=9 與日曆天數 24 不一致",
+            "1303 持倉 24 天（達/超過上限 20 天應已出場）",
+            "2634 day_count=9 與日曆天數 24 不一致",
+            "2634 持倉 24 天（達/超過上限 20 天應已出場）",
+            "1301 day_count=9 與日曆天數 24 不一致",
+            "1301 持倉 24 天（達/超過上限 20 天應已出場）",
+            "1326 day_count=9 與日曆天數 24 不一致",
+            "1326 持倉 24 天（達/超過上限 20 天應已出場）"
+          ],
+          "metrics": {
+            "max_holding_days": 24,
+            "positions_checked": 7,
+            "violations": 4,
+            "mismatches": 4,
+            "schema_errors": 0
+          }
+        },
+        {
+          "rule_id": "regime_exposure",
+          "title": "Regime 曝險",
+          "severity": "PASS",
+          "summary": "實際 92.9% <= 上限 100.0%",
+          "details": [
+            "0050 close=106.45, MA20=102.54, MA60=104.23",
+            "position_val=263725.90, capital=20049.33, total_equity=283775.23, exposure=92.9%, cap=100.0%"
+          ],
+          "metrics": {
+            "exposure": 0.9293478649874126,
+            "regime_cap": 1.0,
+            "total_position_value": 263725.90408325195,
+            "total_equity": 283775.22994236817,
+            "capital": 20049.32585911623,
+            "0050_close": 106.44999694824219,
+            "0050_ma20": 102.53749923706054,
+            "0050_ma60": 104.22999979654948
+          }
+        },
+        {
+          "rule_id": "sector_concentration",
+          "title": "Sector concentration",
+          "severity": "PASS",
+          "summary": "最高傳產/其他 56.4% <= 75.0%",
+          "details": [
+            "傳產/其他: 148641.40 (56.4%)",
+            "航運: 48744.50 (18.5%)",
+            "半導體: 40740.00 (15.4%)",
+            "資訊/通訊: 25600.00 (9.7%)"
+          ],
+          "metrics": {
+            "max_sector": "traditional",
+            "max_sector_label": "傳產/其他",
+            "max_sector_pct": 0.5636207886765287,
+            "sectors": {
+              "traditional": 0.5636207886765287,
+              "shipping": 0.18483016372192043,
+              "computing": 0.09707047962917853,
+              "semiconductor": 0.1544785679723724
+            }
+          }
+        },
+        {
+          "rule_id": "signal_consistency",
+          "title": "Top-7 信號一致性",
+          "severity": "CRITICAL",
+          "summary": "訊號不符策略規則（1 項違規）",
+          "details": [
+            "選股名單不符 Top-7 排名：選入未入選/低分股 ['8039']，遺漏高分合格股 ['3443']（預期 Top-7: ['2059', '3653', '6213', '3037', '2455', '6805', '3443']，實際: ['2059', '3653', '6213', '3037', '2455', '6805', '8039']）",
+            "Gap PENDING：2059, 3653, 6213, 3037, 2455, 6805, 8039 待 2026-08-19 開盤驗證"
+          ],
+          "metrics": {
+            "total_signals": 7,
+            "passed_count": 7,
+            "violations_count": 1,
+            "gap_pending_count": 7,
+            "universe_coverage_insufficient": false,
+            "active_universe_count": 60,
+            "download_coverage": 0.9990791896869244
+          }
+        },
+        {
+          "rule_id": "position_count",
+          "title": "持倉數量",
+          "severity": "PASS",
+          "summary": "7 / 7",
+          "details": [],
+          "metrics": {
+            "position_count": 7,
+            "limit": 7
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "20260819T074738+0800",
+      "run_at": "2026-08-19T07:47:38.415330+08:00",
+      "run_date": "2026-08-19",
+      "snapshot_date": "2026-08-18",
+      "overall_status": "CRITICAL",
+      "source": {
+        "paper": "github_raw",
+        "paper_url": "https://raw.githubusercontent.com/yucheung/tw_stocker/main/paper_equity.json",
+        "market": "yfinance",
+        "auto_adjust": false
+      },
+      "summary": {
+        "critical": 4,
+        "warning": 0,
+        "pass": 3
+      },
+      "checks": [
+        {
+          "rule_id": "snapshot_freshness",
+          "title": "Snapshot 時效性",
+          "severity": "CRITICAL",
+          "summary": "Stale snapshot (2026-08-18 != 2026-08-19)",
+          "details": [
+            "snapshot_date (2026-08-18) != run_date (2026-08-19) (stale snapshot)"
+          ],
+          "metrics": {
+            "snapshot_date": "2026-08-18",
+            "run_date": "2026-08-19"
+          }
+        },
+        {
+          "rule_id": "tp_sl",
+          "title": "TP/SL 價格",
+          "severity": "CRITICAL",
+          "summary": "7/7 部位不符",
+          "details": [
+            "1303 TP=269.59，預期 276.80（entry=217.00, ATR20=14.9500, Δ=7.21）",
+            "1303 SL=165.31，預期 172.15（entry=217.00, ATR20=14.9500, Δ=6.84）",
+            "2634 TP=79.27，預期 79.08（entry=66.80, ATR20=3.0700, Δ=0.19）",
+            "2634 SL=57.97，預期 57.59（entry=66.80, ATR20=3.0700, Δ=0.38）",
+            "1301 TP=77.76，預期 78.16（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1301 SL=52.98，預期 53.38（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1326 TP=83.80，預期 84.94（entry=68.10, ATR20=4.2100, Δ=1.14）",
+            "1326 SL=54.40，預期 55.47（entry=68.10, ATR20=4.2100, Δ=1.07）",
+            "3231 TP=226.90，預期 228.90（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "3231 SL=150.95，預期 152.95（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "6669 TP=7542.00，預期 7657.00（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "6669 SL=5018.50，預期 5133.50（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "2395 TP=802.39，預期 815.70（entry=672.00, ATR20=35.9250, Δ=13.31）",
+            "2395 SL=554.96，預期 564.23（entry=672.00, ATR20=35.9250, Δ=9.27）"
+          ],
+          "metrics": {
+            "checked": 7,
+            "passed": 0,
+            "violations": 7,
+            "unknown": 0
+          }
+        },
+        {
+          "rule_id": "time_rule",
+          "title": "20 天 TIME rule",
+          "severity": "CRITICAL",
+          "summary": "最長持倉 24 天（達到或超出上限 20 天）",
+          "details": [
+            "1303 day_count=9 與日曆天數 24 不一致",
+            "1303 持倉 24 天（達/超過上限 20 天應已出場）",
+            "2634 day_count=9 與日曆天數 24 不一致",
+            "2634 持倉 24 天（達/超過上限 20 天應已出場）",
+            "1301 day_count=9 與日曆天數 24 不一致",
+            "1301 持倉 24 天（達/超過上限 20 天應已出場）",
+            "1326 day_count=9 與日曆天數 24 不一致",
+            "1326 持倉 24 天（達/超過上限 20 天應已出場）"
+          ],
+          "metrics": {
+            "max_holding_days": 24,
+            "positions_checked": 7,
+            "violations": 4,
+            "mismatches": 4,
+            "schema_errors": 0
+          }
+        },
+        {
+          "rule_id": "regime_exposure",
+          "title": "Regime 曝險",
+          "severity": "PASS",
+          "summary": "實際 92.9% <= 上限 100.0%",
+          "details": [
+            "0050 close=106.45, MA20=102.54, MA60=104.23",
+            "position_val=263725.90, capital=20049.33, total_equity=283775.23, exposure=92.9%, cap=100.0%"
+          ],
+          "metrics": {
+            "exposure": 0.9293478649874126,
+            "regime_cap": 1.0,
+            "total_position_value": 263725.90408325195,
+            "total_equity": 283775.22994236817,
+            "capital": 20049.32585911623,
+            "0050_close": 106.44999694824219,
+            "0050_ma20": 102.53749923706054,
+            "0050_ma60": 104.22999979654948
+          }
+        },
+        {
+          "rule_id": "sector_concentration",
+          "title": "Sector concentration",
+          "severity": "PASS",
+          "summary": "最高傳產/其他 56.4% <= 75.0%",
+          "details": [
+            "傳產/其他: 148641.40 (56.4%)",
+            "航運: 48744.50 (18.5%)",
+            "半導體: 40740.00 (15.4%)",
+            "資訊/通訊: 25600.00 (9.7%)"
+          ],
+          "metrics": {
+            "max_sector": "traditional",
+            "max_sector_label": "傳產/其他",
+            "max_sector_pct": 0.5636207886765287,
+            "sectors": {
+              "traditional": 0.5636207886765287,
+              "shipping": 0.18483016372192043,
+              "computing": 0.09707047962917853,
+              "semiconductor": 0.1544785679723724
+            }
+          }
+        },
+        {
+          "rule_id": "signal_consistency",
+          "title": "Top-7 信號一致性",
+          "severity": "CRITICAL",
+          "summary": "訊號不符策略規則（1 項違規）",
+          "details": [
+            "選股名單不符 Top-7 排名：選入未入選/低分股 ['8039']，遺漏高分合格股 ['3443']（預期 Top-7: ['2059', '3653', '6213', '3037', '2455', '6805', '3443']，實際: ['2059', '3653', '6213', '3037', '2455', '6805', '8039']）",
+            "Gap PENDING：2059, 3653, 6213, 3037, 2455, 6805, 8039 待 2026-08-19 開盤驗證"
+          ],
+          "metrics": {
+            "total_signals": 7,
+            "passed_count": 7,
+            "violations_count": 1,
+            "gap_pending_count": 7,
+            "universe_coverage_insufficient": false,
+            "active_universe_count": 60,
+            "download_coverage": 0.9990791896869244
+          }
+        },
+        {
+          "rule_id": "position_count",
+          "title": "持倉數量",
+          "severity": "PASS",
+          "summary": "7 / 7",
+          "details": [],
+          "metrics": {
+            "position_count": 7,
+            "limit": 7
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "20260819T075448+0800",
+      "run_at": "2026-08-19T07:54:48.538225+08:00",
+      "run_date": "2026-08-19",
+      "snapshot_date": "2026-08-18",
+      "overall_status": "CRITICAL",
+      "source": {
+        "paper": "github_raw",
+        "paper_url": "https://raw.githubusercontent.com/yucheung/tw_stocker/main/paper_equity.json",
+        "market": "yfinance",
+        "auto_adjust": false
+      },
+      "summary": {
+        "critical": 4,
+        "warning": 0,
+        "pass": 3
+      },
+      "checks": [
+        {
+          "rule_id": "snapshot_freshness",
+          "title": "Snapshot 時效性",
+          "severity": "CRITICAL",
+          "summary": "Stale snapshot (2026-08-18 != 2026-08-19)",
+          "details": [
+            "snapshot_date (2026-08-18) != run_date (2026-08-19) (stale snapshot)"
+          ],
+          "metrics": {
+            "snapshot_date": "2026-08-18",
+            "run_date": "2026-08-19"
+          }
+        },
+        {
+          "rule_id": "tp_sl",
+          "title": "TP/SL 價格",
+          "severity": "CRITICAL",
+          "summary": "7/7 部位不符",
+          "details": [
+            "1303 TP=269.59，預期 276.80（entry=217.00, ATR20=14.9500, Δ=7.21）",
+            "1303 SL=165.31，預期 172.15（entry=217.00, ATR20=14.9500, Δ=6.84）",
+            "2634 TP=79.27，預期 79.08（entry=66.80, ATR20=3.0700, Δ=0.19）",
+            "2634 SL=57.97，預期 57.59（entry=66.80, ATR20=3.0700, Δ=0.38）",
+            "1301 TP=77.76，預期 78.16（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1301 SL=52.98，預期 53.38（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1326 TP=83.80，預期 84.94（entry=68.10, ATR20=4.2100, Δ=1.14）",
+            "1326 SL=54.40，預期 55.47（entry=68.10, ATR20=4.2100, Δ=1.07）",
+            "3231 TP=226.90，預期 228.90（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "3231 SL=150.95，預期 152.95（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "6669 TP=7542.00，預期 7657.00（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "6669 SL=5018.50，預期 5133.50（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "2395 TP=802.39，預期 815.70（entry=672.00, ATR20=35.9250, Δ=13.31）",
+            "2395 SL=554.96，預期 564.23（entry=672.00, ATR20=35.9250, Δ=9.27）"
+          ],
+          "metrics": {
+            "checked": 7,
+            "passed": 0,
+            "violations": 7,
+            "unknown": 0
+          }
+        },
+        {
+          "rule_id": "time_rule",
+          "title": "20 天 TIME rule",
+          "severity": "CRITICAL",
+          "summary": "最長持倉 24 天（達到或超出上限 20 天）",
+          "details": [
+            "1303 day_count=9 與日曆天數 24 不一致",
+            "1303 持倉 24 天（達/超過上限 20 天應已出場）",
+            "2634 day_count=9 與日曆天數 24 不一致",
+            "2634 持倉 24 天（達/超過上限 20 天應已出場）",
+            "1301 day_count=9 與日曆天數 24 不一致",
+            "1301 持倉 24 天（達/超過上限 20 天應已出場）",
+            "1326 day_count=9 與日曆天數 24 不一致",
+            "1326 持倉 24 天（達/超過上限 20 天應已出場）"
+          ],
+          "metrics": {
+            "max_holding_days": 24,
+            "positions_checked": 7,
+            "violations": 4,
+            "mismatches": 4,
+            "schema_errors": 0
+          }
+        },
+        {
+          "rule_id": "regime_exposure",
+          "title": "Regime 曝險",
+          "severity": "PASS",
+          "summary": "實際 92.9% <= 上限 100.0%",
+          "details": [
+            "0050 close=106.45, MA20=102.54, MA60=104.23",
+            "position_val=263725.90, capital=20049.33, total_equity=283775.23, exposure=92.9%, cap=100.0%"
+          ],
+          "metrics": {
+            "exposure": 0.9293478649874126,
+            "regime_cap": 1.0,
+            "total_position_value": 263725.90408325195,
+            "total_equity": 283775.22994236817,
+            "capital": 20049.32585911623,
+            "0050_close": 106.44999694824219,
+            "0050_ma20": 102.53749923706054,
+            "0050_ma60": 104.22999979654948
+          }
+        },
+        {
+          "rule_id": "sector_concentration",
+          "title": "Sector concentration",
+          "severity": "PASS",
+          "summary": "最高傳產/其他 56.4% <= 75.0%",
+          "details": [
+            "傳產/其他: 148641.40 (56.4%)",
+            "航運: 48744.50 (18.5%)",
+            "半導體: 40740.00 (15.4%)",
+            "資訊/通訊: 25600.00 (9.7%)"
+          ],
+          "metrics": {
+            "max_sector": "traditional",
+            "max_sector_label": "傳產/其他",
+            "max_sector_pct": 0.5636207886765287,
+            "sectors": {
+              "traditional": 0.5636207886765287,
+              "shipping": 0.18483016372192043,
+              "computing": 0.09707047962917853,
+              "semiconductor": 0.1544785679723724
+            }
+          }
+        },
+        {
+          "rule_id": "signal_consistency",
+          "title": "Top-7 信號一致性",
+          "severity": "CRITICAL",
+          "summary": "訊號不符策略規則（1 項違規）",
+          "details": [
+            "選股名單不符 Top-7 排名：選入未入選/低分股 ['8039']，遺漏高分合格股 ['3443']（預期 Top-7: ['2059', '3653', '6213', '3037', '2455', '6805', '3443']，實際: ['2059', '3653', '6213', '3037', '2455', '6805', '8039']）",
+            "Gap PENDING：2059, 3653, 6213, 3037, 2455, 6805, 8039 待 2026-08-19 開盤驗證"
+          ],
+          "metrics": {
+            "total_signals": 7,
+            "passed_count": 7,
+            "violations_count": 1,
+            "gap_pending_count": 7,
+            "universe_coverage_insufficient": false,
+            "active_universe_count": 60,
+            "download_coverage": 0.9990791896869244
+          }
+        },
+        {
+          "rule_id": "position_count",
+          "title": "持倉數量",
+          "severity": "PASS",
+          "summary": "7 / 7",
+          "details": [],
+          "metrics": {
+            "position_count": 7,
+            "limit": 7
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "20260819T075739+0800",
+      "run_at": "2026-08-19T07:57:39.714580+08:00",
+      "run_date": "2026-08-19",
+      "snapshot_date": "2026-08-18",
+      "overall_status": "CRITICAL",
+      "source": {
+        "paper": "github_raw",
+        "paper_url": "https://raw.githubusercontent.com/yucheung/tw_stocker/main/paper_equity.json",
+        "market": "yfinance",
+        "auto_adjust": false
+      },
+      "summary": {
+        "critical": 4,
+        "warning": 0,
+        "pass": 3
+      },
+      "checks": [
+        {
+          "rule_id": "snapshot_freshness",
+          "title": "Snapshot 時效性",
+          "severity": "CRITICAL",
+          "summary": "Stale snapshot (2026-08-18 != 2026-08-19)",
+          "details": [
+            "snapshot_date (2026-08-18) != run_date (2026-08-19) (stale snapshot)"
+          ],
+          "metrics": {
+            "snapshot_date": "2026-08-18",
+            "run_date": "2026-08-19"
+          }
+        },
+        {
+          "rule_id": "tp_sl",
+          "title": "TP/SL 價格",
+          "severity": "CRITICAL",
+          "summary": "7/7 部位不符",
+          "details": [
+            "1303 TP=269.59，預期 276.80（entry=217.00, ATR20=14.9500, Δ=7.21）",
+            "1303 SL=165.31，預期 172.15（entry=217.00, ATR20=14.9500, Δ=6.84）",
+            "2634 TP=79.27，預期 79.08（entry=66.80, ATR20=3.0700, Δ=0.19）",
+            "2634 SL=57.97，預期 57.59（entry=66.80, ATR20=3.0700, Δ=0.38）",
+            "1301 TP=77.76，預期 78.16（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1301 SL=52.98，預期 53.38（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1326 TP=83.80，預期 84.94（entry=68.10, ATR20=4.2100, Δ=1.14）",
+            "1326 SL=54.40，預期 55.47（entry=68.10, ATR20=4.2100, Δ=1.07）",
+            "3231 TP=226.90，預期 228.90（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "3231 SL=150.95，預期 152.95（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "6669 TP=7542.00，預期 7657.00（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "6669 SL=5018.50，預期 5133.50（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "2395 TP=802.39，預期 815.70（entry=672.00, ATR20=35.9250, Δ=13.31）",
+            "2395 SL=554.96，預期 564.23（entry=672.00, ATR20=35.9250, Δ=9.27）"
+          ],
+          "metrics": {
+            "checked": 7,
+            "passed": 0,
+            "violations": 7,
+            "unknown": 0
+          }
+        },
+        {
+          "rule_id": "time_rule",
+          "title": "20 天 TIME rule",
+          "severity": "CRITICAL",
+          "summary": "最長持倉 24 天（達到或超出上限 20 天）",
+          "details": [
+            "1303 day_count=9 與日曆天數 24 不一致",
+            "1303 持倉 24 天（達/超過上限 20 天應已出場）",
+            "2634 day_count=9 與日曆天數 24 不一致",
+            "2634 持倉 24 天（達/超過上限 20 天應已出場）",
+            "1301 day_count=9 與日曆天數 24 不一致",
+            "1301 持倉 24 天（達/超過上限 20 天應已出場）",
+            "1326 day_count=9 與日曆天數 24 不一致",
+            "1326 持倉 24 天（達/超過上限 20 天應已出場）"
+          ],
+          "metrics": {
+            "max_holding_days": 24,
+            "positions_checked": 7,
+            "violations": 4,
+            "mismatches": 4,
+            "schema_errors": 0
+          }
+        },
+        {
+          "rule_id": "regime_exposure",
+          "title": "Regime 曝險",
+          "severity": "PASS",
+          "summary": "實際 92.9% <= 上限 100.0%",
+          "details": [
+            "0050 close=106.45, MA20=102.54, MA60=104.23",
+            "position_val=263725.90, capital=20049.33, total_equity=283775.23, exposure=92.9%, cap=100.0%"
+          ],
+          "metrics": {
+            "exposure": 0.9293478649874126,
+            "regime_cap": 1.0,
+            "total_position_value": 263725.90408325195,
+            "total_equity": 283775.22994236817,
+            "capital": 20049.32585911623,
+            "0050_close": 106.44999694824219,
+            "0050_ma20": 102.53749923706054,
+            "0050_ma60": 104.22999979654948
+          }
+        },
+        {
+          "rule_id": "sector_concentration",
+          "title": "Sector concentration",
+          "severity": "PASS",
+          "summary": "最高傳產/其他 56.4% <= 75.0%",
+          "details": [
+            "傳產/其他: 148641.40 (56.4%)",
+            "航運: 48744.50 (18.5%)",
+            "半導體: 40740.00 (15.4%)",
+            "資訊/通訊: 25600.00 (9.7%)"
+          ],
+          "metrics": {
+            "max_sector": "traditional",
+            "max_sector_label": "傳產/其他",
+            "max_sector_pct": 0.5636207886765287,
+            "sectors": {
+              "traditional": 0.5636207886765287,
+              "shipping": 0.18483016372192043,
+              "computing": 0.09707047962917853,
+              "semiconductor": 0.1544785679723724
+            }
+          }
+        },
+        {
+          "rule_id": "signal_consistency",
+          "title": "Top-7 信號一致性",
+          "severity": "CRITICAL",
+          "summary": "訊號不符策略規則（1 項違規）",
+          "details": [
+            "選股名單不符 Top-7 排名：選入未入選/低分股 ['8039']，遺漏高分合格股 ['3443']（預期 Top-7: ['2059', '3653', '6213', '3037', '2455', '6805', '3443']，實際: ['2059', '3653', '6213', '3037', '2455', '6805', '8039']）",
+            "Gap PENDING：2059, 3653, 6213, 3037, 2455, 6805, 8039 待 2026-08-19 開盤驗證"
+          ],
+          "metrics": {
+            "total_signals": 7,
+            "passed_count": 7,
+            "violations_count": 1,
+            "gap_pending_count": 7,
+            "universe_coverage_insufficient": false,
+            "active_universe_count": 60,
+            "download_coverage": 0.9990791896869244
+          }
+        },
+        {
+          "rule_id": "position_count",
+          "title": "持倉數量",
+          "severity": "PASS",
+          "summary": "7 / 7",
+          "details": [],
+          "metrics": {
+            "position_count": 7,
+            "limit": 7
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "20260819T080422+0800",
+      "run_at": "2026-08-19T08:04:22.668510+08:00",
+      "run_date": "2026-08-19",
+      "snapshot_date": "2026-08-18",
+      "overall_status": "CRITICAL",
+      "source": {
+        "paper": "github_raw",
+        "paper_url": "https://raw.githubusercontent.com/yucheung/tw_stocker/main/paper_equity.json",
+        "market": "yfinance",
+        "auto_adjust": false
+      },
+      "summary": {
+        "critical": 4,
+        "warning": 0,
+        "pass": 3
+      },
+      "checks": [
+        {
+          "rule_id": "snapshot_freshness",
+          "title": "Snapshot 時效性",
+          "severity": "CRITICAL",
+          "summary": "Stale snapshot (2026-08-18 != 2026-08-19)",
+          "details": [
+            "snapshot_date (2026-08-18) != run_date (2026-08-19) (stale snapshot)"
+          ],
+          "metrics": {
+            "snapshot_date": "2026-08-18",
+            "run_date": "2026-08-19"
+          }
+        },
+        {
+          "rule_id": "tp_sl",
+          "title": "TP/SL 價格",
+          "severity": "CRITICAL",
+          "summary": "7/7 部位不符",
+          "details": [
+            "1303 TP=269.59，預期 276.80（entry=217.00, ATR20=14.9500, Δ=7.21）",
+            "1303 SL=165.31，預期 172.15（entry=217.00, ATR20=14.9500, Δ=6.84）",
+            "2634 TP=79.27，預期 79.08（entry=66.80, ATR20=3.0700, Δ=0.19）",
+            "2634 SL=57.97，預期 57.59（entry=66.80, ATR20=3.0700, Δ=0.38）",
+            "1301 TP=77.76，預期 78.16（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1301 SL=52.98，預期 53.38（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1326 TP=83.80，預期 84.94（entry=68.10, ATR20=4.2100, Δ=1.14）",
+            "1326 SL=54.40，預期 55.47（entry=68.10, ATR20=4.2100, Δ=1.07）",
+            "3231 TP=226.90，預期 228.90（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "3231 SL=150.95，預期 152.95（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "6669 TP=7542.00，預期 7657.00（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "6669 SL=5018.50，預期 5133.50（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "2395 TP=802.39，預期 815.70（entry=672.00, ATR20=35.9250, Δ=13.31）",
+            "2395 SL=554.96，預期 564.23（entry=672.00, ATR20=35.9250, Δ=9.27）"
+          ],
+          "metrics": {
+            "checked": 7,
+            "passed": 0,
+            "violations": 7,
+            "unknown": 0
+          }
+        },
+        {
+          "rule_id": "time_rule",
+          "title": "20 天 TIME rule",
+          "severity": "CRITICAL",
+          "summary": "最長持倉 24 天（達到或超出上限 20 天）",
+          "details": [
+            "1303 day_count=9 與日曆天數 24 不一致",
+            "1303 持倉 24 天（達/超過上限 20 天應已出場）",
+            "2634 day_count=9 與日曆天數 24 不一致",
+            "2634 持倉 24 天（達/超過上限 20 天應已出場）",
+            "1301 day_count=9 與日曆天數 24 不一致",
+            "1301 持倉 24 天（達/超過上限 20 天應已出場）",
+            "1326 day_count=9 與日曆天數 24 不一致",
+            "1326 持倉 24 天（達/超過上限 20 天應已出場）"
+          ],
+          "metrics": {
+            "max_holding_days": 24,
+            "positions_checked": 7,
+            "violations": 4,
+            "mismatches": 4,
+            "schema_errors": 0
+          }
+        },
+        {
+          "rule_id": "regime_exposure",
+          "title": "Regime 曝險",
+          "severity": "PASS",
+          "summary": "實際 92.9% <= 上限 100.0%",
+          "details": [
+            "0050 close=106.45, MA20=102.54, MA60=104.23",
+            "position_val=263725.90, capital=20049.33, total_equity=283775.23, exposure=92.9%, cap=100.0%"
+          ],
+          "metrics": {
+            "exposure": 0.9293478649874126,
+            "regime_cap": 1.0,
+            "total_position_value": 263725.90408325195,
+            "total_equity": 283775.22994236817,
+            "capital": 20049.32585911623,
+            "0050_close": 106.44999694824219,
+            "0050_ma20": 102.53749923706054,
+            "0050_ma60": 104.22999979654948
+          }
+        },
+        {
+          "rule_id": "sector_concentration",
+          "title": "Sector concentration",
+          "severity": "PASS",
+          "summary": "最高傳產/其他 56.4% <= 75.0%",
+          "details": [
+            "傳產/其他: 148641.40 (56.4%)",
+            "航運: 48744.50 (18.5%)",
+            "半導體: 40740.00 (15.4%)",
+            "資訊/通訊: 25600.00 (9.7%)"
+          ],
+          "metrics": {
+            "max_sector": "traditional",
+            "max_sector_label": "傳產/其他",
+            "max_sector_pct": 0.5636207886765287,
+            "sectors": {
+              "traditional": 0.5636207886765287,
+              "shipping": 0.18483016372192043,
+              "computing": 0.09707047962917853,
+              "semiconductor": 0.1544785679723724
+            }
+          }
+        },
+        {
+          "rule_id": "signal_consistency",
+          "title": "Top-7 信號一致性",
+          "severity": "CRITICAL",
+          "summary": "訊號不符策略規則（1 項違規）",
+          "details": [
+            "選股名單不符 Top-7 排名：選入未入選/低分股 ['8039']，遺漏高分合格股 ['3443']（預期 Top-7: ['2059', '3653', '6213', '3037', '2455', '6805', '3443']，實際: ['2059', '3653', '6213', '3037', '2455', '6805', '8039']）",
+            "Gap PENDING：2059, 3653, 6213, 3037, 2455, 6805, 8039 待 2026-08-19 開盤驗證"
+          ],
+          "metrics": {
+            "total_signals": 7,
+            "passed_count": 7,
+            "violations_count": 1,
+            "gap_pending_count": 7,
+            "universe_coverage_insufficient": false,
+            "active_universe_count": 60,
+            "download_coverage": 0.9990791896869244
+          }
+        },
+        {
+          "rule_id": "position_count",
+          "title": "持倉數量",
+          "severity": "PASS",
+          "summary": "7 / 7",
+          "details": [],
+          "metrics": {
+            "position_count": 7,
+            "limit": 7
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "20260819T080502+0800",
+      "run_at": "2026-08-19T08:05:02.933815+08:00",
+      "run_date": "2026-08-19",
+      "snapshot_date": "2026-08-18",
+      "overall_status": "CRITICAL",
+      "source": {
+        "paper": "github_raw",
+        "paper_url": "https://raw.githubusercontent.com/yucheung/tw_stocker/main/paper_equity.json",
+        "market": "yfinance",
+        "auto_adjust": false
+      },
+      "summary": {
+        "critical": 4,
+        "warning": 0,
+        "pass": 3
+      },
+      "checks": [
+        {
+          "rule_id": "snapshot_freshness",
+          "title": "Snapshot 時效性",
+          "severity": "CRITICAL",
+          "summary": "Stale snapshot (2026-08-18 != 2026-08-19)",
+          "details": [
+            "snapshot_date (2026-08-18) != run_date (2026-08-19) (stale snapshot)"
+          ],
+          "metrics": {
+            "snapshot_date": "2026-08-18",
+            "run_date": "2026-08-19"
+          }
+        },
+        {
+          "rule_id": "tp_sl",
+          "title": "TP/SL 價格",
+          "severity": "CRITICAL",
+          "summary": "7/7 部位不符",
+          "details": [
+            "1303 TP=269.59，預期 276.80（entry=217.00, ATR20=14.9500, Δ=7.21）",
+            "1303 SL=165.31，預期 172.15（entry=217.00, ATR20=14.9500, Δ=6.84）",
+            "2634 TP=79.27，預期 79.08（entry=66.80, ATR20=3.0700, Δ=0.19）",
+            "2634 SL=57.97，預期 57.59（entry=66.80, ATR20=3.0700, Δ=0.38）",
+            "1301 TP=77.76，預期 78.16（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1301 SL=52.98，預期 53.38（entry=64.00, ATR20=3.5400, Δ=0.40）",
+            "1326 TP=83.80，預期 84.94（entry=68.10, ATR20=4.2100, Δ=1.14）",
+            "1326 SL=54.40，預期 55.47（entry=68.10, ATR20=4.2100, Δ=1.07）",
+            "3231 TP=226.90，預期 228.90（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "3231 SL=150.95，預期 152.95（entry=185.50, ATR20=10.8500, Δ=2.00）",
+            "6669 TP=7542.00，預期 7657.00（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "6669 SL=5018.50，預期 5133.50（entry=6215.00, ATR20=360.5000, Δ=115.00）",
+            "2395 TP=802.39，預期 815.70（entry=672.00, ATR20=35.9250, Δ=13.31）",
+            "2395 SL=554.96，預期 564.23（entry=672.00, ATR20=35.9250, Δ=9.27）"
+          ],
+          "metrics": {
+            "checked": 7,
+            "passed": 0,
+            "violations": 7,
+            "unknown": 0
+          }
+        },
+        {
+          "rule_id": "time_rule",
+          "title": "20 天 TIME rule",
+          "severity": "CRITICAL",
+          "summary": "最長持倉 24 天（達到或超出上限 20 天）",
+          "details": [
+            "1303 day_count=9 與日曆天數 24 不一致",
+            "1303 持倉 24 天（達/超過上限 20 天應已出場）",
+            "2634 day_count=9 與日曆天數 24 不一致",
+            "2634 持倉 24 天（達/超過上限 20 天應已出場）",
+            "1301 day_count=9 與日曆天數 24 不一致",
+            "1301 持倉 24 天（達/超過上限 20 天應已出場）",
+            "1326 day_count=9 與日曆天數 24 不一致",
+            "1326 持倉 24 天（達/超過上限 20 天應已出場）"
+          ],
+          "metrics": {
+            "max_holding_days": 24,
+            "positions_checked": 7,
+            "violations": 4,
+            "mismatches": 4,
+            "schema_errors": 0
+          }
+        },
+        {
+          "rule_id": "regime_exposure",
+          "title": "Regime 曝險",
+          "severity": "PASS",
+          "summary": "實際 92.9% <= 上限 100.0%",
+          "details": [
+            "0050 close=106.45, MA20=102.54, MA60=104.23",
+            "position_val=263725.90, capital=20049.33, total_equity=283775.23, exposure=92.9%, cap=100.0%"
+          ],
+          "metrics": {
+            "exposure": 0.9293478649874126,
+            "regime_cap": 1.0,
+            "total_position_value": 263725.90408325195,
+            "total_equity": 283775.22994236817,
+            "capital": 20049.32585911623,
+            "0050_close": 106.44999694824219,
+            "0050_ma20": 102.53749923706054,
+            "0050_ma60": 104.22999979654948
+          }
+        },
+        {
+          "rule_id": "sector_concentration",
+          "title": "Sector concentration",
+          "severity": "PASS",
+          "summary": "最高傳產/其他 56.4% <= 75.0%",
+          "details": [
+            "傳產/其他: 148641.40 (56.4%)",
+            "航運: 48744.50 (18.5%)",
+            "半導體: 40740.00 (15.4%)",
+            "資訊/通訊: 25600.00 (9.7%)"
+          ],
+          "metrics": {
+            "max_sector": "traditional",
+            "max_sector_label": "傳產/其他",
+            "max_sector_pct": 0.5636207886765287,
+            "sectors": {
+              "traditional": 0.5636207886765287,
+              "shipping": 0.18483016372192043,
+              "computing": 0.09707047962917853,
+              "semiconductor": 0.1544785679723724
+            }
+          }
+        },
+        {
+          "rule_id": "signal_consistency",
+          "title": "Top-7 信號一致性",
+          "severity": "CRITICAL",
+          "summary": "訊號不符策略規則（1 項違規）",
+          "details": [
+            "選股名單不符 Top-7 排名：選入未入選/低分股 ['8039']，遺漏高分合格股 ['3443']（預期 Top-7: ['2059', '3653', '6213', '3037', '2455', '6805', '3443']，實際: ['2059', '3653', '6213', '3037', '2455', '6805', '8039']）",
+            "Gap PENDING：2059, 3653, 6213, 3037, 2455, 6805, 8039 待 2026-08-19 開盤驗證"
+          ],
+          "metrics": {
+            "total_signals": 7,
+            "passed_count": 7,
+            "violations_count": 1,
+            "gap_pending_count": 7,
+            "universe_coverage_insufficient": false,
+            "active_universe_count": 60,
+            "download_coverage": 0.998158379373849
+          }
+        },
+        {
+          "rule_id": "position_count",
+          "title": "持倉數量",
+          "severity": "PASS",
+          "summary": "7 / 7",
+          "details": [],
+          "metrics": {
+            "position_count": 7,
+            "limit": 7
+          }
+        }
+      ]
+    }
+  ]
+}

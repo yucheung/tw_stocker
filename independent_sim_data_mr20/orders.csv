@@ -1,0 +1,1 @@
+order_id,signal_date,execution_date,event_time,ticker,upstream_rank,score,selection_mode,reference_close,limit_price,open_price,status,fill_price,atr,tp_price,sl_price,shares,message
