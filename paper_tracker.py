@@ -20,6 +20,7 @@ import os
 import re
 import sys
 from datetime import datetime, date, timedelta
+from typing import Any, Optional
 import argparse
 import pandas as pd
 import exchange_calendars as xcals
@@ -276,6 +277,76 @@ def extract_signals_from_report():
             })
     return signals
 
+def find_replace_candidate(positions: dict, new_rank: Optional[int], min_rank_gap: int = 2, **kwargs) -> Optional[str]:
+    """
+    比較新訊號 rank 與持倉中最弱者的 entry_rank。
+    若持倉中最弱者的 entry_rank - new_rank >= min_rank_gap (預設 2)，
+    則回傳該最弱者的 ticker 作為置換候選；否則回傳 None。
+
+    最弱者挑選規則：
+    1. rank_gap 最大者 (即 entry_rank 數字最大 / 排名最差)
+    2. day_count 最大者 (持有天數最長)
+    3. ticker 字母排序 (tie-breaking)
+    """
+    if new_rank is None or not positions:
+        return None
+
+    candidates = []
+    for ticker, pos in positions.items():
+        held_rank = pos.get('entry_rank')
+        if held_rank is None:
+            continue
+        try:
+            held_rank_val = int(held_rank)
+            new_rank_val = int(new_rank)
+        except (ValueError, TypeError):
+            continue
+
+        rank_gap = held_rank_val - new_rank_val
+        if rank_gap >= min_rank_gap:
+            day_count = pos.get('day_count', 0)
+            candidates.append((ticker, held_rank_val, day_count, rank_gap))
+
+    if not candidates:
+        return None
+
+    # 排序：rank_gap 越大越優先，day_count 越大越優先，ticker 字母升序
+    candidates.sort(key=lambda c: (-c[3], -c[2], c[0]))
+    return candidates[0][0]
+
+
+def close_position(data: dict, ticker: str, exit_price: float, today: str, reason: str,
+                   buy_cost_rate: float = 0.001425, sell_cost_rate: float = 0.004425,
+                   slippage: float = 0.003) -> dict:
+    """執行部位平倉結算，更新現金與 closed_trades 並自 positions 移除。"""
+    pos = data['positions'][ticker]
+    sell_cost = exit_price * pos['shares'] * sell_cost_rate
+    slippage_cost = exit_price * pos['shares'] * slippage
+    proceeds = exit_price * pos['shares'] - sell_cost - slippage_cost
+    cost_basis = pos['entry'] * pos['shares'] * (1 + buy_cost_rate)
+    pnl = proceeds - cost_basis
+    pnl_pct = (exit_price / pos['entry'] - 1) * 100
+
+    data['capital'] += proceeds
+    trade_record = {
+        'ticker': ticker,
+        'entry': pos['entry'],
+        'exit': exit_price,
+        'shares': pos['shares'],
+        'pnl': round(pnl, 0),
+        'pnl_pct': round(pnl_pct, 2),
+        'reason': reason,
+        'entry_date': pos['entry_date'],
+        'exit_date': today,
+        'days_held': pos.get('day_count', 0),
+    }
+    data['closed_trades'].append(trade_record)
+    del data['positions'][ticker]
+    emoji = '🟢' if pnl > 0 else '🔴'
+    print(f"   {emoji} 平倉 {ticker}: {pos['entry']:.1f}→{exit_price:.1f} ({pnl_pct:+.1f}%) [{reason}] 持{pos.get('day_count', 0)}天")
+    return trade_record
+
+
 def update_tracker(data):
     """主要更新邏輯：追蹤持倉、結算已平倉、記錄新信號。"""
     today = date.today().isoformat()
@@ -340,33 +411,11 @@ def update_tracker(data):
             exit_price = bar['close']
 
         if reason:
-            # 計算 PnL（買進端不再含 slippage，見下方限價單成交邏輯）
-            sell_cost = exit_price * pos['shares'] * sell_cost_rate
-            slippage_cost = exit_price * pos['shares'] * slippage
-            proceeds = exit_price * pos['shares'] - sell_cost - slippage_cost
-            cost_basis = pos['entry'] * pos['shares'] * (1 + buy_cost_rate)
-            pnl = proceeds - cost_basis
-            pnl_pct = (exit_price / pos['entry'] - 1) * 100
+            to_close.append((ticker, exit_price, reason))
 
-            data['capital'] += proceeds
-            data['closed_trades'].append({
-                'ticker': ticker,
-                'entry': pos['entry'],
-                'exit': exit_price,
-                'shares': pos['shares'],
-                'pnl': round(pnl, 0),
-                'pnl_pct': round(pnl_pct, 2),
-                'reason': reason,
-                'entry_date': pos['entry_date'],
-                'exit_date': today,
-                'days_held': pos['day_count'],
-            })
-            to_close.append(ticker)
-            emoji = '🟢' if pnl > 0 else '🔴'
-            print(f"   {emoji} 平倉 {ticker}: {pos['entry']:.1f}→{exit_price:.1f} ({pnl_pct:+.1f}%) [{reason}] 持{pos['day_count']}天")
-
-    for t in to_close:
-        del data['positions'][t]
+    for t, px, r in to_close:
+        close_position(data, t, px, today, reason=r,
+                       buy_cost_rate=buy_cost_rate, sell_cost_rate=sell_cost_rate, slippage=slippage)
 
     # 3. 執行到期的待執行訂單（訊號日收盤限價單模型 signal_close_limit_next_open_v1）：
     #    limit_price = 訊號日收盤價；今日 open <= limit_price 以 open 成交，
@@ -437,7 +486,7 @@ def update_tracker(data):
                 print(f"   ⚠️ {ticker} 委託缺乏有效限價，撤單 (CANCELLED_INVALID_LIMIT)")
                 continue
 
-            if ticker in data['positions'] or len(data['positions']) >= MAX_POSITIONS:
+            if ticker in data['positions']:
                 order_events.append({
                     **event_base,
                     'limit_price': limit_price,
@@ -467,6 +516,27 @@ def update_tracker(data):
                 else:
                     print(f"   ⏭️ 無開盤價撤單 {ticker}")
                 continue
+
+            if len(data['positions']) >= MAX_POSITIONS:
+                replace_ticker = find_replace_candidate(data['positions'], sig.get('rank'), min_rank_gap=2)
+                if replace_ticker is None:
+                    order_events.append({
+                        **event_base,
+                        'limit_price': limit_price,
+                        'open_price': decision.open_price,
+                        'status': 'CANCELLED_NO_CAPACITY',
+                        'fill_price': None,
+                    })
+                    print(f"   ⏭️ 額滿撤單 {ticker}")
+                    continue
+                # 執行換倉平倉
+                rep_bar = bars.get(replace_ticker)
+                rep_exit = rep_bar.get('open') if (rep_bar and rep_bar.get('open') is not None) else (
+                    rep_bar.get('close') if (rep_bar and rep_bar.get('close') is not None) else data['positions'][replace_ticker]['entry']
+                )
+                print(f"   🔄 換倉置換：平倉最弱部位 {replace_ticker} (進場 rank #{data['positions'][replace_ticker].get('entry_rank')}) 迎入 #{sig.get('rank')} {ticker}")
+                close_position(data, replace_ticker, rep_exit, today, reason='REPLACE',
+                               buy_cost_rate=buy_cost_rate, sell_cost_rate=sell_cost_rate, slippage=slippage)
 
             fill_price = decision.fill_price
 
@@ -515,6 +585,7 @@ def update_tracker(data):
                 'shares': shares,
                 'day_count': 0,
                 'max_hold_days': sig.get('max_hold_days', max_hold),
+                'entry_rank': sig.get('rank'),
             }
             order_events.append({
                 **event_base,
@@ -554,6 +625,7 @@ def update_tracker(data):
             'execution_date': s.get('execution_date'),
             'max_hold_days': s.get('max_hold_days', max_hold),
             'signal_date': today,
+            'rank': s.get('rank'),
             # TP/SL 重算與 sizing 參數：開倉時以實際開盤價為錨重算
             'position_size': s.get('position_size'),
             'regime_scale': s.get('regime_scale'),

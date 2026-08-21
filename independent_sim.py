@@ -42,7 +42,7 @@ DEFAULT_DATA_DIR = Path("independent_sim_data")
 DEFAULT_CAPITAL = 200000.0
 DEFAULT_MAX_POSITIONS = 2
 DEFAULT_POSITION_SIZE = 0.45
-DEFAULT_RESERVE_RATIO = 0.20
+DEFAULT_RESERVE_RATIO = 0.10
 DEFAULT_TP_ATR_MULT = 4.0
 DEFAULT_SL_ATR_MULT = 3.0
 DEFAULT_MAX_HOLD_DAYS = 20
@@ -54,6 +54,88 @@ SLIPPAGE = 0.003             # 0.3% 賣出滑價
 
 DEFAULT_BENCHMARK_TICKER = "0050.TW"
 TAIPEI_TZ = ZoneInfo("Asia/Taipei")
+
+STRATEGY_CONFIGS: dict[str, dict[str, Any]] = {
+    "top2_score_v1": {
+        "strategy_id": "top2_score_v1",
+        "name": "Top-2 Score Concentration",
+        "default_data_dir": "independent_sim_data",
+        "orders_dir": "artifacts",
+        "orders_pattern": "orders_{date}.json",
+        "max_positions": 2,
+        "position_size": 0.45,
+        "reserve_ratio": 0.10,
+        "max_hold_days": 20,
+        "tp_atr_mult": 4.0,
+        "sl_atr_mult": 3.0,
+        "initial_capital": 200000.0,
+    },
+    "mr20": {
+        "strategy_id": "mr20",
+        "name": "MR20 Pullback Mean Reversion",
+        "default_data_dir": "independent_sim_data_mr20",
+        "orders_dir": "artifacts/mr20",
+        "orders_pattern": "orders_mr20_{date}.json",
+        "max_positions": 2,
+        "position_size": 0.45,
+        "reserve_ratio": 0.10,
+        "max_hold_days": 20,
+        "tp_atr_mult": 4.0,
+        "sl_atr_mult": 3.0,
+        "initial_capital": 1000000.0,
+    },
+    "rsi_reversal": {
+        "strategy_id": "rsi_reversal",
+        "name": "RSI Reversal Strategy",
+        "default_data_dir": "independent_sim_data_rsi_reversal",
+        "orders_dir": "artifacts/rsi_reversal",
+        "orders_pattern": "orders_rsi_reversal_{date}.json",
+        "max_positions": 5,
+        "position_size": 0.15,
+        "reserve_ratio": 0.20,
+        "max_hold_days": 5,
+        "tp_pct": 0.06,
+        "sl_pct": 0.03,
+        "tp_atr_mult": 2.0,
+        "sl_atr_mult": 2.0,
+        "initial_capital": 1000000.0,
+    },
+}
+
+
+def resolve_strategy_id(strategy: Optional[str]) -> str:
+    """Normalize user-supplied strategy name to canonical strategy_id."""
+    if not strategy:
+        return DEFAULT_STRATEGY_ID
+    s = str(strategy).lower().strip()
+    if s in ("top2", "top2_score_v1", "top2_v1"):
+        return "top2_score_v1"
+    if s in ("mr20", "mr20_pullback_v1", "mr20_v1"):
+        return "mr20"
+    if s in ("rsi_reversal", "rsi_reversal_v1", "rsi"):
+        return "rsi_reversal"
+    return s
+
+
+def get_strategy_config(strategy: Optional[str] = None) -> dict[str, Any]:
+    """Retrieve default parameters for strategy_id."""
+    sid = resolve_strategy_id(strategy)
+    if sid in STRATEGY_CONFIGS:
+        return dict(STRATEGY_CONFIGS[sid])
+    return {
+        "strategy_id": sid,
+        "name": sid,
+        "default_data_dir": f"independent_sim_data_{sid}",
+        "orders_dir": "artifacts",
+        "orders_pattern": "orders_{date}.json",
+        "max_positions": DEFAULT_MAX_POSITIONS,
+        "position_size": DEFAULT_POSITION_SIZE,
+        "reserve_ratio": DEFAULT_RESERVE_RATIO,
+        "max_hold_days": DEFAULT_MAX_HOLD_DAYS,
+        "tp_atr_mult": DEFAULT_TP_ATR_MULT,
+        "sl_atr_mult": DEFAULT_SL_ATR_MULT,
+        "initial_capital": DEFAULT_CAPITAL,
+    }
 
 
 # =====================================================================
@@ -384,35 +466,46 @@ def select_candidates(
 # =====================================================================
 
 def get_default_state(
-    capital: float = DEFAULT_CAPITAL,
-    max_positions: int = DEFAULT_MAX_POSITIONS,
-    position_size: float = DEFAULT_POSITION_SIZE,
-    reserve_ratio: float = DEFAULT_RESERVE_RATIO,
+    capital: Optional[float] = None,
+    max_positions: Optional[int] = None,
+    position_size: Optional[float] = None,
+    reserve_ratio: Optional[float] = None,
     max_price: Optional[float] = None,
-    tp_atr_mult: float = DEFAULT_TP_ATR_MULT,
-    sl_atr_mult: float = DEFAULT_SL_ATR_MULT,
-    max_hold_days: int = DEFAULT_MAX_HOLD_DAYS,
+    tp_atr_mult: Optional[float] = None,
+    sl_atr_mult: Optional[float] = None,
+    max_hold_days: Optional[int] = None,
     entry_model: str = DEFAULT_ENTRY_MODEL,
-    strategy_id: str = DEFAULT_STRATEGY_ID,
+    strategy_id: Optional[str] = None,
     created_at: Optional[str] = None,
 ) -> dict[str, Any]:
     """Return fresh initial state dictionary."""
+    sid = resolve_strategy_id(strategy_id)
+    strat_cfg = get_strategy_config(sid)
+
+    eff_capital = float(capital) if capital is not None else float(strat_cfg["initial_capital"])
+    eff_max_pos = int(max_positions) if max_positions is not None else int(strat_cfg["max_positions"])
+    eff_pos_size = float(position_size) if position_size is not None else float(strat_cfg["position_size"])
+    eff_reserve = float(reserve_ratio) if reserve_ratio is not None else float(strat_cfg["reserve_ratio"])
+    eff_tp_mult = float(tp_atr_mult) if tp_atr_mult is not None else float(strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT))
+    eff_sl_mult = float(sl_atr_mult) if sl_atr_mult is not None else float(strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT))
+    eff_max_hold = int(max_hold_days) if max_hold_days is not None else int(strat_cfg.get("max_hold_days", DEFAULT_MAX_HOLD_DAYS))
+
     return {
         "schema_version": SCHEMA_VERSION,
-        "strategy_id": strategy_id,
+        "strategy_id": sid,
         "created_at": created_at or get_taipei_now_iso(),
         "config": {
-            "initial_capital": float(capital),
-            "max_positions": int(max_positions),
-            "position_size": float(position_size),
-            "reserve_ratio": float(reserve_ratio),
+            "initial_capital": eff_capital,
+            "max_positions": eff_max_pos,
+            "position_size": eff_pos_size,
+            "reserve_ratio": eff_reserve,
             "max_price": _opt_float(max_price),
-            "tp_atr_mult": float(tp_atr_mult),
-            "sl_atr_mult": float(sl_atr_mult),
-            "max_hold_days": int(max_hold_days),
+            "tp_atr_mult": eff_tp_mult,
+            "sl_atr_mult": eff_sl_mult,
+            "max_hold_days": eff_max_hold,
             "entry_model": entry_model,
         },
-        "cash": float(capital),
+        "cash": eff_capital,
         "positions": {},
         "pending_orders": [],
         "order_events": [],
@@ -499,26 +592,33 @@ def mark_run_processed(state: dict[str, Any], run_id: str) -> None:
 
 
 def init_simulation(
-    data_dir: Path | str = DEFAULT_DATA_DIR,
-    capital: float = DEFAULT_CAPITAL,
+    data_dir: Optional[Path | str] = None,
+    capital: Optional[float] = None,
     max_price: Optional[float] = None,
-    position_size: float = DEFAULT_POSITION_SIZE,
-    reserve_ratio: float = DEFAULT_RESERVE_RATIO,
+    position_size: Optional[float] = None,
+    reserve_ratio: Optional[float] = None,
+    max_positions: Optional[int] = None,
+    max_hold_days: Optional[int] = None,
+    strategy: Optional[str] = None,
     force: bool = False,
 ) -> dict[str, Any]:
     """Initialize a new simulation state."""
-    d = Path(data_dir)
+    sid = resolve_strategy_id(strategy)
+    strat_cfg = get_strategy_config(sid)
+    d = Path(data_dir) if data_dir is not None else Path(strat_cfg["default_data_dir"])
+
     state_path = d / "state.json"
-    if state_path.exists():
-        if not force:
-            raise FileExistsError(f"{state_path} already exists. Use --force to overwrite.")
-        # --force 時才覆寫
+    if state_path.exists() and not force:
+        raise FileExistsError(f"{state_path} already exists. Use --force to overwrite.")
 
     state = get_default_state(
         capital=capital,
+        max_positions=max_positions,
         max_price=max_price,
         position_size=position_size,
         reserve_ratio=reserve_ratio,
+        max_hold_days=max_hold_days,
+        strategy_id=sid,
     )
     save_state_atomic(state, data_dir=d)
     export_ledgers(state, data_dir=d)
@@ -607,6 +707,9 @@ def plan_orders(
             "atr": atr_val,
             "tp_atr_mult": candidate.get("tp_atr_mult", cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT)),
             "sl_atr_mult": candidate.get("sl_atr_mult", cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT)),
+            "tp_pct": candidate.get("tp_pct"),
+            "sl_pct": candidate.get("sl_pct"),
+            "tp_sl_mode": candidate.get("tp_sl_mode"),
             "max_hold_days": candidate.get("max_hold_days", cfg.get("max_hold_days", DEFAULT_MAX_HOLD_DAYS)),
             "created_at": get_taipei_now_iso(),
         }
@@ -721,10 +824,21 @@ def execute_open_orders(
         state["cash"] -= (trade_amount + buy_cost)
 
         # Compute TP/SL anchored on fill_price
-        tp_mult = order.get("tp_atr_mult", DEFAULT_TP_ATR_MULT)
-        sl_mult = order.get("sl_atr_mult", DEFAULT_SL_ATR_MULT)
-        tp_price = fill_price + tp_mult * atr
-        sl_price = fill_price - sl_mult * atr
+        tp_sl_mode = order.get("tp_sl_mode")
+        tp_pct = order.get("tp_pct")
+        sl_pct = order.get("sl_pct")
+
+        if tp_sl_mode == "fixed_pct" or tp_pct is not None:
+            tp_p = _opt_float(tp_pct, 0.06)
+            sl_p = _opt_float(sl_pct, 0.03)
+            tp_price = fill_price * (1.0 + tp_p)
+            sl_price = fill_price * (1.0 - sl_p)
+        else:
+            tp_mult = order.get("tp_atr_mult", DEFAULT_TP_ATR_MULT)
+            sl_mult = order.get("sl_atr_mult", DEFAULT_SL_ATR_MULT)
+            tp_price = fill_price + tp_mult * atr
+            sl_price = fill_price - sl_mult * atr
+
         if sl_price <= 0:
             sl_price = fill_price * (1 - DEFAULT_TP_SL["sl_pct"])
 
@@ -1304,16 +1418,23 @@ def run_close_and_plan(
     )
     mark_equity(state, closes=closes, benchmark_close=bm_close, as_of=today_str)
 
-    # 3. Plan next session orders from Top-7
+    # 3. Plan next session orders
     orders_file = None
     if orders_path:
         orders_file = Path(orders_path)
     else:
-        # Default search in artifacts/orders_YYYYMMDD.json
         compact_date = today_str.replace("-", "")
-        default_art = Path("artifacts") / f"orders_{compact_date}.json"
-        if default_art.exists():
-            orders_file = default_art
+        strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
+        strat_cfg = get_strategy_config(strat_id)
+        candidate_files = [
+            Path(strat_cfg.get("orders_dir", "artifacts")) / strat_cfg.get("orders_pattern", "orders_{date}.json").format(date=compact_date),
+            Path("artifacts") / f"orders_{compact_date}.json",
+            Path("artifacts") / strat_id / f"orders_{strat_id}_{compact_date}.json",
+        ]
+        for cf in candidate_files:
+            if cf.exists():
+                orders_file = cf
+                break
 
     planned_count = 0
     if orders_file and orders_file.exists():
@@ -1398,42 +1519,55 @@ def print_status(data_dir: Path | str = DEFAULT_DATA_DIR) -> None:
 
 def build_cli_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Top-2 Score Concentration Independent Simulation CLI"
+        description="Independent Simulation CLI for tw_stocker strategies"
+    )
+    parser.add_argument(
+        "--strategy", "-s",
+        type=str,
+        default=None,
+        help="Strategy ID (top2_score_v1, mr20, rsi_reversal)",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # init
     p_init = subparsers.add_parser("init", help="Initialize simulation state")
-    p_init.add_argument("--capital", type=float, default=DEFAULT_CAPITAL, help="Initial capital in TWD")
+    p_init.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal)")
+    p_init.add_argument("--capital", type=float, default=None, help="Initial capital in TWD")
     p_init.add_argument("--max-price", type=float, default=None, help="Optional max price filter")
-    p_init.add_argument("--position-size", type=float, default=DEFAULT_POSITION_SIZE, help="Target position size fraction")
-    p_init.add_argument("--reserve-ratio", type=float, default=DEFAULT_RESERVE_RATIO, help="Minimum cash reserve fraction")
-    p_init.add_argument("--data-dir", type=str, default=str(DEFAULT_DATA_DIR), help="Data directory")
+    p_init.add_argument("--position-size", type=float, default=None, help="Target position size fraction")
+    p_init.add_argument("--reserve-ratio", type=float, default=None, help="Minimum cash reserve fraction")
+    p_init.add_argument("--max-positions", type=int, default=None, help="Max positions count")
+    p_init.add_argument("--max-hold-days", type=int, default=None, help="Max holding days")
+    p_init.add_argument("--data-dir", type=str, default=None, help="Data directory")
     p_init.add_argument("--force", action="store_true", help="Force overwrite existing state")
 
     # close-and-plan
     p_cp = subparsers.add_parser("close-and-plan", help="Settle positions, mark equity, and plan next day orders")
+    p_cp.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal)")
     p_cp.add_argument("--orders", type=str, default=None, help="Path to orders_YYYYMMDD.json artifact")
     p_cp.add_argument("--as-of", type=str, default=None, help="Evaluation date (YYYY-MM-DD), default today")
     p_cp.add_argument("--max-price", type=float, default=None, help="Optional max price override")
     p_cp.add_argument("--tickers", nargs="+", default=None, help="Optional manual tickers selection")
-    p_cp.add_argument("--data-dir", type=str, default=str(DEFAULT_DATA_DIR), help="Data directory")
+    p_cp.add_argument("--data-dir", type=str, default=None, help="Data directory")
     p_cp.add_argument("--notify", action="store_true", help="Send Telegram notification")
 
     # open
     p_open = subparsers.add_parser("open", help="Simulate 09:00-09:30 open limit order fills")
+    p_open.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal)")
     p_open.add_argument("--as-of", type=str, default=None, help="Execution date (YYYY-MM-DD), default today")
-    p_open.add_argument("--data-dir", type=str, default=str(DEFAULT_DATA_DIR), help="Data directory")
+    p_open.add_argument("--data-dir", type=str, default=None, help="Data directory")
     p_open.add_argument("--notify", action="store_true", help="Send Telegram notification")
 
     # report
     p_rep = subparsers.add_parser("report", help="Generate performance report, charts, and export CSVs")
-    p_rep.add_argument("--data-dir", type=str, default=str(DEFAULT_DATA_DIR), help="Data directory")
+    p_rep.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal)")
+    p_rep.add_argument("--data-dir", type=str, default=None, help="Data directory")
     p_rep.add_argument("--notify", action="store_true", help="Send Telegram notification")
 
     # status
     p_stat = subparsers.add_parser("status", help="Print current status summary")
-    p_stat.add_argument("--data-dir", type=str, default=str(DEFAULT_DATA_DIR), help="Data directory")
+    p_stat.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal)")
+    p_stat.add_argument("--data-dir", type=str, default=None, help="Data directory")
 
     return parser
 
@@ -1442,19 +1576,35 @@ def main() -> None:
     parser = build_cli_parser()
     args = parser.parse_args()
 
+    # Resolve strategy & data_dir
+    strategy = getattr(args, "strategy", None)
+    sid = resolve_strategy_id(strategy)
+    strat_cfg = get_strategy_config(sid)
+
+    raw_dir = getattr(args, "data_dir", None)
+    if raw_dir is not None:
+        data_dir = raw_dir
+    elif strategy is not None:
+        data_dir = strat_cfg["default_data_dir"]
+    else:
+        data_dir = str(DEFAULT_DATA_DIR)
+
     if args.command == "init":
         init_simulation(
-            data_dir=args.data_dir,
+            data_dir=data_dir,
             capital=args.capital,
             max_price=args.max_price,
             position_size=args.position_size,
             reserve_ratio=args.reserve_ratio,
+            max_positions=args.max_positions,
+            max_hold_days=args.max_hold_days,
+            strategy=sid,
             force=args.force,
         )
-        print(f"Initialized simulation state in {args.data_dir} with capital {args.capital:,.0f} TWD.")
+        print(f"Initialized simulation state for [{sid}] in {data_dir}.")
     elif args.command == "close-and-plan":
         run_close_and_plan(
-            data_dir=args.data_dir,
+            data_dir=data_dir,
             orders_path=args.orders,
             as_of=args.as_of,
             max_price=args.max_price,
@@ -1463,17 +1613,17 @@ def main() -> None:
         )
     elif args.command == "open":
         run_open(
-            data_dir=args.data_dir,
+            data_dir=data_dir,
             as_of=args.as_of,
             notify=args.notify,
         )
     elif args.command == "report":
         run_report(
-            data_dir=args.data_dir,
+            data_dir=data_dir,
             notify=args.notify,
         )
     elif args.command == "status":
-        print_status(data_dir=args.data_dir)
+        print_status(data_dir=data_dir)
 
 
 if __name__ == "__main__":
