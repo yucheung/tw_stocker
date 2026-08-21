@@ -279,29 +279,29 @@ def extract_signals_from_report():
 
 def get_required_rank_gap(day_count: int) -> Optional[int]:
     """
-    依持有天數分級 hysteresis 門檻：
+    依持有天數分級 hysteresis 門檻 (INVESTMENT_STRATEGY.md §5.2):
     - 持有 < 5 天：不換倉 (None)
-    - 5-8 天 (5 <= day_count < 8)：需 rank gap >= 3
-    - 8-12 天 (8 <= day_count <= 12)：需 rank gap >= 2
-    - > 12 天 (day_count > 12)：需 rank gap >= 1
+    - 5-7 天 (5 <= day_count < 8)：需 rank gap >= 5
+    - 8-11 天 (8 <= day_count < 12)：需 rank gap >= 3
+    - >= 12 天 (day_count >= 12)：需 rank gap >= 1
     """
     if day_count < 5:
         return None
     if day_count < 8:
+        return 5
+    if day_count < 12:
         return 3
-    if day_count <= 12:
-        return 2
     return 1
 
 
 def find_replace_candidate(positions: dict, new_rank: Optional[int], min_rank_gap: Optional[int] = None, **kwargs) -> Optional[str]:
     """
     比較新訊號 rank 與持倉中最弱者的 entry_rank。
-    依持有天數分級 hysteresis 門檻：
+    依持有天數分級 hysteresis 門檻 (INVESTMENT_STRATEGY.md §5.2):
     - 持有 < 5 天：不換倉
-    - 5-8 天 (5 <= day_count < 8)：需 rank gap >= 3
-    - 8-12 天 (8 <= day_count <= 12)：需 rank gap >= 2
-    - > 12 天 (day_count > 12)：需 rank gap >= 1
+    - 5-7 天 (5 <= day_count < 8)：需 rank gap >= 5
+    - 8-11 天 (8 <= day_count < 12)：需 rank gap >= 3
+    - >= 12 天 (day_count >= 12)：需 rank gap >= 1
 
     若有候選者滿足門檻，回傳最弱者 ticker；否則回傳 None。
 
@@ -359,7 +359,6 @@ def close_position(data: dict, ticker: str, exit_price: float, today: str, reaso
     pnl = proceeds - cost_basis
     pnl_pct = (exit_price / pos['entry'] - 1) * 100
 
-    data['capital'] += proceeds
     trade_record = {
         'ticker': ticker,
         'entry': pos['entry'],
@@ -372,8 +371,9 @@ def close_position(data: dict, ticker: str, exit_price: float, today: str, reaso
         'exit_date': today,
         'days_held': pos.get('day_count', 0),
     }
-    data['closed_trades'].append(trade_record)
     del data['positions'][ticker]
+    data['closed_trades'].append(trade_record)
+    data['capital'] += proceeds
     emoji = '🟢' if pnl > 0 else '🔴'
     print(f"   {emoji} 平倉 {ticker}: {pos['entry']:.1f}→{exit_price:.1f} ({pnl_pct:+.1f}%) [{reason}] 持{pos.get('day_count', 0)}天")
     return trade_record
@@ -421,10 +421,10 @@ def update_tracker(data):
     # 2. 追蹤已持倉：檢查 TP/SL/時間到期
     to_close = []
     for ticker, pos in data['positions'].items():
-        pos['day_count'] = pos.get('day_count', 0) + 1
         bar = bars.get(ticker)
-        if bar is None or bar.get('close') is None:
+        if bar is None or bar.get('close') is None or bar.get('date') != today:
             continue
+        pos['day_count'] = pos.get('day_count', 0) + 1
 
         reason = None
         exit_price = bar['close']
@@ -570,9 +570,29 @@ def update_tracker(data):
 
                 rep_pos = data['positions'][replace_ticker]
                 rep_bar = bars.get(replace_ticker)
-                rep_exit = rep_bar.get('open') if (rep_bar and rep_bar.get('open') is not None) else (
-                    rep_bar.get('close') if (rep_bar and rep_bar.get('close') is not None) else rep_pos['entry']
-                )
+                if not rep_bar or rep_bar.get('date') != today:
+                    order_events.append({
+                        **event_base,
+                        'limit_price': limit_price,
+                        'open_price': decision.open_price,
+                        'status': 'CANCELLED_NO_CAPACITY',
+                        'fill_price': None,
+                    })
+                    print(f"   ⏭️ 換倉標的無今日報價，額滿撤單 {ticker}")
+                    continue
+
+                rep_exit = rep_bar.get('open') if rep_bar.get('open') is not None else rep_bar.get('close')
+                if rep_exit is None:
+                    order_events.append({
+                        **event_base,
+                        'limit_price': limit_price,
+                        'open_price': decision.open_price,
+                        'status': 'CANCELLED_NO_CAPACITY',
+                        'fill_price': None,
+                    })
+                    print(f"   ⏭️ 換倉標的無有效價格，額滿撤單 {ticker}")
+                    continue
+
                 rep_sell_cost = rep_exit * rep_pos['shares'] * sell_cost_rate
                 rep_slippage = rep_exit * rep_pos['shares'] * slippage
                 rep_proceeds = rep_exit * rep_pos['shares'] - rep_sell_cost - rep_slippage
@@ -597,7 +617,7 @@ def update_tracker(data):
                 regime_scale = 1.0
             available_cash = max(projected_capital - reserve_cash, 0)
             trade_amount = min(projected_equity * position_size * regime_scale, available_cash)
-            shares = int(trade_amount / fill_price)
+            shares = int(trade_amount / (fill_price * (1 + buy_cost_rate)))
 
             actual_trade_amount = shares * fill_price
             buy_cost = actual_trade_amount * buy_cost_rate  # 限價單買進不再加 slippage

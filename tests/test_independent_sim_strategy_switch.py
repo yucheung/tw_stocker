@@ -199,3 +199,68 @@ def test_generate_markdown_report_dynamic_headers_top2(temp_dir):
     assert "| 指標 | Top-2 Score Concentration | 0050 (基準) | 差異 (Alpha) |" in report_md
     assert "| 標的 | 進場日 | 進場價 | 股數 | TP (+4 ATR) | SL (-3 ATR) | 已持有天數 |" in report_md
 
+
+def test_order_level_tp_sl_override_in_position_and_report(temp_dir):
+    """P2-4: Verify order-level TP/SL overrides are stored on position and reflected in report header."""
+    state = sim.init_simulation(data_dir=temp_dir / "override_test", strategy="top2_score_v1")
+    state["pending_orders"] = [
+        {
+            "order_id": "test_1",
+            "signal_date": "2026-08-20",
+            "execution_date": "2026-08-21",
+            "ticker": "2330",
+            "limit_price": 100.0,
+            "reference_close": 100.0,
+            "atr": 5.0,
+            "tp_atr_mult": 2.5,
+            "sl_atr_mult": 1.5,
+            "max_hold_days": 10,
+        }
+    ]
+    bars = {
+        "2330": {"open": 98.0, "high": 102.0, "low": 97.0, "close": 101.0, "date": "2026-08-21"}
+    }
+    terminal_events = sim.execute_open_orders(state, bars, as_of="2026-08-21")
+    assert len(terminal_events) == 1
+    assert terminal_events[0]["status"] == "FILLED"
+
+    pos = state["positions"]["2330"]
+    assert pos["tp_atr_mult"] == 2.5
+    assert pos["sl_atr_mult"] == 1.5
+
+    perf = sim.compute_performance(sim.pd.DataFrame(), [], [])
+    report_md = sim.generate_markdown_report(state, perf)
+    assert "TP (+2.5 ATR)" in report_md
+    assert "SL (-1.5 ATR)" in report_md
+
+
+def test_independent_sim_shares_sizing_deducts_buy_commission(temp_dir):
+    """New-2: Simulator share calculation accounts for BUY_COST_RATE so orders do not cancel on exact cash."""
+    state = sim.init_simulation(data_dir=temp_dir / "commission_test", strategy="rsi_reversal")
+    # Set capital so available_cash = exactly 10,000 (reserve_cash = 200,000, cash = 210,000)
+    state["cash"] = 210_000.0
+    state["config"]["initial_capital"] = 1_000_000.0
+    state["config"]["reserve_cash_ratio"] = 0.20  # reserve = 200,000 -> available_cash = 10,000
+    state["config"]["position_size"] = 0.50  # target_amount will be capped at available_cash (10,000)
+
+    state["pending_orders"] = [
+        {
+            "order_id": "test_comm",
+            "signal_date": "2026-08-20",
+            "execution_date": "2026-08-21",
+            "ticker": "2330",
+            "limit_price": 100.0,
+            "reference_close": 100.0,
+            "atr": 5.0,
+        }
+    ]
+    bars = {
+        "2330": {"open": 100.0, "high": 102.0, "low": 98.0, "close": 100.0, "date": "2026-08-21"}
+    }
+    terminal_events = sim.execute_open_orders(state, bars, as_of="2026-08-21")
+    assert len(terminal_events) == 1
+    assert terminal_events[0]["status"] == "FILLED"
+    assert state["positions"]["2330"]["shares"] == 99
+    assert state["cash"] >= 200_000.0
+
+

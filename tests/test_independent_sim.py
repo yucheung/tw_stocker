@@ -397,9 +397,9 @@ class TestOpenLimitExecution:
         assert len(state["pending_orders"]) == 0
         # Shares and cash deduction
         # Target amount = min(200000 * 0.45, 200000 - 20000) = min(90000, 180000) = 90000
-        # shares = floor(90000 / 98) = 918
-        assert pos["shares"] == 918
-        trade_amount = 918 * 98.0
+        # shares = floor(90000 / (98 * (1 + 0.001425))) = 917
+        assert pos["shares"] == 917
+        trade_amount = 917 * 98.0
         buy_cost = trade_amount * 0.001425
         assert math.isclose(state["cash"], 200000.0 - trade_amount - buy_cost, abs_tol=0.01)
 

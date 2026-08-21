@@ -219,7 +219,7 @@ def filter_rsi_reversal_candidates(
        a. 放量超賣：RSI(14) <= 28.0 且 Volume > 1.5 * Volume_MA20
        b. 布林下軌超賣：Close < BB_Lower(20, 2σ) 且 Close > MA200
        c. 急跌反彈：5 日累計跌幅 <= -12%
-    4. 止跌確認：Close[t] > Open[t] (若有 Open 資料)
+    4. 止跌確認：Close[t] > Open[t] (收紅 K 陽線，缺 Open 資料則剔除)
     """
     # 支援 positional argument: filter_rsi_reversal_candidates(close, vol, as_of_date, config, calendar)
     if isinstance(open_df, str):
@@ -280,7 +280,10 @@ def filter_rsi_reversal_candidates(
         return []
 
     top_n_thresh = min(cfg.liquidity_top_n, len(valid_turnovers))
-    top_liquid_tickers = set(valid_turnovers.nlargest(top_n_thresh).index)
+    top_liquid_series = valid_turnovers.nlargest(top_n_thresh)
+    top_liquid_tickers = list(top_liquid_series.index)
+    total_liquid = len(top_liquid_tickers)
+    turnover_rank_map = {tk: idx for idx, tk in enumerate(top_liquid_tickers)}
 
     passed_candidates = []
 
@@ -306,18 +309,19 @@ def filter_rsi_reversal_candidates(
         # a. 放量超賣：RSI(14) <= 28 且 Volume > 1.5 * Volume_MA20
         # b. 布林下軌超賣：Close < BB_Lower(20, 2σ)
         # c. 急跌反彈：5 日累計跌幅 <= -12%
-        trig_a = (rsi_val <= cfg.rsi_max) and (not pd.isna(vol_ratio_val) and vol_ratio_val >= cfg.min_volume_ratio)
+        trig_a = (rsi_val <= cfg.rsi_max) and (not pd.isna(vol_ratio_val) and vol_ratio_val > cfg.min_volume_ratio)
         trig_b = (not pd.isna(bb_low_val)) and (c_t < bb_low_val)
         trig_c = (not pd.isna(ret_5d_val)) and (ret_5d_val <= cfg.drop_5d_threshold)
 
         if not (trig_a or trig_b or trig_c):
             continue
 
-        # 條件 4: 止跌確認 Close[t] > Open[t] (收紅 K 陽線)
-        if open_df is not None and ticker in open_df.columns:
-            o_t = open_df[ticker].iloc[t_loc]
-            if not pd.isna(o_t) and not (c_t > o_t):
-                continue
+        # 條件 4: 止跌確認 Close[t] > Open[t] (收紅 K 陽線，缺 Open 或非紅 K 則剔除)
+        if open_df is None or ticker not in open_df.columns:
+            continue
+        o_t = open_df[ticker].iloc[t_loc]
+        if pd.isna(o_t) or not (c_t > o_t):
+            continue
 
         ret_5d_clean = float(ret_5d_val) if not pd.isna(ret_5d_val) else 0.0
         rsi_clean = float(rsi_val)
@@ -327,10 +331,11 @@ def filter_rsi_reversal_candidates(
         # 加權評分：
         # 40% RSI 超賣深度 (100 - RSI)
         # 30% 5 日跌幅 (-return_5d * 100)
-        # 30% 流動性
+        # 30% 流動性排名 (依據流動性股池內成交額排名標準化評分)
         rsi_score = 100.0 - rsi_clean
         drop_score = max(0.0, -ret_5d_clean * 100.0)
-        turnover_score = min(100.0, turnover_clean / 1e7)
+        t_rank = turnover_rank_map.get(ticker, total_liquid - 1)
+        turnover_score = (1.0 - (t_rank / total_liquid)) * 100.0 if total_liquid > 0 else 0.0
         score = 0.40 * rsi_score + 0.30 * drop_score + 0.30 * turnover_score
 
         passed_candidates.append({

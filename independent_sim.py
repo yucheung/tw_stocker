@@ -805,7 +805,7 @@ def execute_open_orders(
         current_equity = state["cash"] + current_market_val
         available_cash = max(0.0, state["cash"] - reserve_cash)
         target_amount = min(current_equity * pos_size, available_cash)
-        shares = math.floor(target_amount / fill_price) if fill_price > 0 else 0
+        shares = math.floor(target_amount / (fill_price * (1.0 + BUY_COST_RATE))) if fill_price > 0 else 0
         trade_amount = shares * fill_price
         buy_cost = trade_amount * BUY_COST_RATE
 
@@ -849,6 +849,11 @@ def execute_open_orders(
             "shares": int(shares),
             "tp": round(tp_price, 2),
             "sl": round(sl_price, 2),
+            "tp_sl_mode": tp_sl_mode,
+            "tp_atr_mult": order.get("tp_atr_mult"),
+            "sl_atr_mult": order.get("sl_atr_mult"),
+            "tp_pct": order.get("tp_pct"),
+            "sl_pct": order.get("sl_pct"),
             "atr": atr,
             "entry_date": as_of,
             "day_count": 0,
@@ -1136,16 +1141,32 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
     max_price_val = cfg.get("max_price")
     max_price_desc = f"<= {max_price_val} 元" if max_price_val is not None else "無"
 
-    # 出場模式欄位標題動態生成
-    tp_sl_mode = cfg.get("tp_sl_mode", strat_cfg.get("tp_sl_mode"))
-    if tp_sl_mode == "fixed_pct" or (tp_sl_mode != "atr" and (cfg.get("tp_pct") is not None or cfg.get("sl_pct") is not None)):
-        tp_p = cfg.get("tp_pct", strat_cfg.get("tp_pct", 0.06))
-        sl_p = cfg.get("sl_pct", strat_cfg.get("sl_pct", 0.03))
+    # 出場模式欄位標題動態生成（優先採用持倉或委託之實際參數）
+    sample_item = None
+    if state.get("positions"):
+        sample_item = next(iter(state["positions"].values()))
+    elif state.get("pending_orders"):
+        sample_item = state["pending_orders"][-1]
+
+    tp_sl_mode = (
+        (sample_item.get("tp_sl_mode") if sample_item else None)
+        or cfg.get("tp_sl_mode")
+        or strat_cfg.get("tp_sl_mode")
+    )
+    tp_pct_val = (sample_item.get("tp_pct") if sample_item and sample_item.get("tp_pct") is not None else cfg.get("tp_pct", strat_cfg.get("tp_pct")))
+    sl_pct_val = (sample_item.get("sl_pct") if sample_item and sample_item.get("sl_pct") is not None else cfg.get("sl_pct", strat_cfg.get("sl_pct")))
+
+    tp_atr_val = (sample_item.get("tp_atr_mult") if sample_item and sample_item.get("tp_atr_mult") is not None else cfg.get("tp_atr_mult", strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT)))
+    sl_atr_val = (sample_item.get("sl_atr_mult") if sample_item and sample_item.get("sl_atr_mult") is not None else cfg.get("sl_atr_mult", strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT)))
+
+    if tp_sl_mode == "fixed_pct" or (tp_sl_mode != "atr" and (tp_pct_val is not None or sl_pct_val is not None)):
+        tp_p = tp_pct_val if tp_pct_val is not None else 0.06
+        sl_p = sl_pct_val if sl_pct_val is not None else 0.03
         tp_header = f"TP (+{tp_p * 100:.0f}%)" if tp_p is not None else "TP"
         sl_header = f"SL (-{sl_p * 100:.0f}%)" if sl_p is not None else "SL"
     else:
-        tp_mult = cfg.get("tp_atr_mult", strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT))
-        sl_mult = cfg.get("sl_atr_mult", strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT))
+        tp_mult = tp_atr_val
+        sl_mult = sl_atr_val
         tp_str = f"{tp_mult:g}" if isinstance(tp_mult, (int, float)) else str(tp_mult)
         sl_str = f"{sl_mult:g}" if isinstance(sl_mult, (int, float)) else str(sl_mult)
         tp_header = f"TP (+{tp_str} ATR)" if tp_mult is not None else "TP"

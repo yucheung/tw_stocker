@@ -118,7 +118,8 @@ def test_rsi_reversal_selection_3_oversold_triggers():
     }, index=dates)
 
     cfg = RSIReversalConfig(liquidity_top_n=5, min_history_days=200)
-    candidates = filter_rsi_reversal_candidates(close_df, vol_df, as_of_date=sig_date, config=cfg)
+    open_df = close_df * 0.98  # All candles bullish (close > open)
+    candidates = filter_rsi_reversal_candidates(close_df, vol_df, open_df=open_df, as_of_date=sig_date, config=cfg)
 
     selected_tickers = [c["ticker"] for c in candidates]
     assert "PASS_RSI" in selected_tickers
@@ -146,10 +147,10 @@ def test_rsi_reversal_ranking_and_tiebreaking():
     # Stock D: Same price as C, higher turnover
     p_d = list(p_b)
 
-    v_a = [10_000_000.0] * 219 + [20_000_000.0]
-    v_b = [10_000_000.0] * 219 + [30_000_000.0]
-    v_c = [10_000_000.0] * 219 + [20_000_000.0]
-    v_d = [20_000_000.0] * 219 + [40_000_000.0]
+    v_a = [50_000_000.0] * 219 + [50_000_000.0]
+    v_b = [20_000_000.0] * 219 + [60_000_000.0]  # vol ratio 3.0x
+    v_c = [20_000_000.0] * 219 + [20_000_000.0]  # vol ratio 1.0x
+    v_d = [20_000_000.0] * 219 + [40_000_000.0]  # vol ratio 2.0x, higher turnover than C
 
     close_df = pd.DataFrame({
         "2330": p_a,
@@ -165,8 +166,9 @@ def test_rsi_reversal_ranking_and_tiebreaking():
         "3008": v_d,
     }, index=dates)
 
+    open_df = close_df * 0.98
     cfg = RSIReversalConfig(liquidity_top_n=10, max_candidates=5, min_history_days=200)
-    candidates = filter_rsi_reversal_candidates(close_df, vol_df, as_of_date=sig_date, config=cfg)
+    candidates = filter_rsi_reversal_candidates(close_df, vol_df, open_df=open_df, as_of_date=sig_date, config=cfg)
 
     assert len(candidates) == 4
     # 2330 lowest RSI & biggest drop -> highest score -> Rank 1
@@ -184,6 +186,107 @@ def test_rsi_reversal_ranking_and_tiebreaking():
     # 2317 -> Rank 4
     assert candidates[3]["ticker"] == "2317"
     assert candidates[3]["rank"] == 4
+
+
+# =====================================================================
+# P1-1, P1-2, New-3 Validation Tests
+# =====================================================================
+
+def test_rsi_reversal_open_df_missing_rejected():
+    """P1-1: Candidates are rejected when open_df is None, lacks ticker, or contains NaN."""
+    dates = pd.date_range("2025-01-01", periods=220, freq="B")
+    sig_date = dates[-1].strftime("%Y-%m-%d")
+
+    base = [50.0] * 180 + np.linspace(50.0, 150.0, 18).tolist()
+    p_pass = base + np.linspace(150.0, 75.0, 22).tolist()
+    v_pass = [10_000_000.0] * 219 + [25_000_000.0]
+
+    close_df = pd.DataFrame({"2330": p_pass, "2454": p_pass}, index=dates)
+    vol_df = pd.DataFrame({"2330": v_pass, "2454": v_pass}, index=dates)
+    cfg = RSIReversalConfig(liquidity_top_n=5, min_history_days=200)
+
+    # 1. open_df is None -> rejected
+    cands_none = filter_rsi_reversal_candidates(close_df, vol_df, open_df=None, as_of_date=sig_date, config=cfg)
+    assert len(cands_none) == 0
+
+    # 2. open_df missing ticker "2454" -> only "2330" considered (if 2330 has bullish candle)
+    open_df_partial = pd.DataFrame({"2330": close_df["2330"] * 0.98}, index=dates)
+    cands_partial = filter_rsi_reversal_candidates(close_df, vol_df, open_df=open_df_partial, as_of_date=sig_date, config=cfg)
+    assert len(cands_partial) == 1
+    assert cands_partial[0]["ticker"] == "2330"
+
+    # 3. open_df has NaN on signal date -> rejected
+    open_df_nan = close_df * 0.98
+    open_df_nan.loc[sig_date, "2330"] = np.nan
+    cands_nan = filter_rsi_reversal_candidates(close_df, vol_df, open_df=open_df_nan, as_of_date=sig_date, config=cfg)
+    assert "2330" not in [c["ticker"] for c in cands_nan]
+
+    # 4. Bearish candle (Close <= Open) -> rejected
+    open_df_bearish = close_df * 1.02
+    cands_bearish = filter_rsi_reversal_candidates(close_df, vol_df, open_df=open_df_bearish, as_of_date=sig_date, config=cfg)
+    assert len(cands_bearish) == 0
+
+
+def test_rsi_reversal_strict_volume_ratio():
+    """P1-2: Volume trigger requires strictly Volume > 1.5 * VolMA20 (not >=)."""
+    dates = pd.date_range("2025-01-01", periods=220, freq="B")
+    sig_date = dates[-1].strftime("%Y-%m-%d")
+
+    base = [50.0] * 180 + np.linspace(50.0, 150.0, 18).tolist()
+    p_pass = base + np.linspace(150.0, 75.0, 22).tolist()
+
+    close_df = pd.DataFrame({"2330": p_pass}, index=dates)
+    open_df = close_df * 0.98
+
+    # 219 days of 10M volume.
+    # Today 15.4M -> vol_ratio = 20 * 15.4 / (190 + 15.4) = 1.4995 <= 1.50
+    vol_df_lte = pd.DataFrame({"2330": [10_000_000.0] * 219 + [15_400_000.0]}, index=dates)
+    # Today 15.5M -> vol_ratio = 20 * 15.5 / (190 + 15.5) = 1.5085 > 1.50
+    vol_df_gt = pd.DataFrame({"2330": [10_000_000.0] * 219 + [15_500_000.0]}, index=dates)
+
+    # Disable BB and 5d triggers to isolate trig_a
+    cfg = RSIReversalConfig(
+        liquidity_top_n=5,
+        min_history_days=200,
+        drop_5d_threshold=-0.50,  # disable 5d drop trigger
+        bb_std=10.0,  # disable BB trigger
+        min_volume_ratio=1.5,
+    )
+
+    cands_lte = filter_rsi_reversal_candidates(close_df, vol_df_lte, open_df=open_df, as_of_date=sig_date, config=cfg)
+    assert len(cands_lte) == 0, "Volume ratio <= 1.5 should NOT pass strict > 1.5"
+
+    cands_gt = filter_rsi_reversal_candidates(close_df, vol_df_gt, open_df=open_df, as_of_date=sig_date, config=cfg)
+    assert len(cands_gt) == 1, "Strictly > 1.5x should pass"
+
+
+def test_rsi_reversal_rank_based_turnover_scoring():
+    """New-3: Turnover scoring uses normalized rank within liquid universe, not raw turnover."""
+    dates = pd.date_range("2025-01-01", periods=220, freq="B")
+    sig_date = dates[-1].strftime("%Y-%m-%d")
+
+    base = [50.0] * 180 + np.linspace(50.0, 150.0, 18).tolist()
+    p = base + np.linspace(150.0, 75.0, 22).tolist()
+
+    # Two identical stocks in terms of RSI and 5d drop, differing only in turnover
+    close_df = pd.DataFrame({"STOCK_HI": p, "STOCK_LO": p}, index=dates)
+    vol_df = pd.DataFrame({
+        "STOCK_HI": [10_000_000.0] * 219 + [25_000_000.0],
+        "STOCK_LO": [1_000_000.0] * 219 + [2_500_000.0],
+    }, index=dates)
+    open_df = close_df * 0.98
+
+    cfg = RSIReversalConfig(liquidity_top_n=2, min_history_days=200)
+    candidates = filter_rsi_reversal_candidates(close_df, vol_df, open_df=open_df, as_of_date=sig_date, config=cfg)
+
+    assert len(candidates) == 2
+    # In 2-item universe:
+    # STOCK_HI is rank 0 -> turnover_score = (1 - 0/2)*100 = 100.0 (30.0 pts)
+    # STOCK_LO is rank 1 -> turnover_score = (1 - 1/2)*100 = 50.0 (15.0 pts)
+    hi_cand = [c for c in candidates if c["ticker"] == "STOCK_HI"][0]
+    lo_cand = [c for c in candidates if c["ticker"] == "STOCK_LO"][0]
+    assert hi_cand["score"] > lo_cand["score"]
+    assert pytest.approx(hi_cand["score"] - lo_cand["score"], 0.01) == 15.0
 
 
 # =====================================================================
@@ -259,8 +362,9 @@ def test_rsi_reversal_orders_compatible_with_independent_sim(temp_dir, calendar)
 
     close_df = pd.DataFrame({"2330": p_pass}, index=dates)
     vol_df = pd.DataFrame({"2330": v_pass}, index=dates)
+    open_df = close_df * 0.98
 
-    orders_dict = generate_rsi_reversal_orders(close_df, vol_df, signal_date=sig_date, calendar=calendar)
+    orders_dict = generate_rsi_reversal_orders(close_df, vol_df, open_df=open_df, signal_date=sig_date, calendar=calendar)
     orders_file = temp_dir / f"orders_rsi_reversal_{sig_date.replace('-', '')}.json"
     save_orders_to_json(orders_dict, orders_file)
 
