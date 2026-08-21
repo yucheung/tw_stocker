@@ -1141,36 +1141,6 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
     max_price_val = cfg.get("max_price")
     max_price_desc = f"<= {max_price_val} 元" if max_price_val is not None else "無"
 
-    # 出場模式欄位標題動態生成（優先採用持倉或委託之實際參數）
-    sample_item = None
-    if state.get("positions"):
-        sample_item = next(iter(state["positions"].values()))
-    elif state.get("pending_orders"):
-        sample_item = state["pending_orders"][-1]
-
-    tp_sl_mode = (
-        (sample_item.get("tp_sl_mode") if sample_item else None)
-        or cfg.get("tp_sl_mode")
-        or strat_cfg.get("tp_sl_mode")
-    )
-    tp_pct_val = (sample_item.get("tp_pct") if sample_item and sample_item.get("tp_pct") is not None else cfg.get("tp_pct", strat_cfg.get("tp_pct")))
-    sl_pct_val = (sample_item.get("sl_pct") if sample_item and sample_item.get("sl_pct") is not None else cfg.get("sl_pct", strat_cfg.get("sl_pct")))
-
-    tp_atr_val = (sample_item.get("tp_atr_mult") if sample_item and sample_item.get("tp_atr_mult") is not None else cfg.get("tp_atr_mult", strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT)))
-    sl_atr_val = (sample_item.get("sl_atr_mult") if sample_item and sample_item.get("sl_atr_mult") is not None else cfg.get("sl_atr_mult", strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT)))
-
-    if tp_sl_mode == "fixed_pct" or (tp_sl_mode != "atr" and (tp_pct_val is not None or sl_pct_val is not None)):
-        tp_p = tp_pct_val if tp_pct_val is not None else 0.06
-        sl_p = sl_pct_val if sl_pct_val is not None else 0.03
-        tp_header = f"TP (+{tp_p * 100:.0f}%)" if tp_p is not None else "TP"
-        sl_header = f"SL (-{sl_p * 100:.0f}%)" if sl_p is not None else "SL"
-    else:
-        tp_mult = tp_atr_val
-        sl_mult = sl_atr_val
-        tp_str = f"{tp_mult:g}" if isinstance(tp_mult, (int, float)) else str(tp_mult)
-        sl_str = f"{sl_mult:g}" if isinstance(sl_mult, (int, float)) else str(sl_mult)
-        tp_header = f"TP (+{tp_str} ATR)" if tp_mult is not None else "TP"
-        sl_header = f"SL (-{sl_str} ATR)" if sl_mult is not None else "SL"
 
     lines = [
         f"# {strat_name} Simulation Report ({strat_id})",
@@ -1205,12 +1175,38 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
     # Active positions
     lines.append("## 3. 目前持倉")
     if state["positions"]:
-        lines.append(f"| 標的 | 進場日 | 進場價 | 股數 | {tp_header} | {sl_header} | 已持有天數 |")
+        lines.append("| 標的 | 進場日 | 進場價 | 股數 | 停利 (TP) | 停損 (SL) | 已持有天數 |")
         lines.append("|---|---|---|---|---|---|---|")
         for tkr, pos in state["positions"].items():
+            pos_mode = (
+                pos.get("tp_sl_mode")
+                or cfg.get("tp_sl_mode")
+                or strat_cfg.get("tp_sl_mode")
+            )
+            # TP label
+            if pos_mode == "fixed_pct" or (pos_mode != "atr" and (pos.get("tp_pct") is not None or cfg.get("tp_pct") is not None or strat_cfg.get("tp_pct") is not None)):
+                p_tp = pos.get("tp_pct") if pos.get("tp_pct") is not None else cfg.get("tp_pct", strat_cfg.get("tp_pct", 0.06))
+                tp_label = f"+{p_tp * 100:.0f}%" if p_tp is not None else ""
+            else:
+                mult_tp = pos.get("tp_atr_mult") if pos.get("tp_atr_mult") is not None else cfg.get("tp_atr_mult", strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT))
+                tp_str = f"{mult_tp:g}" if isinstance(mult_tp, (int, float)) else str(mult_tp)
+                tp_label = f"+{tp_str} ATR" if mult_tp is not None else ""
+
+            # SL label
+            if pos_mode == "fixed_pct" or (pos_mode != "atr" and (pos.get("sl_pct") is not None or cfg.get("sl_pct") is not None or strat_cfg.get("sl_pct") is not None)):
+                p_sl = pos.get("sl_pct") if pos.get("sl_pct") is not None else cfg.get("sl_pct", strat_cfg.get("sl_pct", 0.03))
+                sl_label = f"-{p_sl * 100:.0f}%" if p_sl is not None else ""
+            else:
+                mult_sl = pos.get("sl_atr_mult") if pos.get("sl_atr_mult") is not None else cfg.get("sl_atr_mult", strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT))
+                sl_str = f"{mult_sl:g}" if isinstance(mult_sl, (int, float)) else str(mult_sl)
+                sl_label = f"-{sl_str} ATR" if mult_sl is not None else ""
+
+            tp_display = f"{pos['tp']:.2f} ({tp_label})" if tp_label else f"{pos['tp']:.2f}"
+            sl_display = f"{pos['sl']:.2f} ({sl_label})" if sl_label else f"{pos['sl']:.2f}"
+
             lines.append(
                 f"| `{tkr}` | {pos['entry_date']} | {pos['entry']:.2f} | {pos['shares']:,} | "
-                f"{pos['tp']:.2f} | {pos['sl']:.2f} | {pos['day_count']}/{pos.get('max_hold_days', 20)} |"
+                f"{tp_display} | {sl_display} | {pos['day_count']}/{pos.get('max_hold_days', 20)} |"
             )
     else:
         lines.append("*(目前無持倉，全持有現金)*")

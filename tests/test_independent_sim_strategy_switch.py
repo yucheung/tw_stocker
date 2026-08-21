@@ -136,7 +136,7 @@ def test_no_cross_strategy_fallback_when_orders_missing(temp_dir):
 
 
 def test_generate_markdown_report_dynamic_headers_mr20(temp_dir):
-    """P2-3: Verify MR20 report dynamically displays MR20 strategy title and ATR exit headers."""
+    """P2-3: Verify MR20 report dynamically displays MR20 strategy title and per-row exit indicators."""
     state = sim.init_simulation(data_dir=temp_dir / "mr20", strategy="mr20")
     state["positions"]["2330"] = {
         "ticker": "2330",
@@ -153,12 +153,14 @@ def test_generate_markdown_report_dynamic_headers_mr20(temp_dir):
 
     assert "# MR20 Pullback Mean Reversion Simulation Report (mr20)" in report_md
     assert "| 指標 | MR20 Pullback Mean Reversion | 0050 (基準) | 差異 (Alpha) |" in report_md
-    assert "| 標的 | 進場日 | 進場價 | 股數 | TP (+4 ATR) | SL (-3 ATR) | 已持有天數 |" in report_md
+    assert "| 標的 | 進場日 | 進場價 | 股數 | 停利 (TP) | 停損 (SL) | 已持有天數 |" in report_md
+    assert "+4 ATR" in report_md
+    assert "-3 ATR" in report_md
     assert "Top-2" not in report_md
 
 
 def test_generate_markdown_report_dynamic_headers_rsi_reversal(temp_dir):
-    """P2-3: Verify RSI Reversal report dynamically displays RSI strategy title and exit headers."""
+    """P2-3: Verify RSI Reversal report dynamically displays RSI strategy title and per-row exit indicators."""
     state = sim.init_simulation(data_dir=temp_dir / "rsi", strategy="rsi_reversal")
     state["positions"]["2330"] = {
         "ticker": "2330",
@@ -175,12 +177,13 @@ def test_generate_markdown_report_dynamic_headers_rsi_reversal(temp_dir):
 
     assert "# RSI Reversal Strategy Simulation Report (rsi_reversal)" in report_md
     assert "| 指標 | RSI Reversal Strategy | 0050 (基準) | 差異 (Alpha) |" in report_md
-    assert "TP (+6%)" in report_md or "TP (+2 ATR)" in report_md
+    assert "| 標的 | 進場日 | 進場價 | 股數 | 停利 (TP) | 停損 (SL) | 已持有天數 |" in report_md
+    assert "+6%" in report_md or "+2 ATR" in report_md
     assert "Top-2" not in report_md
 
 
 def test_generate_markdown_report_dynamic_headers_top2(temp_dir):
-    """P2-3: Verify Top-2 report dynamically displays Top-2 strategy title and ATR exit headers."""
+    """P2-3: Verify Top-2 report dynamically displays Top-2 strategy title and per-row exit indicators."""
     state = sim.init_simulation(data_dir=temp_dir / "top2", strategy="top2_score_v1")
     state["positions"]["2330"] = {
         "ticker": "2330",
@@ -197,11 +200,13 @@ def test_generate_markdown_report_dynamic_headers_top2(temp_dir):
 
     assert "# Top-2 Score Concentration Simulation Report (top2_score_v1)" in report_md
     assert "| 指標 | Top-2 Score Concentration | 0050 (基準) | 差異 (Alpha) |" in report_md
-    assert "| 標的 | 進場日 | 進場價 | 股數 | TP (+4 ATR) | SL (-3 ATR) | 已持有天數 |" in report_md
+    assert "| 標的 | 進場日 | 進場價 | 股數 | 停利 (TP) | 停損 (SL) | 已持有天數 |" in report_md
+    assert "+4 ATR" in report_md
+    assert "-3 ATR" in report_md
 
 
 def test_order_level_tp_sl_override_in_position_and_report(temp_dir):
-    """P2-4: Verify order-level TP/SL overrides are stored on position and reflected in report header."""
+    """P2-4: Verify order-level TP/SL overrides are stored on position and reflected per row in report."""
     state = sim.init_simulation(data_dir=temp_dir / "override_test", strategy="top2_score_v1")
     state["pending_orders"] = [
         {
@@ -230,8 +235,43 @@ def test_order_level_tp_sl_override_in_position_and_report(temp_dir):
 
     perf = sim.compute_performance(sim.pd.DataFrame(), [], [])
     report_md = sim.generate_markdown_report(state, perf)
-    assert "TP (+2.5 ATR)" in report_md
-    assert "SL (-1.5 ATR)" in report_md
+    assert "+2.5 ATR" in report_md
+    assert "-1.5 ATR" in report_md
+
+
+def test_heterogeneous_positions_render_independent_tp_sl(temp_dir):
+    """P2-2: Verify heterogeneous positions with different TP/SL parameters render independently without global header leaks."""
+    state = sim.init_simulation(data_dir=temp_dir / "hetero_test", strategy="top2_score_v1")
+    state["positions"]["2330"] = {
+        "ticker": "2330",
+        "entry": 100.0,
+        "shares": 1000,
+        "tp": 107.5,
+        "sl": 92.5,
+        "tp_atr_mult": 2.5,
+        "sl_atr_mult": 1.5,
+        "entry_date": "2026-08-20",
+        "day_count": 1,
+        "max_hold_days": 10,
+    }
+    state["positions"]["2454"] = {
+        "ticker": "2454",
+        "entry": 200.0,
+        "shares": 500,
+        "tp": 240.0,
+        "sl": 170.0,
+        "tp_atr_mult": 4.0,
+        "sl_atr_mult": 3.0,
+        "entry_date": "2026-08-20",
+        "day_count": 2,
+        "max_hold_days": 20,
+    }
+    perf = sim.compute_performance(sim.pd.DataFrame(), [], [])
+    report_md = sim.generate_markdown_report(state, perf)
+
+    assert "| 標的 | 進場日 | 進場價 | 股數 | 停利 (TP) | 停損 (SL) | 已持有天數 |" in report_md
+    assert "| `2330` | 2026-08-20 | 100.00 | 1,000 | 107.50 (+2.5 ATR) | 92.50 (-1.5 ATR) | 1/10 |" in report_md
+    assert "| `2454` | 2026-08-20 | 200.00 | 500 | 240.00 (+4 ATR) | 170.00 (-3 ATR) | 2/20 |" in report_md
 
 
 def test_independent_sim_shares_sizing_deducts_buy_commission(temp_dir):

@@ -289,6 +289,37 @@ def test_rsi_reversal_rank_based_turnover_scoring():
     assert pytest.approx(hi_cand["score"] - lo_cand["score"], 0.01) == 15.0
 
 
+def test_rsi_reversal_equal_turnover_tie_aware_ranking():
+    """P2-1: Equal turnovers receive identical liquidity scores regardless of column order."""
+    dates = pd.date_range("2025-01-01", periods=220, freq="B")
+    sig_date = dates[-1].strftime("%Y-%m-%d")
+
+    base = [50.0] * 180 + np.linspace(50.0, 150.0, 18).tolist()
+    p = base + np.linspace(150.0, 75.0, 22).tolist()
+
+    # Two identical stocks in terms of RSI, 5d drop, and turnover, but with arbitrary column order
+    close_df = pd.DataFrame({"STOCK_B": p, "STOCK_A": p}, index=dates)
+    vol_df = pd.DataFrame({
+        "STOCK_B": [5_000_000.0] * 219 + [12_500_000.0],
+        "STOCK_A": [5_000_000.0] * 219 + [12_500_000.0],
+    }, index=dates)
+    open_df = close_df * 0.98
+
+    cfg = RSIReversalConfig(liquidity_top_n=2, min_history_days=200)
+    candidates = filter_rsi_reversal_candidates(close_df, vol_df, open_df=open_df, as_of_date=sig_date, config=cfg)
+
+    assert len(candidates) == 2
+    cand_a = [c for c in candidates if c["ticker"] == "STOCK_A"][0]
+    cand_b = [c for c in candidates if c["ticker"] == "STOCK_B"][0]
+    # Equal turnover -> equal score
+    assert cand_a["score"] == cand_b["score"]
+    # Deterministic tie-breaking by ticker symbol: STOCK_A rank 1, STOCK_B rank 2
+    assert candidates[0]["ticker"] == "STOCK_A"
+    assert candidates[0]["rank"] == 1
+    assert candidates[1]["ticker"] == "STOCK_B"
+    assert candidates[1]["rank"] == 2
+
+
 # =====================================================================
 # Order Generation & Schema Tests
 # =====================================================================

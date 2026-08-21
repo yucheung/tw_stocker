@@ -279,11 +279,16 @@ def filter_rsi_reversal_candidates(
     if valid_turnovers.empty:
         return []
 
-    top_n_thresh = min(cfg.liquidity_top_n, len(valid_turnovers))
-    top_liquid_series = valid_turnovers.nlargest(top_n_thresh)
-    top_liquid_tickers = list(top_liquid_series.index)
+    # Sort ties deterministically by turnover desc, ticker asc before selecting top N
+    sorted_tickers = sorted(valid_turnovers.index, key=lambda tk: (-float(valid_turnovers[tk]), str(tk)))
+    top_n_thresh = min(cfg.liquidity_top_n, len(sorted_tickers))
+    top_liquid_tickers = sorted_tickers[:top_n_thresh]
+    top_liquid_series = valid_turnovers.loc[top_liquid_tickers]
     total_liquid = len(top_liquid_tickers)
-    turnover_rank_map = {tk: idx for idx, tk in enumerate(top_liquid_tickers)}
+
+    # Tie-aware liquidity ranking (method='min'): equal turnovers receive identical rank & score
+    min_ranks = top_liquid_series.rank(ascending=False, method="min") - 1.0
+    turnover_rank_map = min_ranks.to_dict()
 
     passed_candidates = []
 
