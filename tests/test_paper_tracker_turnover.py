@@ -197,6 +197,70 @@ class TestTurnoverIntegration(unittest.TestCase):
         self.assertEqual(data["order_events"][-1]["status"], "CANCELLED_NO_CAPACITY")
         self.assertEqual(len(data["closed_trades"]), 0)
 
+    def test_full_capacity_signals_queued_as_replace(self):
+        today = pt.date.today().isoformat()
+        # 7 positions already full with entry ranks 1..7
+        positions = {
+            f"T{i}": {
+                "entry": 100.0,
+                "tp": 120.0,
+                "sl": 80.0,
+                "entry_date": "2026-08-01",
+                "shares": 100,
+                "day_count": i,
+                "max_hold_days": 15,
+                "entry_rank": i + 1,
+            }
+            for i in range(7)
+        }
+        data = {
+            "start_date": "2026-01-01",
+            "initial_capital": 500_000,
+            "capital": 100_000,
+            "positions": positions,
+            "pending_orders": [],
+            "closed_trades": [],
+            "equity_curve": [],
+            "daily_signals": [],
+            "order_events": [],
+        }
+
+        # 3 new signals:
+        # 1: rank 1 -> vs T6 (rank 7), gap 6 >= 2 -> REPLACE
+        # 2: rank 2 -> vs T5 (rank 6), gap 4 >= 2 -> REPLACE
+        # 3: rank 7 -> vs remaining (rank 1..5), gap < 0 -> CANNOT REPLACE
+        new_signals = [
+            {"ticker": "NEW_1", "entry": 100.0, "tp": 120.0, "sl": 80.0, "rank": 1, "execution_date": "2099-01-02"},
+            {"ticker": "NEW_2", "entry": 100.0, "tp": 120.0, "sl": 80.0, "rank": 2, "execution_date": "2099-01-02"},
+            {"ticker": "NEW_3", "entry": 100.0, "tp": 120.0, "sl": 80.0, "rank": 7, "execution_date": "2099-01-02"},
+        ]
+
+        bars = {
+            f"T{i}": {"open": 100.0, "high": 105.0, "low": 95.0, "close": 100.0, "date": today}
+            for i in range(7)
+        }
+
+        mock_cal = mock.MagicMock()
+        mock_cal.is_session.return_value = True
+        with mock.patch.object(pt, "get_current_bars", return_value=bars), \
+             mock.patch.object(pt, "extract_signals_from_report", return_value=new_signals), \
+             mock.patch.object(pt.xcals, "get_calendar", return_value=mock_cal), \
+             mock.patch.object(pt, "save_data"), \
+             mock.patch.object(pt, "generate_html"):
+            pt.update_tracker(data)
+
+        # Positions were full (7), so available_slots = 0.
+        # NEW_1 and NEW_2 should be queued as REPLACE orders; NEW_3 discarded.
+        self.assertEqual(len(data["pending_orders"]), 2)
+        p_orders = {o["ticker"]: o for o in data["pending_orders"]}
+        self.assertIn("NEW_1", p_orders)
+        self.assertIn("NEW_2", p_orders)
+        self.assertNotIn("NEW_3", p_orders)
+        self.assertEqual(p_orders["NEW_1"]["action"], "REPLACE")
+        self.assertEqual(p_orders["NEW_1"]["replace_target"], "T6")
+        self.assertEqual(p_orders["NEW_2"]["action"], "REPLACE")
+        self.assertEqual(p_orders["NEW_2"]["replace_target"], "T5")
+
 
 if __name__ == "__main__":
     unittest.main()

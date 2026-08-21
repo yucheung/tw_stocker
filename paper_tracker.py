@@ -614,31 +614,54 @@ def update_tracker(data):
             if target_exec_date else 0
         )
         available_slots = max(0, submission_slots - same_date_deferred)
-        new_pending = [{
-            'ticker': s['ticker'],
-            'entry': s['entry'],
-            'tp': s['tp'],
-            'sl': s['sl'],
-            'reference_close': s.get('reference_close', s['entry']),
-            'atr': s.get('atr'),
-            'gap_limit_atr': s.get('gap_limit_atr', 1.5),
-            'execution_date': s.get('execution_date'),
-            'max_hold_days': s.get('max_hold_days', max_hold),
-            'signal_date': today,
-            'rank': s.get('rank'),
-            # TP/SL 重算與 sizing 參數：開倉時以實際開盤價為錨重算
-            'position_size': s.get('position_size'),
-            'regime_scale': s.get('regime_scale'),
-            'tp_sl_mode': s.get('tp_sl_mode'),
-            'tp_atr_mult': s.get('tp_atr_mult'),
-            'sl_atr_mult': s.get('sl_atr_mult'),
-            'tp_pct': s.get('tp_pct'),
-            'sl_pct': s.get('sl_pct'),
-        } for s in signals[:available_slots]]
+        new_pending = []
+        candidate_positions = {k: dict(v) for k, v in data['positions'].items()}
+        for s in signals:
+            ticker = s.get('ticker')
+            if ticker in data['positions'] or any(o['ticker'] == ticker for o in new_pending):
+                continue
+
+            order_item = {
+                'ticker': ticker,
+                'entry': s['entry'],
+                'tp': s['tp'],
+                'sl': s['sl'],
+                'reference_close': s.get('reference_close', s['entry']),
+                'atr': s.get('atr'),
+                'gap_limit_atr': s.get('gap_limit_atr', 1.5),
+                'execution_date': s.get('execution_date'),
+                'max_hold_days': s.get('max_hold_days', max_hold),
+                'signal_date': today,
+                'rank': s.get('rank'),
+                # TP/SL 重算與 sizing 參數：開倉時以實際開盤價為錨重算
+                'position_size': s.get('position_size'),
+                'regime_scale': s.get('regime_scale'),
+                'tp_sl_mode': s.get('tp_sl_mode'),
+                'tp_atr_mult': s.get('tp_atr_mult'),
+                'sl_atr_mult': s.get('sl_atr_mult'),
+                'tp_pct': s.get('tp_pct'),
+                'sl_pct': s.get('sl_pct'),
+            }
+
+            if len(new_pending) < available_slots:
+                order_item['action'] = 'BUY'
+                new_pending.append(order_item)
+            else:
+                rep_candidate = find_replace_candidate(candidate_positions, s.get('rank'), min_rank_gap=2)
+                if rep_candidate is not None:
+                    candidate_positions.pop(rep_candidate, None)
+                    order_item['action'] = 'REPLACE'
+                    order_item['replace_target'] = rep_candidate
+                    new_pending.append(order_item)
+
         # 今日訊號取代舊的待執行單（每交易日重新排序）；保留尚未到期者
         data['pending_orders'] = new_pending + deferred
         exec_date = signals[0].get('execution_date') or '次一交易日'
-        print(f"   📥 已登錄 {len(new_pending)} 筆待執行訂單（{exec_date} 開盤執行，剩餘可用名額 {available_slots}）")
+        n_replace = sum(1 for o in new_pending if o.get('action') == 'REPLACE')
+        if n_replace > 0:
+            print(f"   📥 已登錄 {len(new_pending)} 筆待執行訂單（含 {n_replace} 筆置換 REPLACE 單，{exec_date} 開盤執行，剩餘可用名額 {available_slots}）")
+        else:
+            print(f"   📥 已登錄 {len(new_pending)} 筆待執行訂單（{exec_date} 開盤執行，剩餘可用名額 {available_slots}）")
     else:
         data['pending_orders'] = deferred
         print(f"   📋 今日無信號")

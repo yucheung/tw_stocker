@@ -1,6 +1,7 @@
 """Unit and integration tests for RSI Reversal Strategy (strategy/rsi_reversal.py).
 
 Tests follow TDD principles and run fully offline with deterministic fixtures.
+Specifications: docs/INVESTMENT_STRATEGY.md §2.3 (RSI 14, MA 200, 3 triggers, ATR exit).
 """
 
 import json
@@ -27,7 +28,6 @@ from strategy.rsi_reversal import (
     get_next_trading_day,
     save_orders_to_json,
 )
-from strategy.mr20_strategy import compute_wilder_rsi, compute_v85_atr20
 import independent_sim as sim
 
 
@@ -48,93 +48,108 @@ def temp_dir():
 # =====================================================================
 
 def test_rsi_reversal_config_defaults():
-    """Verify default RSI Reversal strategy configuration."""
+    """Verify default RSI Reversal strategy configuration (INVESTMENT_STRATEGY.md §2.3)."""
     cfg = RSIReversalConfig()
-    assert cfg.rsi_period == 5
-    assert cfg.rsi_max == 20.0
+    assert cfg.rsi_period == 14
+    assert cfg.rsi_max == 28.0
     assert cfg.min_volume_ratio == 1.5
-    assert cfg.ma_trend == 60
+    assert cfg.ma_long == 200
+    assert cfg.ma_trend == 200
+    assert cfg.bb_period == 20
+    assert cfg.bb_std == 2.0
+    assert cfg.drop_5d_threshold == -0.12
+    assert cfg.atr_period == 14
+    assert cfg.tp_atr_mult == 2.0
+    assert cfg.sl_atr_mult == 2.0
     assert cfg.max_hold_days == 5
-    assert cfg.tp_pct == 0.06
-    assert cfg.sl_pct == 0.03
     assert cfg.position_size == 0.15
     assert cfg.max_candidates == 5
-    assert cfg.tp_sl_mode == "fixed_pct"
+    assert cfg.tp_sl_mode == "atr"
     assert cfg.model_version == "rsi_reversal_v1"
 
 
-def test_rsi_reversal_selection_3_core_conditions():
-    """Test the 3 core conditions: RSI(5) <= 20, Volume > 1.5*MA20, Close > MA60."""
-    dates = pd.date_range("2026-01-01", periods=70, freq="B")
+def test_rsi_reversal_selection_3_oversold_triggers():
+    """Test the 3 oversold triggers: (a) RSI(14)<=28+Vol>1.5x, (b) Close<BB_Lower, (c) 5d drop<=-12%."""
+    dates = pd.date_range("2025-01-01", periods=220, freq="B")
     sig_date = dates[-1].strftime("%Y-%m-%d")
 
-    # 1. PASS: Long uptrend (Close > MA60), sudden deep oversold (RSI(5) <= 20), massive volume (> 1.5x MA20)
-    # 65 days rising 50->150, then drops 150->110 (still > MA60 ~ 95), RSI5 drops to ~15
-    p_pass = np.linspace(50.0, 150.0, 65).tolist() + [135.0, 125.0, 118.0, 112.0, 110.0]
-    v_pass = [10_000_000.0] * 69 + [25_000_000.0]  # 2.5x MA20 on last day
+    base = [50.0] * 180 + np.linspace(50.0, 150.0, 18).tolist()
 
-    # 2. FAIL_RSI: Shallow dip, RSI(5) is ~40 > 20
-    p_fail_rsi = np.linspace(50.0, 150.0, 65).tolist() + [149.0, 148.0, 147.0, 146.0, 148.0]
-    v_fail_rsi = [10_000_000.0] * 69 + [25_000_000.0]
+    # 1. PASS_RSI: drops to 75 (still > MA200 ~ 61), RSI14 drops to ~22 <= 28, Volume 2.5x MA20
+    p_pass_rsi = base + np.linspace(150.0, 75.0, 22).tolist()
+    v_pass_rsi = [10_000_000.0] * 219 + [25_000_000.0]
 
-    # 3. FAIL_VOL: Low volume on signal day (0.8x MA20 <= 1.5x)
-    p_fail_vol = p_pass
-    v_fail_vol = [10_000_000.0] * 69 + [8_000_000.0]
+    # 2. PASS_BB: drops suddenly to pierce Bollinger lower band (still > MA200)
+    p_pass_bb = [100.0] * 210 + [150.0] * 5 + [149.0, 148.0, 147.0, 140.0, 110.0]
+    v_pass_bb = [10_000_000.0] * 220
 
-    # 4. FAIL_MA60: Downtrend stock, Close < MA60
-    p_fail_ma60 = np.linspace(150.0, 50.0, 65).tolist() + [45.0, 40.0, 35.0, 30.0, 28.0]
-    v_fail_ma60 = [10_000_000.0] * 69 + [25_000_000.0]
+    # 3. PASS_DROP: 5-day drop from 150 to 125 (-16.6% <= -12%), still > MA200 ~ 100
+    p_pass_drop = [100.0] * 210 + [150.0] * 5 + [145.0, 140.0, 135.0, 130.0, 125.0]
+    v_pass_drop = [10_000_000.0] * 220
 
-    # 5. FAIL_LIQ: Low overall turnover (outside top 5)
-    p_fail_liq = p_pass
-    v_fail_liq = [10.0] * 70
+    # 4. FAIL_MA200: Downtrend stock, Close < MA200
+    p_fail_ma200 = np.linspace(150.0, 50.0, 210).tolist() + [45.0, 40.0, 35.0, 30.0, 28.0, 26.0, 25.0, 24.0, 23.0, 22.0]
+    v_fail_ma200 = [10_000_000.0] * 219 + [25_000_000.0]
+
+    # 5. FAIL_NO_TRIGGER: Mild pullback (RSI ~ 45, within BB, drop -2%)
+    p_fail_no_trig = [100.0] * 210 + [150.0] * 5 + [149.0, 149.0, 148.0, 148.0, 147.0]
+    v_fail_no_trig = [10_000_000.0] * 220
+
+    # 6. FAIL_LIQ: Low turnover (outside top 5)
+    p_fail_liq = p_pass_rsi
+    v_fail_liq = [10.0] * 220
 
     close_df = pd.DataFrame({
-        "PASS": p_pass,
-        "FAIL_RSI": p_fail_rsi,
-        "FAIL_VOL": p_fail_vol,
-        "FAIL_MA60": p_fail_ma60,
+        "PASS_RSI": p_pass_rsi,
+        "PASS_BB": p_pass_bb,
+        "PASS_DROP": p_pass_drop,
+        "FAIL_MA200": p_fail_ma200,
+        "FAIL_NO_TRIG": p_fail_no_trig,
         "FAIL_LIQ": p_fail_liq,
     }, index=dates)
 
     vol_df = pd.DataFrame({
-        "PASS": v_pass,
-        "FAIL_RSI": v_fail_rsi,
-        "FAIL_VOL": v_fail_vol,
-        "FAIL_MA60": v_fail_ma60,
+        "PASS_RSI": v_pass_rsi,
+        "PASS_BB": v_pass_bb,
+        "PASS_DROP": v_pass_drop,
+        "FAIL_MA200": v_fail_ma200,
+        "FAIL_NO_TRIG": v_fail_no_trig,
         "FAIL_LIQ": v_fail_liq,
     }, index=dates)
 
-    cfg = RSIReversalConfig(liquidity_top_n=4, rsi_max=20.0, min_volume_ratio=1.5, min_history_days=60)
+    cfg = RSIReversalConfig(liquidity_top_n=5, min_history_days=200)
     candidates = filter_rsi_reversal_candidates(close_df, vol_df, as_of_date=sig_date, config=cfg)
 
     selected_tickers = [c["ticker"] for c in candidates]
-    assert "PASS" in selected_tickers
-    assert "FAIL_RSI" not in selected_tickers
-    assert "FAIL_VOL" not in selected_tickers
-    assert "FAIL_MA60" not in selected_tickers
+    assert "PASS_RSI" in selected_tickers
+    assert "PASS_BB" in selected_tickers
+    assert "PASS_DROP" in selected_tickers
+    assert "FAIL_MA200" not in selected_tickers
+    assert "FAIL_NO_TRIG" not in selected_tickers
     assert "FAIL_LIQ" not in selected_tickers
-    assert len(selected_tickers) == 1
+    assert len(selected_tickers) == 3
 
 
 def test_rsi_reversal_ranking_and_tiebreaking():
-    """Verify score = 100 - RSI(5), sorted descending by score, tiebreak by vol_ratio, then turnover, then ticker."""
-    dates = pd.date_range("2026-01-01", periods=70, freq="B")
+    """Verify score weighting and tiebreak by vol_ratio, then turnover, then ticker."""
+    dates = pd.date_range("2025-01-01", periods=220, freq="B")
     sig_date = dates[-1].strftime("%Y-%m-%d")
 
-    # Stock A: RSI5 ~ 11 (Score ~ 89), Vol ratio = 2.0x
-    p_a = np.linspace(10.0, 150.0, 65).tolist() + [130.0, 120.0, 112.0, 105.0, 100.0]
-    # Stock B: RSI5 ~ 16 (Score ~ 84), Vol ratio = 3.0x
-    p_b = np.linspace(10.0, 150.0, 65).tolist() + [140.0, 134.0, 128.0, 124.0, 120.0]
-    # Stock C: Same as B (RSI5 ~ 16), but Vol ratio = 2.0x
+    base = [30.0] * 180 + np.linspace(30.0, 150.0, 18).tolist()
+
+    # Stock A: deep oversold (RSI14 ~ 24, drop to 70)
+    p_a = base + np.linspace(150.0, 70.0, 22).tolist()
+    # Stock B: RSI14 ~ 27, drop to 80, Vol ratio = 3.0x
+    p_b = base + np.linspace(150.0, 80.0, 22).tolist()
+    # Stock C: Same price as B, Vol ratio = 2.0x
     p_c = list(p_b)
-    # Stock D: Same as C (RSI5 ~ 16, Vol ratio = 2.0x), but higher turnover
+    # Stock D: Same price as C, higher turnover
     p_d = list(p_b)
 
-    v_a = [10_000_000.0] * 69 + [20_000_000.0]  # 2.0x
-    v_b = [10_000_000.0] * 69 + [30_000_000.0]  # 3.0x
-    v_c = [10_000_000.0] * 69 + [20_000_000.0]  # 2.0x
-    v_d = [20_000_000.0] * 69 + [40_000_000.0]  # 2.0x, higher turnover
+    v_a = [10_000_000.0] * 219 + [20_000_000.0]
+    v_b = [10_000_000.0] * 219 + [30_000_000.0]
+    v_c = [10_000_000.0] * 219 + [20_000_000.0]
+    v_d = [20_000_000.0] * 219 + [40_000_000.0]
 
     close_df = pd.DataFrame({
         "2330": p_a,
@@ -150,11 +165,11 @@ def test_rsi_reversal_ranking_and_tiebreaking():
         "3008": v_d,
     }, index=dates)
 
-    cfg = RSIReversalConfig(liquidity_top_n=10, max_candidates=5)
+    cfg = RSIReversalConfig(liquidity_top_n=10, max_candidates=5, min_history_days=200)
     candidates = filter_rsi_reversal_candidates(close_df, vol_df, as_of_date=sig_date, config=cfg)
 
     assert len(candidates) == 4
-    # 2330 lowest RSI -> highest score -> Rank 1
+    # 2330 lowest RSI & biggest drop -> highest score -> Rank 1
     assert candidates[0]["ticker"] == "2330"
     assert candidates[0]["rank"] == 1
 
@@ -176,8 +191,8 @@ def test_rsi_reversal_ranking_and_tiebreaking():
 # =====================================================================
 
 def test_build_rsi_reversal_order_record():
-    """Verify order record schema and fixed pct TP/SL."""
-    cfg = RSIReversalConfig(tp_pct=0.06, sl_pct=0.03, max_hold_days=5, position_size=0.15)
+    """Verify order record schema and ATR TP/SL (Entry ± 2.0 * ATR14)."""
+    cfg = RSIReversalConfig(tp_atr_mult=2.0, sl_atr_mult=2.0, max_hold_days=5, position_size=0.15)
     order = build_rsi_reversal_order_record(
         signal_date="2026-08-20",
         execution_date="2026-08-21",
@@ -198,21 +213,22 @@ def test_build_rsi_reversal_order_record():
     assert order["reference_close"] == 100.0
     assert order["rank"] == 1
     assert order["score"] == 85.0
-    assert order["tp_pct"] == 0.06
-    assert order["sl_pct"] == 0.03
-    assert order["tp_price"] == 106.0
-    assert order["sl_price"] == 97.0
+    assert order["tp_atr_mult"] == 2.0
+    assert order["sl_atr_mult"] == 2.0
+    # TP = 100 + 2.0 * 3.5 = 107.0, SL = 100 - 2.0 * 3.5 = 93.0
+    assert order["tp_price"] == 107.0
+    assert order["sl_price"] == 93.0
     assert order["max_hold_days"] == 5
     assert order["position_size"] == 0.15
-    assert order["tp_sl_mode"] == "fixed_pct"
+    assert order["tp_sl_mode"] == "atr"
     assert order["model_version"] == "rsi_reversal_v1"
 
 
 def test_generate_rsi_reversal_orders_non_trading_day_raises(calendar):
     """Verify non-trading day raises ValueError."""
-    dates = pd.date_range("2026-05-01", periods=70, freq="B")
-    close_df = pd.DataFrame({"2330": np.linspace(100, 150, 70)}, index=dates)
-    vol_df = pd.DataFrame({"2330": np.full(70, 10_000_000.0)}, index=dates)
+    dates = pd.date_range("2025-01-01", periods=220, freq="B")
+    close_df = pd.DataFrame({"2330": np.linspace(100, 150, 220)}, index=dates)
+    vol_df = pd.DataFrame({"2330": np.full(220, 10_000_000.0)}, index=dates)
 
     # 2026-08-15 is Saturday
     with pytest.raises(ValueError, match="not a valid XTAI trading session"):
@@ -233,12 +249,13 @@ def test_rsi_reversal_cli_help():
 
 def test_rsi_reversal_orders_compatible_with_independent_sim(temp_dir, calendar):
     """Verify that orders generated by rsi_reversal.py work with independent_sim.py."""
-    dates = pd.date_range("2026-05-01", periods=70, freq="B")
+    dates = pd.date_range("2025-01-01", periods=220, freq="B")
     sig_date = dates[-1].strftime("%Y-%m-%d")
     expected_exec = calendar.next_session(sig_date).strftime("%Y-%m-%d")
 
-    p_pass = np.linspace(50.0, 150.0, 65).tolist() + [135.0, 125.0, 118.0, 112.0, 110.0]
-    v_pass = [10_000_000.0] * 69 + [25_000_000.0]
+    base = [50.0] * 180 + np.linspace(50.0, 150.0, 18).tolist()
+    p_pass = base + np.linspace(150.0, 75.0, 22).tolist()
+    v_pass = [10_000_000.0] * 219 + [25_000_000.0]
 
     close_df = pd.DataFrame({"2330": p_pass}, index=dates)
     vol_df = pd.DataFrame({"2330": v_pass}, index=dates)
@@ -251,8 +268,8 @@ def test_rsi_reversal_orders_compatible_with_independent_sim(temp_dir, calendar)
     loaded = sim.load_orders(orders_file, calendar=calendar)
     assert len(loaded) == 1
     assert loaded[0]["ticker"] == "2330"
-    assert loaded[0]["tp_pct"] == 0.06
-    assert loaded[0]["sl_pct"] == 0.03
+    assert loaded[0]["tp_atr_mult"] == 2.0
+    assert loaded[0]["sl_atr_mult"] == 2.0
     assert loaded[0]["max_hold_days"] == 5
 
     # 2. Select candidates
@@ -261,10 +278,10 @@ def test_rsi_reversal_orders_compatible_with_independent_sim(temp_dir, calendar)
 
     # 3. Simulate in independent_sim
     rsi_data_dir = temp_dir / "independent_sim_data_rsi_reversal"
-    sim.init_simulation(data_dir=rsi_data_dir, capital=1_000_000.0, position_size=0.15)
+    sim.init_simulation(data_dir=rsi_data_dir, strategy="rsi_reversal")
 
     mock_bars_sig = {
-        "2330": {"date": sig_date, "open": 108.0, "high": 112.0, "low": 107.0, "close": 110.0},
+        "2330": {"date": sig_date, "open": 74.0, "high": 78.0, "low": 72.0, "close": 75.0},
     }
     with patch("independent_sim.fetch_market_bars", return_value=mock_bars_sig), \
          patch("independent_sim.fetch_benchmark_close", return_value=150.0):
@@ -280,7 +297,7 @@ def test_rsi_reversal_orders_compatible_with_independent_sim(temp_dir, calendar)
 
     # Open execution
     mock_bars_open = {
-        "2330": {"date": expected_exec, "open": 109.0, "high": 114.0, "low": 108.0, "close": 113.0},
+        "2330": {"date": expected_exec, "open": 74.0, "high": 80.0, "low": 73.0, "close": 78.0},
     }
     with patch("independent_sim.fetch_market_bars", return_value=mock_bars_open):
         sim.run_open(data_dir=rsi_data_dir, as_of=expected_exec)
@@ -288,8 +305,9 @@ def test_rsi_reversal_orders_compatible_with_independent_sim(temp_dir, calendar)
     state_after = sim.load_state(rsi_data_dir)
     assert "2330" in state_after["positions"]
     pos = state_after["positions"]["2330"]
-    assert pos["entry"] == 109.0
-    # TP = 109 * 1.06 = 115.54, SL = 109 * 0.97 = 105.73
-    assert pytest.approx(pos["tp"], 0.01) == 109.0 * 1.06
-    assert pytest.approx(pos["sl"], 0.01) == 109.0 * 0.97
+    assert pos["entry"] == 74.0
+    # TP/SL recomputed at open based on ATR (tp_atr_mult=2.0, sl_atr_mult=2.0)
+    atr_val = state["pending_orders"][0]["atr"]
+    assert pytest.approx(pos["tp"], 0.01) == 74.0 + 2.0 * atr_val
+    assert pytest.approx(pos["sl"], 0.01) == 74.0 - 2.0 * atr_val
     assert pos["max_hold_days"] == 5

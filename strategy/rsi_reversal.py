@@ -3,21 +3,26 @@
 
 Design & Architecture: docs/INVESTMENT_STRATEGY.md §2.3 (Strategy C)
 
-篩選核心邏輯（3 大條件）：
-1. 短線超賣：RSI(5) <= 20.0 (Wilder 算法)
-2. 放量確認：當日成交量 > 20 日均量 1.5 倍 (Volume > 1.5 * Volume_MA20)
-3. 趨勢保護：收盤價 > 60MA (Close > MA60，排除結構性空頭)
+篩選核心邏輯（4 大條件）：
+1. 流動性：TWSE 上市普通股 20 日平均成交額 Top-80 (寬池提高觸發率)
+2. 長期趨勢未死：收盤價 > MA200 (Close > MA200，年線之上排除結構性下跌股)
+3. 短線超賣觸發（三種擇一）：
+   a. 放量超賣：RSI(14) <= 28.0 且 Volume > 1.5 * Volume_MA20
+   b. 布林下軌超賣：Close < BB_Lower(20, 2σ) 且 Close > MA200
+   c. 急跌反彈：5 日累計跌幅 <= -12% ((Close_t - Close_{t-5}) / Close_{t-5} <= -0.12)
+4. 止跌確認：Close[t] > Open[t] (收紅 K，若無 Open 資料則依收盤價防護)
 
-流動性池：TWSE 上市普通股 20 日平均成交額 Top-80 (寬池提高觸發率)
-持倉週期：3-5 天 (預設 5 天)
-目標報酬：+5~8% (預設 +6.0%)
-停損門檻：-3.0%
+持倉週期：5 個交易日 (均值回歸最佳持有期)
+停利停損：Entry ± 2.0 * ATR14 (ATR 對稱風報比)
 單倉比例：15%
+每日最多候選：5 檔
 
 排名規則：
-score = 100 - RSI(5)，依 score 由高到低排序 (RSI 越低越超賣)，
-同分時依放量倍數 (Volume / Volume_MA20) 由大到小排序，再依成交額排序，
-再相同以代號由小到大排序。每日輸出前 5 名。
+Score = 加權排序：
+  40% * (RSI 超賣深度: 100 - RSI(14)，RSI 越低越超賣)
+  30% * (5 日跌幅幅度: -return_5d * 100，跌幅越大分數越高)
+  30% * (流動性排名)
+排序：Score 由高到低，同分時依放量倍數排序，再依成交額排序，再依代號排序。每日輸出前 5 名。
 
 訂單產出相容於 independent_sim.py schema v1。
 """
@@ -54,32 +59,55 @@ _proj_root = str(Path(__file__).resolve().parent.parent)
 if _proj_root not in sys.path:
     sys.path.insert(0, _proj_root)
 
-from strategy.mr20_strategy import compute_v85_atr20, compute_wilder_rsi
+from strategy.mr20_strategy import compute_wilder_rsi
+
+
+def compute_v85_atr(close: pd.Series | pd.DataFrame, period: int = 14) -> pd.Series | pd.DataFrame:
+    """
+    計算 close-based ATR (預設 14 日)。
+    ATR = mean(abs(Close.pct_change()), period) * Close
+    """
+    pct_changes = close.pct_change().abs()
+    mean_pct = pct_changes.rolling(period).mean()
+    return mean_pct * close
+
+
+# Backward-compatible alias
+compute_v85_atr20 = compute_v85_atr
 
 
 @dataclass(frozen=True)
 class RSIReversalConfig:
-    """RSI 反轉策略參數設定。"""
+    """RSI 反轉策略參數設定 (對齊 INVESTMENT_STRATEGY.md §2.3 / §4.3)。"""
 
-    liquidity_top_n: int = 80          # 流動性 Top-80
-    liquidity_lookback: int = 20       # 20日均額
-    ma_trend: int = 60                 # 60日均線 (股價 > 60MA)
-    min_history_days: int = 60         # 最少歷史天數
-    rsi_period: int = 5                # RSI(5)
-    rsi_max: float = 20.0              # RSI(5) <= 20.0
-    vol_ma_period: int = 20            # 20日均量
-    min_volume_ratio: float = 1.5      # 成交量 > 20日均量 1.5倍
+    liquidity_top_n: int = 80          # 流動性池 Top-80
+    liquidity_lookback: int = 20       # 20 日均額
+    ma_long: int = 200                 # 年線 200MA (Close > MA200)
+    min_history_days: int = 200        # 最少歷史天數 (計算 200MA)
+    rsi_period: int = 14               # 標準 14 日 RSI
+    rsi_max: float = 28.0              # 深度超賣門檻 RSI(14) <= 28.0
+    vol_ma_period: int = 20            # 20 日均量
+    min_volume_ratio: float = 1.5      # 放量確認：Volume > 1.5 * Volume_MA20
+    bb_period: int = 20                # 布林通道週期
+    bb_std: float = 2.0                # 布林通道標準差倍數
+    drop_5d_threshold: float = -0.12   # 5 日累計跌幅門檻 <= -12%
+    atr_period: int = 14               # ATR 週期 14
+    tp_atr_mult: float = 2.0           # 停利：Entry + 2.0 * ATR14
+    sl_atr_mult: float = 2.0           # 停損：Entry - 2.0 * ATR14
+    max_hold_days: int = 5             # 最大持倉：5 個交易日
+    position_size: float = 0.15        # 單倉比例：15%
     max_candidates: int = 5            # 每日最多輸出 5 檔
-    tp_pct: float = 0.06               # 目標 +6.0% (+5~8%)
-    sl_pct: float = 0.03               # 停損 -3.0%
-    max_hold_days: int = 5             # 持有 3-5 天 (預設 5)
-    position_size: float = 0.15        # 單倉比例 15%
-    tp_sl_mode: str = "fixed_pct"      # 固定百分比停損停利
+    tp_sl_mode: str = "atr"            # ATR 停利停損
     entry_model: str = "signal_close_limit_next_open_v1"
     time_in_force: str = "DAY_UNTIL_0930"
     cancel_time: str = "09:30:00"
     timezone: str = "Asia/Taipei"
     model_version: str = "rsi_reversal_v1"
+
+    # Backward compatibility aliases / optional overrides
+    ma_trend: int = 200                # alias for ma_long
+    tp_pct: Optional[float] = None     # optional fixed pct override
+    sl_pct: Optional[float] = None     # optional fixed pct override
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -142,21 +170,30 @@ def compute_rsi_reversal_indicators(
 ) -> dict[str, pd.DataFrame]:
     """計算 RSI 反轉策略所需的全部技術指標。"""
     cfg = config or RSIReversalConfig()
+    ma_period = cfg.ma_long if cfg.ma_long is not None else cfg.ma_trend
 
-    ma_trend = close_df.rolling(cfg.ma_trend).mean()
+    ma_long = close_df.rolling(ma_period).mean()
     rsi = compute_wilder_rsi(close_df, period=cfg.rsi_period)
     vol_ma = vol_df.rolling(cfg.vol_ma_period).mean()
     vol_ratio = vol_df / vol_ma.replace(0, np.nan)
     turnover = (close_df * vol_df).rolling(cfg.liquidity_lookback).mean()
-    atr = compute_v85_atr20(close_df, period=20)
+    atr = compute_v85_atr(close_df, period=cfg.atr_period)
+
+    bb_mid = close_df.rolling(cfg.bb_period).mean()
+    bb_std = close_df.rolling(cfg.bb_period).std()
+    bb_lower = bb_mid - cfg.bb_std * bb_std
+    return_5d = close_df.pct_change(5)
 
     return {
-        "ma_trend": ma_trend,
+        "ma_long": ma_long,
+        "ma_trend": ma_long,
         "rsi": rsi,
         "vol_ma": vol_ma,
         "vol_ratio": vol_ratio,
         "turnover": turnover,
         "atr": atr,
+        "bb_lower": bb_lower,
+        "return_5d": return_5d,
     }
 
 
@@ -167,19 +204,30 @@ def compute_rsi_reversal_indicators(
 def filter_rsi_reversal_candidates(
     close_df: pd.DataFrame,
     vol_df: pd.DataFrame,
+    open_df: Optional[pd.DataFrame] = None,
     as_of_date: Optional[str] = None,
     config: Optional[RSIReversalConfig] = None,
     calendar: Optional[xcals.ExchangeCalendar] = None,
 ) -> list[dict[str, Any]]:
     """
-    依據 3 大核心條件篩選與排名 RSI 反轉候選個股。
+    依據 INVESTMENT_STRATEGY.md §2.3 條件篩選與排名 RSI 反轉候選個股。
 
     條件：
     1. 流動性：20 日平均成交額 Top-80
-    2. 趨勢：Close > MA60
-    3. 超賣：RSI(5) <= 20.0
-    4. 放量：Volume > 1.5 * Volume_MA20
+    2. 長期趨勢未死：Close > MA200
+    3. 短線超賣觸發（三種擇一）：
+       a. 放量超賣：RSI(14) <= 28.0 且 Volume > 1.5 * Volume_MA20
+       b. 布林下軌超賣：Close < BB_Lower(20, 2σ) 且 Close > MA200
+       c. 急跌反彈：5 日累計跌幅 <= -12%
+    4. 止跌確認：Close[t] > Open[t] (若有 Open 資料)
     """
+    # 支援 positional argument: filter_rsi_reversal_candidates(close, vol, as_of_date, config, calendar)
+    if isinstance(open_df, str):
+        calendar = config  # type: ignore
+        config = as_of_date  # type: ignore
+        as_of_date = open_df
+        open_df = None
+
     cfg = config or RSIReversalConfig()
 
     if close_df.empty or vol_df.empty:
@@ -206,7 +254,7 @@ def filter_rsi_reversal_candidates(
     if t_loc < 1:
         return []
 
-    # 歷史天數過濾 (>= 60 日)
+    # 歷史天數過濾 (>= min_history_days)
     eligible_tickers = []
     for ticker in close_df.columns:
         series_up_to_t = close_df[ticker].iloc[: t_loc + 1].dropna()
@@ -217,13 +265,15 @@ def filter_rsi_reversal_candidates(
         return []
 
     indicators = compute_rsi_reversal_indicators(close_df, vol_df, config=cfg)
-    ma_trend_df = indicators["ma_trend"]
+    ma_long_df = indicators["ma_long"]
     rsi_df = indicators["rsi"]
     vol_ratio_df = indicators["vol_ratio"]
     turnover_df = indicators["turnover"]
     atr_df = indicators["atr"]
+    bb_lower_df = indicators["bb_lower"]
+    return_5d_df = indicators["return_5d"]
 
-    # 條件 1: 在符合 60 日歷史門檻內取 20 日均額 Top-N (預設 80)
+    # 條件 1: 在符合歷史門檻內取 20 日均額 Top-N (預設 80)
     turnover_series = turnover_df.loc[target_dt, eligible_tickers].dropna()
     valid_turnovers = turnover_series[turnover_series > 0]
     if valid_turnovers.empty:
@@ -237,42 +287,71 @@ def filter_rsi_reversal_candidates(
     for ticker in top_liquid_tickers:
         c_t = close_df[ticker].iloc[t_loc]
         v_t = vol_df[ticker].iloc[t_loc]
-        ma_t = ma_trend_df[ticker].iloc[t_loc]
+        ma_t = ma_long_df[ticker].iloc[t_loc]
         rsi_val = rsi_df[ticker].iloc[t_loc]
         vol_ratio_val = vol_ratio_df[ticker].iloc[t_loc]
         turnover_val = turnover_df[ticker].iloc[t_loc]
         atr_val = atr_df[ticker].iloc[t_loc]
+        bb_low_val = bb_lower_df[ticker].iloc[t_loc]
+        ret_5d_val = return_5d_df[ticker].iloc[t_loc]
 
-        if pd.isna(c_t) or pd.isna(ma_t) or pd.isna(rsi_val) or pd.isna(vol_ratio_val):
+        if pd.isna(c_t) or pd.isna(ma_t) or pd.isna(rsi_val):
             continue
 
-        # 條件 2: 股價 > 60MA (趨勢保護)
+        # 條件 2: 股價 > MA200 (長期趨勢保護)
         if not (c_t > ma_t):
             continue
 
-        # 條件 3: RSI(5) <= rsi_max (20.0)
-        if not (rsi_val <= cfg.rsi_max):
+        # 條件 3: 短線超賣觸發（三種擇一）：
+        # a. 放量超賣：RSI(14) <= 28 且 Volume > 1.5 * Volume_MA20
+        # b. 布林下軌超賣：Close < BB_Lower(20, 2σ)
+        # c. 急跌反彈：5 日累計跌幅 <= -12%
+        trig_a = (rsi_val <= cfg.rsi_max) and (not pd.isna(vol_ratio_val) and vol_ratio_val >= cfg.min_volume_ratio)
+        trig_b = (not pd.isna(bb_low_val)) and (c_t < bb_low_val)
+        trig_c = (not pd.isna(ret_5d_val)) and (ret_5d_val <= cfg.drop_5d_threshold)
+
+        if not (trig_a or trig_b or trig_c):
             continue
 
-        # 條件 4: 成交量 > 20日均量 1.5倍
-        if not (vol_ratio_val >= cfg.min_volume_ratio):
-            continue
+        # 條件 4: 止跌確認 Close[t] > Open[t] (收紅 K 陽線)
+        if open_df is not None and ticker in open_df.columns:
+            o_t = open_df[ticker].iloc[t_loc]
+            if not pd.isna(o_t) and not (c_t > o_t):
+                continue
 
-        score = 100.0 - float(rsi_val)
+        ret_5d_clean = float(ret_5d_val) if not pd.isna(ret_5d_val) else 0.0
+        rsi_clean = float(rsi_val)
+        vol_ratio_clean = float(vol_ratio_val) if not pd.isna(vol_ratio_val) else 1.0
+        turnover_clean = float(turnover_val) if not pd.isna(turnover_val) else 0.0
+
+        # 加權評分：
+        # 40% RSI 超賣深度 (100 - RSI)
+        # 30% 5 日跌幅 (-return_5d * 100)
+        # 30% 流動性
+        rsi_score = 100.0 - rsi_clean
+        drop_score = max(0.0, -ret_5d_clean * 100.0)
+        turnover_score = min(100.0, turnover_clean / 1e7)
+        score = 0.40 * rsi_score + 0.30 * drop_score + 0.30 * turnover_score
+
         passed_candidates.append({
             "ticker": str(ticker),
             "score": score,
-            "rsi": float(rsi_val),
-            "vol_ratio": float(vol_ratio_val),
-            "turnover": float(turnover_val),
+            "rsi": rsi_clean,
+            "vol_ratio": vol_ratio_clean,
+            "turnover": turnover_clean,
             "close": float(c_t),
-            "volume": float(v_t),
-            "ma60": float(ma_t),
+            "volume": float(v_t) if not pd.isna(v_t) else 0.0,
+            "ma200": float(ma_t),
+            "bb_lower": float(bb_low_val) if not pd.isna(bb_low_val) else 0.0,
+            "return_5d": ret_5d_clean,
             "atr": float(atr_val) if not pd.isna(atr_val) else 0.0,
+            "trigger_a": bool(trig_a),
+            "trigger_b": bool(trig_b),
+            "trigger_c": bool(trig_c),
         })
 
     # 排序規則：
-    # 1. score 由高到低 (RSI 越低越優先)
+    # 1. score 由高到低 (加權分數越高越優先)
     # 2. vol_ratio 由大到小 (放量倍數越大越優先)
     # 3. turnover 由大到小
     # 4. ticker 由小到大
@@ -305,10 +384,17 @@ def build_rsi_reversal_order_record(
     cfg = config or RSIReversalConfig()
     ref_close = round(float(reference_close), 4)
     atr_val = round(float(atr), 4)
-    tp_price = round(ref_close * (1.0 + cfg.tp_pct), 4)
-    sl_price = round(ref_close * (1.0 - cfg.sl_pct), 4)
 
-    return {
+    if cfg.tp_sl_mode == "atr":
+        tp_price = round(ref_close + cfg.tp_atr_mult * atr_val, 4)
+        sl_price = round(ref_close - cfg.sl_atr_mult * atr_val, 4)
+    else:
+        tp_pct = cfg.tp_pct if cfg.tp_pct is not None else 0.06
+        sl_pct = cfg.sl_pct if cfg.sl_pct is not None else 0.03
+        tp_price = round(ref_close * (1.0 + tp_pct), 4)
+        sl_price = round(ref_close * (1.0 - sl_pct), 4)
+
+    record = {
         "signal_date": signal_date,
         "execution_date": execution_date,
         "ticker": ticker,
@@ -325,23 +411,36 @@ def build_rsi_reversal_order_record(
         "atr": atr_val,
         "tp_price": tp_price,
         "sl_price": sl_price,
-        "tp_pct": float(cfg.tp_pct),
-        "sl_pct": float(cfg.sl_pct),
+        "tp_atr_mult": float(cfg.tp_atr_mult),
+        "sl_atr_mult": float(cfg.sl_atr_mult),
         "max_hold_days": int(cfg.max_hold_days),
         "position_size": float(cfg.position_size),
         "tp_sl_mode": cfg.tp_sl_mode,
         "model_version": cfg.model_version,
     }
+    if cfg.tp_pct is not None:
+        record["tp_pct"] = float(cfg.tp_pct)
+    if cfg.sl_pct is not None:
+        record["sl_pct"] = float(cfg.sl_pct)
+    return record
 
 
 def generate_rsi_reversal_orders(
     close_df: pd.DataFrame,
     vol_df: pd.DataFrame,
+    open_df: Optional[pd.DataFrame] = None,
     signal_date: Optional[str] = None,
     calendar: Optional[xcals.ExchangeCalendar] = None,
     config: Optional[RSIReversalConfig] = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """針對指定訊號日產生 RSI 反轉策略訂單結構。"""
+    # 支援 positional argument: generate_rsi_reversal_orders(close, vol, signal_date, calendar, config)
+    if isinstance(open_df, str):
+        config = calendar  # type: ignore
+        calendar = signal_date  # type: ignore
+        signal_date = open_df
+        open_df = None
+
     cfg = config or RSIReversalConfig()
     cal = calendar or get_calendar("XTAI")
 
@@ -353,7 +452,9 @@ def generate_rsi_reversal_orders(
     if cal is not None and not cal.is_session(signal_date):
         raise ValueError(f"Specified signal date '{signal_date}' is not a valid XTAI trading session.")
 
-    candidates = filter_rsi_reversal_candidates(close_df, vol_df, as_of_date=signal_date, config=cfg, calendar=cal)
+    candidates = filter_rsi_reversal_candidates(
+        close_df, vol_df, open_df=open_df, as_of_date=signal_date, config=cfg, calendar=cal
+    )
     exec_date = get_next_trading_day(signal_date, calendar=cal)
 
     orders = []
@@ -422,8 +523,8 @@ def parse_args(args=None):
         "--rsi-max",
         dest="rsi_max",
         type=float,
-        default=20.0,
-        help="RSI(5) 超賣上限門檻 (預設 20.0)",
+        default=28.0,
+        help="RSI(14) 超賣上限門檻 (預設 28.0)",
     )
     parser.add_argument(
         "--min-vol-ratio",
@@ -431,6 +532,20 @@ def parse_args(args=None):
         type=float,
         default=1.5,
         help="成交量爆量倍數門檻 (預設 1.5)",
+    )
+    parser.add_argument(
+        "--tp-atr",
+        dest="tp_atr",
+        type=float,
+        default=2.0,
+        help="ATR 停利倍數 (預設 2.0)",
+    )
+    parser.add_argument(
+        "--sl-atr",
+        dest="sl_atr",
+        type=float,
+        default=2.0,
+        help="ATR 停損倍數 (預設 2.0)",
     )
     parser.add_argument(
         "--max-candidates",
@@ -453,6 +568,8 @@ def main():
         liquidity_top_n=args.top_n,
         rsi_max=args.rsi_max,
         min_volume_ratio=args.min_vol_ratio,
+        tp_atr_mult=args.tp_atr,
+        sl_atr_mult=args.sl_atr,
         max_candidates=args.max_candidates,
     )
 
@@ -495,13 +612,15 @@ def main():
 
     print(f"🎯 RSI 反轉策略 (股池規模: {len(tickers)} 檔, 訊號日: {signal_date})...")
     close_df, open_df, high_df, low_df, vol_df = fetch_panel_data(
-        tickers, days=180, end_date=end_date_str
+        tickers, days=365, end_date=end_date_str
     )
 
     target_dt = pd.Timestamp(signal_date)
     if target_dt in close_df.index:
         close_df = close_df.loc[:target_dt]
         vol_df = vol_df.loc[:target_dt]
+        if not open_df.empty and target_dt in open_df.index:
+            open_df = open_df.loc[:target_dt]
 
     if close_df.empty or close_df.index[-1] != target_dt:
         actual_last = close_df.index[-1].strftime("%Y-%m-%d") if not close_df.empty else "None"
@@ -509,7 +628,9 @@ def main():
             f"Fetched data last date ({actual_last}) does not match expected signal date ({signal_date})."
         )
 
-    orders_dict = generate_rsi_reversal_orders(close_df, vol_df, signal_date=signal_date, calendar=cal, config=cfg)
+    orders_dict = generate_rsi_reversal_orders(
+        close_df, vol_df, open_df=open_df, signal_date=signal_date, calendar=cal, config=cfg
+    )
     orders = orders_dict["orders"]
 
     print(f"\n📊 [{signal_date}] RSI 反轉選股結果 (共 {len(orders)} 檔入選):")
@@ -517,7 +638,7 @@ def main():
         print(
             f"  #{o['rank']} 代號: {o['ticker']:<6} 分數: {o['score']:.2f} "
             f"收盤/限價: {o['reference_close']:.2f} ATR: {o['atr']:.2f} "
-            f"TP (+{o['tp_pct']*100:.1f}%): {o['tp_price']:.2f} SL (-{o['sl_pct']*100:.1f}%): {o['sl_price']:.2f}"
+            f"TP (ATR×{o['tp_atr_mult']}): {o['tp_price']:.2f} SL (ATR×{o['sl_atr_mult']}): {o['sl_price']:.2f}"
         )
 
     if not args.dry_run:

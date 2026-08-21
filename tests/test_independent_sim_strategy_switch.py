@@ -92,3 +92,44 @@ def test_cli_execution_with_strategy_rsi_reversal(temp_dir):
     state = sim.load_state(temp_dir / "rsi_test")
     assert state["strategy_id"] == "rsi_reversal"
     assert state["config"]["max_positions"] == 5
+
+
+def test_no_cross_strategy_fallback_when_orders_missing(temp_dir):
+    """Verify MR20 and RSI do not fall back to top2 artifacts/orders_*.json when their own orders are missing."""
+    mr20_dir = temp_dir / "mr20_data"
+    sim.init_simulation(data_dir=mr20_dir, strategy="mr20")
+
+    # Create dummy top2 orders file in temp artifacts dir
+    artifacts_dir = temp_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    top2_file = artifacts_dir / "orders_20260820.json"
+    top2_orders = {
+        "orders": [
+            {
+                "ticker": "2330",
+                "rank": 1,
+                "score": 90.0,
+                "limit_price": 100.0,
+                "reference_close": 100.0,
+                "atr": 5.0,
+                "execution_date": "2026-08-21",
+                "signal_date": "2026-08-20",
+            }
+        ]
+    }
+    top2_file.write_text(json.dumps(top2_orders))
+
+    mock_bars = {
+        "2330": {"date": "2026-08-20", "open": 100.0, "high": 105.0, "low": 95.0, "close": 100.0}
+    }
+    with patch("independent_sim.fetch_market_bars", return_value=mock_bars), \
+         patch("independent_sim.fetch_benchmark_close", return_value=150.0):
+        # run_close_and_plan without specifying orders_path
+        sim.run_close_and_plan(
+            data_dir=mr20_dir,
+            as_of="2026-08-20",
+        )
+
+    state = sim.load_state(mr20_dir)
+    # Should NOT load the top2 orders from artifacts/orders_20260820.json
+    assert len(state["pending_orders"]) == 0

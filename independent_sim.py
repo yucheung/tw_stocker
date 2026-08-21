@@ -1428,9 +1428,10 @@ def run_close_and_plan(
         strat_cfg = get_strategy_config(strat_id)
         candidate_files = [
             Path(strat_cfg.get("orders_dir", "artifacts")) / strat_cfg.get("orders_pattern", "orders_{date}.json").format(date=compact_date),
-            Path("artifacts") / f"orders_{compact_date}.json",
             Path("artifacts") / strat_id / f"orders_{strat_id}_{compact_date}.json",
         ]
+        if strat_id == DEFAULT_STRATEGY_ID:
+            candidate_files.append(Path("artifacts") / f"orders_{compact_date}.json")
         for cf in candidate_files:
             if cf.exists():
                 orders_file = cf
@@ -1452,6 +1453,9 @@ def run_close_and_plan(
         )
         new_pending = plan_orders(state, candidates, as_of=today_str)
         planned_count = len(new_pending)
+    else:
+        strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
+        print(f"   ℹ️ [{strat_id}] 未找到今日訂單檔，略過訂單規劃")
 
     mark_run_processed(state, run_id)
     save_state_atomic(state, data_dir=d)
