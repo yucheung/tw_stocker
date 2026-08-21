@@ -304,3 +304,150 @@ def test_independent_sim_shares_sizing_deducts_buy_commission(temp_dir):
     assert state["cash"] >= 200_000.0
 
 
+def test_partial_override_tp_only_execution_and_report(temp_dir):
+    """Verify TP-only override switches both TP and SL to fixed_pct mode in execution and report."""
+    state = sim.init_simulation(data_dir=temp_dir / "tp_only", strategy="top2_score_v1")
+    state["pending_orders"] = [
+        {
+            "order_id": "test_tp_only",
+            "signal_date": "2026-08-20",
+            "execution_date": "2026-08-21",
+            "ticker": "2330",
+            "limit_price": 100.0,
+            "reference_close": 100.0,
+            "atr": 5.0,
+            "tp_pct": 0.08,
+        }
+    ]
+    bars = {
+        "2330": {"open": 100.0, "high": 102.0, "low": 98.0, "close": 100.0, "date": "2026-08-21"}
+    }
+    terminal_events = sim.execute_open_orders(state, bars, as_of="2026-08-21")
+    assert len(terminal_events) == 1
+    assert terminal_events[0]["status"] == "FILLED"
+
+    pos = state["positions"]["2330"]
+    assert pos["tp_sl_mode"] == "fixed_pct"
+    assert pos["tp"] == 108.00  # 100 * (1 + 0.08)
+    assert pos["sl"] == 97.00   # 100 * (1 - 0.03 default fixed SL)
+
+    perf = sim.compute_performance(sim.pd.DataFrame(), [], [])
+    report_md = sim.generate_markdown_report(state, perf)
+    assert "108.00 (+8%)" in report_md
+    assert "97.00 (-3%)" in report_md
+    assert "-3 ATR" not in report_md
+
+
+def test_partial_override_sl_only_execution_and_report(temp_dir):
+    """Verify SL-only override switches both TP and SL to fixed_pct mode in execution and report."""
+    state = sim.init_simulation(data_dir=temp_dir / "sl_only", strategy="top2_score_v1")
+    state["pending_orders"] = [
+        {
+            "order_id": "test_sl_only",
+            "signal_date": "2026-08-20",
+            "execution_date": "2026-08-21",
+            "ticker": "2330",
+            "limit_price": 100.0,
+            "reference_close": 100.0,
+            "atr": 5.0,
+            "sl_pct": 0.05,
+        }
+    ]
+    bars = {
+        "2330": {"open": 100.0, "high": 102.0, "low": 98.0, "close": 100.0, "date": "2026-08-21"}
+    }
+    terminal_events = sim.execute_open_orders(state, bars, as_of="2026-08-21")
+    assert len(terminal_events) == 1
+    assert terminal_events[0]["status"] == "FILLED"
+
+    pos = state["positions"]["2330"]
+    assert pos["tp_sl_mode"] == "fixed_pct"
+    assert pos["tp"] == 106.00  # 100 * (1 + 0.06 default fixed TP)
+    assert pos["sl"] == 95.00   # 100 * (1 - 0.05)
+
+    perf = sim.compute_performance(sim.pd.DataFrame(), [], [])
+    report_md = sim.generate_markdown_report(state, perf)
+    assert "106.00 (+6%)" in report_md
+    assert "95.00 (-5%)" in report_md
+    assert "+4 ATR" not in report_md
+
+
+def test_partial_override_atr_mult_only_execution_and_report(temp_dir):
+    """Verify partial ATR mult overrides retain ATR mode and use strategy defaults for unspecified leg."""
+    # TP ATR only
+    state = sim.init_simulation(data_dir=temp_dir / "tp_atr_only", strategy="top2_score_v1")
+    state["pending_orders"] = [
+        {
+            "order_id": "test_tp_atr_only",
+            "signal_date": "2026-08-20",
+            "execution_date": "2026-08-21",
+            "ticker": "2330",
+            "limit_price": 100.0,
+            "reference_close": 100.0,
+            "atr": 5.0,
+            "tp_atr_mult": 2.5,
+        }
+    ]
+    bars = {
+        "2330": {"open": 100.0, "high": 102.0, "low": 98.0, "close": 100.0, "date": "2026-08-21"}
+    }
+    sim.execute_open_orders(state, bars, as_of="2026-08-21")
+    pos = state["positions"]["2330"]
+    assert pos["tp_sl_mode"] == "atr"
+    assert pos["tp"] == 112.50  # 100 + 2.5 * 5
+    assert pos["sl"] == 85.00   # 100 - 3.0 * 5 (default SL ATR)
+    perf = sim.compute_performance(sim.pd.DataFrame(), [], [])
+    report_md = sim.generate_markdown_report(state, perf)
+    assert "112.50 (+2.5 ATR)" in report_md
+    assert "85.00 (-3 ATR)" in report_md
+
+    # SL ATR only
+    state2 = sim.init_simulation(data_dir=temp_dir / "sl_atr_only", strategy="top2_score_v1")
+    state2["pending_orders"] = [
+        {
+            "order_id": "test_sl_atr_only",
+            "signal_date": "2026-08-20",
+            "execution_date": "2026-08-21",
+            "ticker": "2454",
+            "limit_price": 200.0,
+            "reference_close": 200.0,
+            "atr": 10.0,
+            "sl_atr_mult": 1.5,
+        }
+    ]
+    bars2 = {
+        "2454": {"open": 200.0, "high": 205.0, "low": 195.0, "close": 200.0, "date": "2026-08-21"}
+    }
+    sim.execute_open_orders(state2, bars2, as_of="2026-08-21")
+    pos2 = state2["positions"]["2454"]
+    assert pos2["tp_sl_mode"] == "atr"
+    assert pos2["tp"] == 240.00  # 200 + 4.0 * 10 (default TP ATR)
+    assert pos2["sl"] == 185.00  # 200 - 1.5 * 10
+    report_md2 = sim.generate_markdown_report(state2, perf)
+    assert "240.00 (+4 ATR)" in report_md2
+    assert "185.00 (-1.5 ATR)" in report_md2
+
+
+def test_derive_tp_sl_mode_precedence():
+    """Verify derive_tp_sl_mode returns expected mode across all combination cases."""
+    # Explicit mode on item
+    assert sim.derive_tp_sl_mode({"tp_sl_mode": "fixed_pct"}) == "fixed_pct"
+    assert sim.derive_tp_sl_mode({"tp_sl_mode": "atr"}) == "atr"
+
+    # Percentage override on item takes precedence over default ATR
+    assert sim.derive_tp_sl_mode({"tp_pct": 0.08}) == "fixed_pct"
+    assert sim.derive_tp_sl_mode({"sl_pct": 0.05}) == "fixed_pct"
+    assert sim.derive_tp_sl_mode({"tp_pct": 0.08, "sl_pct": 0.05}) == "fixed_pct"
+
+    # ATR override on item
+    assert sim.derive_tp_sl_mode({"tp_atr_mult": 2.5}) == "atr"
+    assert sim.derive_tp_sl_mode({"sl_atr_mult": 1.5}) == "atr"
+
+    # Config fallbacks
+    assert sim.derive_tp_sl_mode({}, cfg={"tp_sl_mode": "fixed_pct"}) == "fixed_pct"
+    assert sim.derive_tp_sl_mode({}, strat_cfg={"tp_pct": 0.06}) == "fixed_pct"
+    assert sim.derive_tp_sl_mode({}, cfg={"tp_atr_mult": 4.0}) == "atr"
+    assert sim.derive_tp_sl_mode({}) == "atr"
+
+
+

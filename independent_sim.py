@@ -191,6 +191,53 @@ def _opt_float(value: Any, default: Optional[float] = None) -> Optional[float]:
     return f if math.isfinite(f) else default
 
 
+def derive_tp_sl_mode(
+    item: dict[str, Any],
+    cfg: Optional[dict[str, Any]] = None,
+    strat_cfg: Optional[dict[str, Any]] = None,
+) -> str:
+    """Derive unified TP/SL execution and reporting mode ('fixed_pct' or 'atr') for an order or position.
+
+    Precedence:
+    1. Explicit mode on item: item['tp_sl_mode'] in ('fixed_pct', 'atr').
+    2. Overrides present on item:
+       - If item has percentage override (tp_pct is not None or sl_pct is not None) -> 'fixed_pct'.
+       - If item has ATR override (tp_atr_mult is not None or sl_atr_mult is not None) -> 'atr'.
+    3. Configuration fallbacks (cfg / strat_cfg):
+       - Explicit mode in cfg or strat_cfg ('fixed_pct' or 'atr').
+       - Percentage config in cfg or strat_cfg (tp_pct is not None or sl_pct is not None) -> 'fixed_pct'.
+    4. Default -> 'atr'.
+    """
+    mode = item.get("tp_sl_mode")
+    if mode in ("fixed_pct", "atr"):
+        return mode
+
+    # Check partial / full percentage overrides on the item
+    if item.get("tp_pct") is not None or item.get("sl_pct") is not None:
+        return "fixed_pct"
+
+    # Check partial / full ATR overrides on the item
+    if item.get("tp_atr_mult") is not None or item.get("sl_atr_mult") is not None:
+        return "atr"
+
+    cfg_dict = cfg or {}
+    strat_dict = strat_cfg or {}
+
+    cfg_mode = cfg_dict.get("tp_sl_mode") or strat_dict.get("tp_sl_mode")
+    if cfg_mode in ("fixed_pct", "atr"):
+        return cfg_mode
+
+    if (
+        cfg_dict.get("tp_pct") is not None
+        or cfg_dict.get("sl_pct") is not None
+        or strat_dict.get("tp_pct") is not None
+        or strat_dict.get("sl_pct") is not None
+    ):
+        return "fixed_pct"
+
+    return "atr"
+
+
 # =====================================================================
 # Market Data Providers (yfinance wrappers with test decoupling)
 # =====================================================================
@@ -824,20 +871,27 @@ def execute_open_orders(
         state["cash"] -= (trade_amount + buy_cost)
 
         # Compute TP/SL anchored on fill_price
-        tp_sl_mode = order.get("tp_sl_mode")
-        tp_pct = order.get("tp_pct")
-        sl_pct = order.get("sl_pct")
+        strat_cfg = get_strategy_config(state.get("strategy_id"))
+        eff_mode = derive_tp_sl_mode(order, cfg=cfg, strat_cfg=strat_cfg)
 
-        if tp_sl_mode == "fixed_pct" or tp_pct is not None:
-            tp_p = _opt_float(tp_pct, 0.06)
-            sl_p = _opt_float(sl_pct, 0.03)
+        if eff_mode == "fixed_pct":
+            tp_p = _opt_float(order.get("tp_pct"), cfg.get("tp_pct", strat_cfg.get("tp_pct", 0.06)))
+            sl_p = _opt_float(order.get("sl_pct"), cfg.get("sl_pct", strat_cfg.get("sl_pct", 0.03)))
             tp_price = fill_price * (1.0 + tp_p)
             sl_price = fill_price * (1.0 - sl_p)
+            pos_tp_pct = tp_p
+            pos_sl_pct = sl_p
+            pos_tp_atr = order.get("tp_atr_mult")
+            pos_sl_atr = order.get("sl_atr_mult")
         else:
-            tp_mult = order.get("tp_atr_mult", DEFAULT_TP_ATR_MULT)
-            sl_mult = order.get("sl_atr_mult", DEFAULT_SL_ATR_MULT)
+            tp_mult = _opt_float(order.get("tp_atr_mult"), cfg.get("tp_atr_mult", strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT)))
+            sl_mult = _opt_float(order.get("sl_atr_mult"), cfg.get("sl_atr_mult", strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT)))
             tp_price = fill_price + tp_mult * atr
             sl_price = fill_price - sl_mult * atr
+            pos_tp_pct = order.get("tp_pct")
+            pos_sl_pct = order.get("sl_pct")
+            pos_tp_atr = tp_mult
+            pos_sl_atr = sl_mult
 
         if sl_price <= 0:
             sl_price = fill_price * (1 - DEFAULT_TP_SL["sl_pct"])
@@ -849,11 +903,11 @@ def execute_open_orders(
             "shares": int(shares),
             "tp": round(tp_price, 2),
             "sl": round(sl_price, 2),
-            "tp_sl_mode": tp_sl_mode,
-            "tp_atr_mult": order.get("tp_atr_mult"),
-            "sl_atr_mult": order.get("sl_atr_mult"),
-            "tp_pct": order.get("tp_pct"),
-            "sl_pct": order.get("sl_pct"),
+            "tp_sl_mode": eff_mode,
+            "tp_atr_mult": pos_tp_atr,
+            "sl_atr_mult": pos_sl_atr,
+            "tp_pct": pos_tp_pct,
+            "sl_pct": pos_sl_pct,
             "atr": atr,
             "entry_date": as_of,
             "day_count": 0,
@@ -1178,25 +1232,18 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
         lines.append("| 標的 | 進場日 | 進場價 | 股數 | 停利 (TP) | 停損 (SL) | 已持有天數 |")
         lines.append("|---|---|---|---|---|---|---|")
         for tkr, pos in state["positions"].items():
-            pos_mode = (
-                pos.get("tp_sl_mode")
-                or cfg.get("tp_sl_mode")
-                or strat_cfg.get("tp_sl_mode")
-            )
-            # TP label
-            if pos_mode == "fixed_pct" or (pos_mode != "atr" and (pos.get("tp_pct") is not None or cfg.get("tp_pct") is not None or strat_cfg.get("tp_pct") is not None)):
+            pos_mode = derive_tp_sl_mode(pos, cfg=cfg, strat_cfg=strat_cfg)
+            if pos_mode == "fixed_pct":
                 p_tp = pos.get("tp_pct") if pos.get("tp_pct") is not None else cfg.get("tp_pct", strat_cfg.get("tp_pct", 0.06))
                 tp_label = f"+{p_tp * 100:.0f}%" if p_tp is not None else ""
+
+                p_sl = pos.get("sl_pct") if pos.get("sl_pct") is not None else cfg.get("sl_pct", strat_cfg.get("sl_pct", 0.03))
+                sl_label = f"-{p_sl * 100:.0f}%" if p_sl is not None else ""
             else:
                 mult_tp = pos.get("tp_atr_mult") if pos.get("tp_atr_mult") is not None else cfg.get("tp_atr_mult", strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT))
                 tp_str = f"{mult_tp:g}" if isinstance(mult_tp, (int, float)) else str(mult_tp)
                 tp_label = f"+{tp_str} ATR" if mult_tp is not None else ""
 
-            # SL label
-            if pos_mode == "fixed_pct" or (pos_mode != "atr" and (pos.get("sl_pct") is not None or cfg.get("sl_pct") is not None or strat_cfg.get("sl_pct") is not None)):
-                p_sl = pos.get("sl_pct") if pos.get("sl_pct") is not None else cfg.get("sl_pct", strat_cfg.get("sl_pct", 0.03))
-                sl_label = f"-{p_sl * 100:.0f}%" if p_sl is not None else ""
-            else:
                 mult_sl = pos.get("sl_atr_mult") if pos.get("sl_atr_mult") is not None else cfg.get("sl_atr_mult", strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT))
                 sl_str = f"{mult_sl:g}" if isinstance(mult_sl, (int, float)) else str(mult_sl)
                 sl_label = f"-{sl_str} ATR" if mult_sl is not None else ""
