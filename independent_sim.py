@@ -1126,14 +1126,33 @@ def compute_performance(
 def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str:
     """Generate Markdown performance comparison report."""
     cfg = state["config"]
+    strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
+    strat_cfg = get_strategy_config(strat_id)
+    strat_name = cfg.get("name") or strat_cfg.get("name") or strat_id
+
     sharpe_str = f"{perf['sharpe']:.2f}" if perf["sharpe"] is not None else "N/A（樣本不足 < 30 日）"
     pf_str = f"{perf['profit_factor']:.2f}" if perf["profit_factor"] is not None else "N/A"
 
     max_price_val = cfg.get("max_price")
     max_price_desc = f"<= {max_price_val} 元" if max_price_val is not None else "無"
 
+    # 出場模式欄位標題動態生成
+    tp_sl_mode = cfg.get("tp_sl_mode", strat_cfg.get("tp_sl_mode"))
+    if tp_sl_mode == "fixed_pct" or (tp_sl_mode != "atr" and (cfg.get("tp_pct") is not None or cfg.get("sl_pct") is not None)):
+        tp_p = cfg.get("tp_pct", strat_cfg.get("tp_pct", 0.06))
+        sl_p = cfg.get("sl_pct", strat_cfg.get("sl_pct", 0.03))
+        tp_header = f"TP (+{tp_p * 100:.0f}%)" if tp_p is not None else "TP"
+        sl_header = f"SL (-{sl_p * 100:.0f}%)" if sl_p is not None else "SL"
+    else:
+        tp_mult = cfg.get("tp_atr_mult", strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT))
+        sl_mult = cfg.get("sl_atr_mult", strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT))
+        tp_str = f"{tp_mult:g}" if isinstance(tp_mult, (int, float)) else str(tp_mult)
+        sl_str = f"{sl_mult:g}" if isinstance(sl_mult, (int, float)) else str(sl_mult)
+        tp_header = f"TP (+{tp_str} ATR)" if tp_mult is not None else "TP"
+        sl_header = f"SL (-{sl_str} ATR)" if sl_mult is not None else "SL"
+
     lines = [
-        f"# Top-2 Score Concentration Simulation Report ({state['strategy_id']})",
+        f"# {strat_name} Simulation Report ({strat_id})",
         "",
         f"- **建立時間 / 狀態更新**: {get_taipei_now_iso()}",
         f"- **初始資金**: {cfg['initial_capital']:,.0f} TWD",
@@ -1143,7 +1162,7 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
         "",
         "## 1. 策略 vs 0050 績效比較",
         "",
-        "| 指標 | Top-2 策略 | 0050 (基準) | 差異 (Alpha) |",
+        f"| 指標 | {strat_name} | 0050 (基準) | 差異 (Alpha) |",
         "|---|---|---|---|",
         f"| **累積報酬率** | **{perf['total_return']*100:+.2f}%** | {perf['benchmark_return']*100:+.2f}% | **{perf['excess_return']*100:+.2f}%** |",
         f"| **最大回撤 (MDD)** | {perf['max_drawdown']*100:.2f}% | {perf['benchmark_max_drawdown']*100:.2f}% | - |",
@@ -1165,7 +1184,7 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
     # Active positions
     lines.append("## 3. 目前持倉")
     if state["positions"]:
-        lines.append("| 標的 | 進場日 | 進場價 | 股數 | TP (+4 ATR) | SL (-3 ATR) | 已持有天數 |")
+        lines.append(f"| 標的 | 進場日 | 進場價 | 股數 | {tp_header} | {sl_header} | 已持有天數 |")
         lines.append("|---|---|---|---|---|---|---|")
         for tkr, pos in state["positions"].items():
             lines.append(
@@ -1195,7 +1214,7 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
 
 
 def generate_performance_chart(
-    equity_df: pd.DataFrame, output_path: Path | str
+    equity_df: pd.DataFrame, output_path: Path | str, strategy_name: str = "Strategy"
 ) -> bool:
     """Generate normalized equity curve and drawdown chart using matplotlib."""
     if equity_df.empty or "date" not in equity_df.columns:
@@ -1217,16 +1236,16 @@ def generate_performance_chart(
         dd = equity_df["drawdown"] * 100.0
 
         # Subplot 1: Equity Curves
-        ax1.plot(dates, strat_eq, label="Top-2 Strategy (Net Equity)", color="#2563eb", linewidth=2.0)
+        ax1.plot(dates, strat_eq, label=f"{strategy_name} (Net Equity)", color="#2563eb", linewidth=2.0)
         ax1.plot(dates, bm_eq, label="0050 Benchmark", color="#9ca3af", linewidth=1.5, linestyle="--")
-        ax1.set_title("Top-2 Concentration vs 0050 Normalized Equity", fontsize=13, fontweight="bold")
+        ax1.set_title(f"{strategy_name} vs 0050 Normalized Equity", fontsize=13, fontweight="bold")
         ax1.set_ylabel("Equity (TWD)", fontsize=10)
         ax1.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
         ax1.legend(loc="upper left")
         ax1.grid(True, linestyle=":", alpha=0.6)
 
         # Subplot 2: Drawdown
-        ax2.fill_between(dates, dd, 0, color="#ef4444", alpha=0.3, label="Top-2 Drawdown")
+        ax2.fill_between(dates, dd, 0, color="#ef4444", alpha=0.3, label=f"{strategy_name} Drawdown")
         ax2.plot(dates, dd, color="#dc2626", linewidth=1.2)
         ax2.set_ylabel("Drawdown (%)", fontsize=10)
         ax2.set_xlabel("Date", fontsize=10)
@@ -1258,8 +1277,12 @@ def generate_report(data_dir: Path | str = DEFAULT_DATA_DIR) -> tuple[str, Optio
     md_path = d / "performance.md"
     md_path.write_text(report_md, encoding="utf-8")
 
+    strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
+    strat_cfg = get_strategy_config(strat_id)
+    strat_name = state.get("config", {}).get("name") or strat_cfg.get("name") or strat_id
+
     chart_path = d / "performance.png"
-    has_chart = generate_performance_chart(equity_df, chart_path)
+    has_chart = generate_performance_chart(equity_df, chart_path, strategy_name=strat_name)
 
     return report_md, (chart_path if has_chart else None)
 
@@ -1372,7 +1395,10 @@ def run_open(
     print(f"✅ Open execution completed for {today_str}: {len(filled)} filled, {len(cancelled)} cancelled/skipped.")
 
     if notify:
-        msg_lines = [f"📊 *Top-2 Open Execution ({today_str})*"]
+        strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
+        strat_cfg = get_strategy_config(strat_id)
+        strat_name = state.get("config", {}).get("name") or strat_cfg.get("name") or strat_id
+        msg_lines = [f"📊 *{strat_name} Open Execution ({today_str})*"]
         for f_ev in filled:
             msg_lines.append(f"🟢 成交: `{f_ev['ticker']}` @ {f_ev['fill_price']:.2f} × {f_ev['shares']:,} 股")
         for c_ev in cancelled:
@@ -1468,8 +1494,11 @@ def run_close_and_plan(
     )
 
     if notify:
+        strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
+        strat_cfg = get_strategy_config(strat_id)
+        strat_name = state.get("config", {}).get("name") or strat_cfg.get("name") or strat_id
         msg_lines = [
-            f"📈 *Top-2 Daily Summary ({today_str})*",
+            f"📈 *{strat_name} Daily Summary ({today_str})*",
             f"💰 權益: {state['equity_curve'][-1]['equity']:,.0f} TWD (現金: {state['cash']:,.0f} TWD)",
         ]
         for tr in closed_trades:

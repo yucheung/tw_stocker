@@ -133,3 +133,69 @@ def test_no_cross_strategy_fallback_when_orders_missing(temp_dir):
     state = sim.load_state(mr20_dir)
     # Should NOT load the top2 orders from artifacts/orders_20260820.json
     assert len(state["pending_orders"]) == 0
+
+
+def test_generate_markdown_report_dynamic_headers_mr20(temp_dir):
+    """P2-3: Verify MR20 report dynamically displays MR20 strategy title and ATR exit headers."""
+    state = sim.init_simulation(data_dir=temp_dir / "mr20", strategy="mr20")
+    state["positions"]["2330"] = {
+        "ticker": "2330",
+        "entry": 100.0,
+        "shares": 1000,
+        "tp": 120.0,
+        "sl": 85.0,
+        "entry_date": "2026-08-20",
+        "day_count": 3,
+        "max_hold_days": 20,
+    }
+    perf = sim.compute_performance(sim.pd.DataFrame(), [], [])
+    report_md = sim.generate_markdown_report(state, perf)
+
+    assert "# MR20 Pullback Mean Reversion Simulation Report (mr20)" in report_md
+    assert "| 指標 | MR20 Pullback Mean Reversion | 0050 (基準) | 差異 (Alpha) |" in report_md
+    assert "| 標的 | 進場日 | 進場價 | 股數 | TP (+4 ATR) | SL (-3 ATR) | 已持有天數 |" in report_md
+    assert "Top-2" not in report_md
+
+
+def test_generate_markdown_report_dynamic_headers_rsi_reversal(temp_dir):
+    """P2-3: Verify RSI Reversal report dynamically displays RSI strategy title and exit headers."""
+    state = sim.init_simulation(data_dir=temp_dir / "rsi", strategy="rsi_reversal")
+    state["positions"]["2330"] = {
+        "ticker": "2330",
+        "entry": 100.0,
+        "shares": 1000,
+        "tp": 106.0,
+        "sl": 97.0,
+        "entry_date": "2026-08-20",
+        "day_count": 1,
+        "max_hold_days": 5,
+    }
+    perf = sim.compute_performance(sim.pd.DataFrame(), [], [])
+    report_md = sim.generate_markdown_report(state, perf)
+
+    assert "# RSI Reversal Strategy Simulation Report (rsi_reversal)" in report_md
+    assert "| 指標 | RSI Reversal Strategy | 0050 (基準) | 差異 (Alpha) |" in report_md
+    assert "TP (+6%)" in report_md or "TP (+2 ATR)" in report_md
+    assert "Top-2" not in report_md
+
+
+def test_generate_markdown_report_dynamic_headers_top2(temp_dir):
+    """P2-3: Verify Top-2 report dynamically displays Top-2 strategy title and ATR exit headers."""
+    state = sim.init_simulation(data_dir=temp_dir / "top2", strategy="top2_score_v1")
+    state["positions"]["2330"] = {
+        "ticker": "2330",
+        "entry": 100.0,
+        "shares": 1000,
+        "tp": 120.0,
+        "sl": 85.0,
+        "entry_date": "2026-08-20",
+        "day_count": 3,
+        "max_hold_days": 20,
+    }
+    perf = sim.compute_performance(sim.pd.DataFrame(), [], [])
+    report_md = sim.generate_markdown_report(state, perf)
+
+    assert "# Top-2 Score Concentration Simulation Report (top2_score_v1)" in report_md
+    assert "| 指標 | Top-2 Score Concentration | 0050 (基準) | 差異 (Alpha) |" in report_md
+    assert "| 標的 | 進場日 | 進場價 | 股數 | TP (+4 ATR) | SL (-3 ATR) | 已持有天數 |" in report_md
+

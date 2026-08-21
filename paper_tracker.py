@@ -277,11 +277,33 @@ def extract_signals_from_report():
             })
     return signals
 
-def find_replace_candidate(positions: dict, new_rank: Optional[int], min_rank_gap: int = 2, **kwargs) -> Optional[str]:
+def get_required_rank_gap(day_count: int) -> Optional[int]:
+    """
+    依持有天數分級 hysteresis 門檻：
+    - 持有 < 5 天：不換倉 (None)
+    - 5-8 天 (5 <= day_count < 8)：需 rank gap >= 3
+    - 8-12 天 (8 <= day_count <= 12)：需 rank gap >= 2
+    - > 12 天 (day_count > 12)：需 rank gap >= 1
+    """
+    if day_count < 5:
+        return None
+    if day_count < 8:
+        return 3
+    if day_count <= 12:
+        return 2
+    return 1
+
+
+def find_replace_candidate(positions: dict, new_rank: Optional[int], min_rank_gap: Optional[int] = None, **kwargs) -> Optional[str]:
     """
     比較新訊號 rank 與持倉中最弱者的 entry_rank。
-    若持倉中最弱者的 entry_rank - new_rank >= min_rank_gap (預設 2)，
-    則回傳該最弱者的 ticker 作為置換候選；否則回傳 None。
+    依持有天數分級 hysteresis 門檻：
+    - 持有 < 5 天：不換倉
+    - 5-8 天 (5 <= day_count < 8)：需 rank gap >= 3
+    - 8-12 天 (8 <= day_count <= 12)：需 rank gap >= 2
+    - > 12 天 (day_count > 12)：需 rank gap >= 1
+
+    若有候選者滿足門檻，回傳最弱者 ticker；否則回傳 None。
 
     最弱者挑選規則：
     1. rank_gap 最大者 (即 entry_rank 數字最大 / 排名最差)
@@ -302,9 +324,19 @@ def find_replace_candidate(positions: dict, new_rank: Optional[int], min_rank_ga
         except (ValueError, TypeError):
             continue
 
+        try:
+            day_count = int(pos.get('day_count', 0))
+        except (ValueError, TypeError):
+            day_count = 0
+
+        req_gap = get_required_rank_gap(day_count)
+        if req_gap is None:
+            continue
+        if min_rank_gap is not None:
+            req_gap = max(req_gap, min_rank_gap)
+
         rank_gap = held_rank_val - new_rank_val
-        if rank_gap >= min_rank_gap:
-            day_count = pos.get('day_count', 0)
+        if rank_gap >= req_gap:
             candidates.append((ticker, held_rank_val, day_count, rank_gap))
 
     if not candidates:
@@ -517,8 +549,14 @@ def update_tracker(data):
                     print(f"   ⏭️ 無開盤價撤單 {ticker}")
                 continue
 
+            fill_price = decision.fill_price
+
+            # Capacity & replacement check (Sizing 驗證前置，確保換倉原子性)
+            replace_ticker = None
+            rep_exit = None
+            rep_proceeds = 0.0
             if len(data['positions']) >= MAX_POSITIONS:
-                replace_ticker = find_replace_candidate(data['positions'], sig.get('rank'), min_rank_gap=2)
+                replace_ticker = find_replace_candidate(data['positions'], sig.get('rank'))
                 if replace_ticker is None:
                     order_events.append({
                         **event_base,
@@ -529,39 +567,41 @@ def update_tracker(data):
                     })
                     print(f"   ⏭️ 額滿撤單 {ticker}")
                     continue
-                # 執行換倉平倉
+
+                rep_pos = data['positions'][replace_ticker]
                 rep_bar = bars.get(replace_ticker)
                 rep_exit = rep_bar.get('open') if (rep_bar and rep_bar.get('open') is not None) else (
-                    rep_bar.get('close') if (rep_bar and rep_bar.get('close') is not None) else data['positions'][replace_ticker]['entry']
+                    rep_bar.get('close') if (rep_bar and rep_bar.get('close') is not None) else rep_pos['entry']
                 )
-                print(f"   🔄 換倉置換：平倉最弱部位 {replace_ticker} (進場 rank #{data['positions'][replace_ticker].get('entry_rank')}) 迎入 #{sig.get('rank')} {ticker}")
-                close_position(data, replace_ticker, rep_exit, today, reason='REPLACE',
-                               buy_cost_rate=buy_cost_rate, sell_cost_rate=sell_cost_rate, slippage=slippage)
-
-            fill_price = decision.fill_price
+                rep_sell_cost = rep_exit * rep_pos['shares'] * sell_cost_rate
+                rep_slippage = rep_exit * rep_pos['shares'] * slippage
+                rep_proceeds = rep_exit * rep_pos['shares'] - rep_sell_cost - rep_slippage
 
             # ── Position sizing 對齊回測（event_backtest.py:1049）──
             # trade_amount = current_equity × position_size × regime_scale
             # position_size / regime_scale 由 artifacts/orders JSON 帶入
             # （ai_report 在收盤後即算好下一場進場的 regime 曝險縮放）；
-            # 舊訂單缺欄位時退回保守預設 0.10 / 1.0。
-            current_equity = data['capital']
+            # 舊訂單缺欄位時退回保守預設 0.07 / 1.0。
+            projected_capital = data['capital'] + rep_proceeds
+            projected_equity = projected_capital
             for tkr, pos in data['positions'].items():
-                px = prices.get(tkr, pos['entry'])
-                current_equity += px * pos['shares']
+                if tkr != replace_ticker:
+                    px = prices.get(tkr, pos['entry'])
+                    projected_equity += px * pos['shares']
+
             position_size = _opt_float(sig.get('position_size'), 0.07)
             regime_scale = _opt_float(sig.get('regime_scale'), 1.0)
             if position_size <= 0:
                 position_size = 0.07
             if regime_scale <= 0:
                 regime_scale = 1.0
-            available_cash = max(data['capital'] - reserve_cash, 0)
-            trade_amount = min(current_equity * position_size * regime_scale, available_cash)
+            available_cash = max(projected_capital - reserve_cash, 0)
+            trade_amount = min(projected_equity * position_size * regime_scale, available_cash)
             shares = int(trade_amount / fill_price)
 
             actual_trade_amount = shares * fill_price
             buy_cost = actual_trade_amount * buy_cost_rate  # 限價單買進不再加 slippage
-            if shares <= 0 or data['capital'] - actual_trade_amount - buy_cost < reserve_cash:
+            if shares <= 0 or projected_capital - actual_trade_amount - buy_cost < reserve_cash:
                 order_events.append({
                     **event_base,
                     'limit_price': limit_price,
@@ -571,6 +611,12 @@ def update_tracker(data):
                 })
                 print(f"   💵 資金不足撤單 {ticker}")
                 continue
+
+            # 資金驗證通過後，才執行換倉平倉與建倉（保證換倉原子性）
+            if replace_ticker is not None:
+                print(f"   🔄 換倉置換：平倉最弱部位 {replace_ticker} (進場 rank #{data['positions'][replace_ticker].get('entry_rank')}) 迎入 #{sig.get('rank')} {ticker}")
+                close_position(data, replace_ticker, rep_exit, today, reason='REPLACE',
+                               buy_cost_rate=buy_cost_rate, sell_cost_rate=sell_cost_rate, slippage=slippage)
 
             data['capital'] -= (actual_trade_amount + buy_cost)
             # TP/SL 以實際成交價（fill_price = open）為錨重算
@@ -647,7 +693,7 @@ def update_tracker(data):
                 order_item['action'] = 'BUY'
                 new_pending.append(order_item)
             else:
-                rep_candidate = find_replace_candidate(candidate_positions, s.get('rank'), min_rank_gap=2)
+                rep_candidate = find_replace_candidate(candidate_positions, s.get('rank'))
                 if rep_candidate is not None:
                     candidate_positions.pop(rep_candidate, None)
                     order_item['action'] = 'REPLACE'
