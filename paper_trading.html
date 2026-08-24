@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Paper Trading v8.5 — 2026-08-21</title>
+    <title>Paper Trading v8.5 — 2026-08-24</title>
     <meta name="description" content="TW Stocker v8.5 Paper Trading 實時績效追蹤">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <style>
@@ -92,25 +92,25 @@
     <h1>📈 Paper Trading v8.5</h1>
     <p class="subtitle">
         <span class="badge badge-live">● LIVE</span>
-        起始日 2026-08-20 | 更新 2026-08-21 | 初始資金 200,000 | 保留本金 10%，其餘投入
+        起始日 2026-08-20 | 更新 2026-08-24 | 初始資金 200,000 | 保留本金 10%，其餘投入
     </p>
 
     <div class="metrics">
         <div class="metric">
             <div class="label">總權益</div>
-            <div class="value red">200,000</div>
+            <div class="value red">197,752</div>
         </div>
         <div class="metric">
             <div class="label">總報酬</div>
-            <div class="value red">+0.0%</div>
+            <div class="value red">-1.1%</div>
         </div>
         <div class="metric">
             <div class="label">年化報酬</div>
-            <div class="value red">+0.0%</div>
+            <div class="value red">-94.4%</div>
         </div>
         <div class="metric">
             <div class="label">最大回撤</div>
-            <div class="value red">0.0%</div>
+            <div class="value red">-1.1%</div>
         </div>
         <div class="metric">
             <div class="label">勝率</div>
@@ -126,7 +126,7 @@
         </div>
         <div class="metric">
             <div class="label">持倉數</div>
-            <div class="value blue">0</div>
+            <div class="value blue">3</div>
         </div>
     </div>
 
@@ -139,7 +139,31 @@
         <h2>🔓 目前持倉</h2>
         <table>
             <tr><th>股票</th><th>進場價</th><th>停利</th><th>停損</th><th>進場日</th><th>持有</th></tr>
-            <tr><td colspan="6" style="text-align:center;color:#888">目前無持倉</td></tr>
+            
+        <tr>
+            <td><b>6213</b></td>
+            <td>509.0</td>
+            <td>632.7</td>
+            <td>416.2</td>
+            <td>2026-08-24</td>
+            <td>0天</td>
+        </tr>
+        <tr>
+            <td><b>3653</b></td>
+            <td>5280.0</td>
+            <td>6610.0</td>
+            <td>4282.5</td>
+            <td>2026-08-24</td>
+            <td>0天</td>
+        </tr>
+        <tr>
+            <td><b>2408</b></td>
+            <td>521.0</td>
+            <td>667.3</td>
+            <td>411.3</td>
+            <td>2026-08-24</td>
+            <td>0天</td>
+        </tr>
         </table>
     </div>
 
@@ -150,52 +174,31 @@
             
         <tr>
             <td><b>2059</b></td>
-            <td>13385.0</td>
-            <td>16486.0</td>
-            <td>11059.2</td>
-            <td>2026-08-24</td>
+            <td>14410.0</td>
+            <td>17658.0</td>
+            <td>11974.0</td>
+            <td>2026-08-25</td>
         </tr>
         <tr>
-            <td><b>6213</b></td>
-            <td>513.0</td>
-            <td>636.7</td>
-            <td>420.2</td>
-            <td>2026-08-24</td>
+            <td><b>2615</b></td>
+            <td>124.5</td>
+            <td>141.7</td>
+            <td>111.6</td>
+            <td>2026-08-25</td>
         </tr>
         <tr>
-            <td><b>3653</b></td>
-            <td>5395.0</td>
-            <td>6725.0</td>
-            <td>4397.5</td>
-            <td>2026-08-24</td>
+            <td><b>2301</b></td>
+            <td>287.0</td>
+            <td>365.0</td>
+            <td>228.5</td>
+            <td>2026-08-25</td>
         </tr>
         <tr>
             <td><b>3008</b></td>
-            <td>5610.0</td>
-            <td>6889.6</td>
-            <td>4650.3</td>
-            <td>2026-08-24</td>
-        </tr>
-        <tr>
-            <td><b>3443</b></td>
-            <td>5600.0</td>
-            <td>7056.0</td>
-            <td>4508.0</td>
-            <td>2026-08-24</td>
-        </tr>
-        <tr>
-            <td><b>2408</b></td>
-            <td>528.0</td>
-            <td>674.3</td>
-            <td>418.3</td>
-            <td>2026-08-24</td>
-        </tr>
-        <tr>
-            <td><b>3037</b></td>
-            <td>1085.0</td>
-            <td>1367.8</td>
-            <td>872.9</td>
-            <td>2026-08-24</td>
+            <td>5385.0</td>
+            <td>6681.0</td>
+            <td>4413.0</td>
+            <td>2026-08-25</td>
         </tr>
         </table>
     </div>
@@ -219,10 +222,10 @@ const ctx = document.getElementById('equityChart').getContext('2d');
 new Chart(ctx, {
     type: 'line',
     data: {
-        labels: ["2026-08-20", "2026-08-21"],
+        labels: ["2026-08-20", "2026-08-21", "2026-08-24"],
         datasets: [{
             label: 'Paper Trading 權益',
-            data: [200000, 200000],
+            data: [200000, 200000, 197752.0],
             borderColor: '#60a5fa',
             backgroundColor: 'rgba(96, 165, 250, 0.1)',
             fill: true,
@@ -231,7 +234,7 @@ new Chart(ctx, {
             borderWidth: 2,
         }, {
             label: '初始資金',
-            data: [200000, 200000],
+            data: [200000, 200000, 200000],
             borderColor: '#475569',
             borderDash: [5, 5],
             fill: false,
