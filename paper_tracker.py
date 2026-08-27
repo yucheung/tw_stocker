@@ -401,7 +401,21 @@ def update_tracker(data):
     print(f"   初始資金: {data['initial_capital']:,.0f}")
     print(f"   當前現金: {data['capital']:,.0f}")
     print(f"   保留現金: {reserve_cash:,.0f} ({reserve_ratio:.0%} 本金)")
-    print(f"   持倉檔數: {len(data['positions'])}")
+
+    # ── Separate monitoring: fills / open positions / closed trades ──
+    order_events = data.get('order_events', [])
+    fill_count = sum(1 for e in order_events if e.get('status') == 'FILLED')
+    cancel_count = sum(1 for e in order_events if e.get('status', '').startswith('CANCELLED'))
+    pending_count = len(data.get('pending_orders', []))
+    open_count = len(data['positions'])
+    closed_count = len(data.get('closed_trades', []))
+
+    print(f"   📊 監控摘要:")
+    print(f"      總成交 (Fills):  {fill_count}")
+    print(f"      總撤單 (Cancels): {cancel_count}")
+    print(f"      待執行 (Pending): {pending_count}")
+    print(f"      持倉 (Open):     {open_count}/{MAX_POSITIONS}")
+    print(f"      已平倉 (Closed):  {closed_count}")
 
     # 0. 避免重複執行
     if data['equity_curve'] and data['equity_curve'][-1].get('date') == today:

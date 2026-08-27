@@ -1586,13 +1586,27 @@ def run_report(data_dir: Path | str = DEFAULT_DATA_DIR, notify: bool = False) ->
 
 
 def print_status(data_dir: Path | str = DEFAULT_DATA_DIR) -> None:
-    """Print current simulation status to console."""
+    """Print current simulation status to console with separate fill/open/closed tracking."""
     state = load_state(data_dir)
     cfg = state["config"]
     print(f"=== Simulation Status [{state['strategy_id']}] ===")
     print(f"Initial Capital : {cfg['initial_capital']:,.0f} TWD")
     print(f"Current Cash    : {state['cash']:,.0f} TWD")
-    print(f"Positions ({len(state['positions'])}/{cfg['max_positions']}):")
+
+    # ── Separate tracking: fills / open positions / closed trades ──
+    order_events = state.get("order_events", [])
+    fill_events = [e for e in order_events if e.get("status") == "FILLED"]
+    cancel_events = [e for e in order_events if e.get("status", "").startswith("CANCELLED")]
+    pending_events = [e for e in order_events if e.get("status") == "PENDING"]
+
+    print(f"\n📊 Monitoring Summary:")
+    print(f"  Total Fills     : {len(fill_events)}")
+    print(f"  Total Cancelled  : {len(cancel_events)}")
+    print(f"  Total Pending    : {len(pending_events)}")
+    print(f"  Open Positions  : {len(state['positions'])}/{cfg['max_positions']}")
+    print(f"  Closed Trades   : {len(state.get('closed_trades', []))}")
+
+    print(f"\nPositions ({len(state['positions'])}/{cfg['max_positions']}):")
     for tkr, pos in state["positions"].items():
         print(f"  - {tkr}: entry={pos['entry']:.2f}, shares={pos['shares']:,}, TP={pos['tp']:.2f}, SL={pos['sl']:.2f}, days={pos['day_count']}")
     if not state["positions"]:
@@ -1604,10 +1618,19 @@ def print_status(data_dir: Path | str = DEFAULT_DATA_DIR) -> None:
     if not state["pending_orders"]:
         print("  (None)")
 
-    print(f"Closed Trades   : {len(state.get('closed_trades', []))}")
+    closed = state.get("closed_trades", [])
+    print(f"\nClosed Trades ({len(closed)}):")
+    if closed:
+        for tr in closed[-5:]:  # Last 5
+            print(f"  - {tr['ticker']}: {tr['entry_date']}→{tr['exit_date']} [{tr['exit_reason']}] PnL: {tr['net_pnl']:+,.0f} ({tr['net_return_pct']:+.2f}%)")
+        if len(closed) > 5:
+            print(f"  ... and {len(closed) - 5} more")
+    else:
+        print("  (None)")
+
     if state["equity_curve"]:
         last_eq = state["equity_curve"][-1]
-        print(f"Latest Equity   : {last_eq['equity']:,.0f} TWD ({last_eq['cumulative_return']*100:+.2f}%) on {last_eq['date']}")
+        print(f"\nLatest Equity   : {last_eq['equity']:,.0f} TWD ({last_eq['cumulative_return']*100:+.2f}%) on {last_eq['date']}")
 
 
 # =====================================================================

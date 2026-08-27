@@ -179,3 +179,5 @@ paper_trading.html
 paper_equity.json
 paper_signals.json
 paper_trades.json
+cx23-projects/
+check_status.py

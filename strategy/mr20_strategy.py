@@ -261,6 +261,7 @@ def filter_mr20_candidates(
     as_of_date: Optional[str] = None,
     config: Optional[MR20Config] = None,
     calendar: Optional[xcals.ExchangeCalendar] = None,
+    funnel: Optional[dict[str, int]] = None,
 ) -> list[dict[str, Any]]:
     """
     依據 5 大核心條件篩選與排名 MR20 候選個股。
@@ -285,7 +286,21 @@ def filter_mr20_candidates(
     """
     cfg = config or MR20Config()
 
+    # ── Funnel diagnostic counters ──
+    _f: dict[str, int] = {
+        "requested": len(close_df.columns) if not close_df.empty else 0,
+        "valid_60d": 0,
+        "liquid_top50": 0,
+        "trend": 0,
+        "pullback": 0,
+        "rsi": 0,
+        "bounce": 0,
+        "final": 0,
+    }
+
     if close_df.empty or vol_df.empty:
+        if funnel is not None:
+            funnel.update(_f)
         return []
 
     cal = calendar or get_calendar("XTAI")
@@ -319,7 +334,10 @@ def filter_mr20_candidates(
             eligible_tickers.append(ticker)
 
     if not eligible_tickers:
+        if funnel is not None:
+            funnel.update(_f)
         return []
+    _f["valid_60d"] = len(eligible_tickers)
 
     indicators = compute_mr20_indicators(close_df, vol_df, config=cfg)
     ma_short_df = indicators["ma_short"]
@@ -338,6 +356,7 @@ def filter_mr20_candidates(
     top_liquid_tickers = set(
         valid_turnovers.nlargest(top_n_thresh).index
     )
+    _f["liquid_top50"] = len(top_liquid_tickers)
 
     passed_candidates = []
 
@@ -356,18 +375,22 @@ def filter_mr20_candidates(
         # 條件 2: 中期多頭 (MA20 > MA60 且 Close > MA60)
         if not (ma_s > ma_l and c_t > ma_l):
             continue
+        _f["trend"] += 1
 
         # 條件 3: 已回檔 (Close < MA20)
         if not (c_t < ma_s):
             continue
+        _f["pullback"] += 1
 
         # 條件 4: 短線超賣 (RSI(5) <= rsi_max)
         if not (rsi_val <= cfg.rsi_max):
             continue
+        _f["rsi"] += 1
 
         # 條件 5: 止跌確認 (Close[t] > Close[t-1])
         if not (c_t > c_prev):
             continue
+        _f["bounce"] += 1
 
         # 可選價格區間過濾
         if cfg.min_price is not None and c_t < cfg.min_price:
@@ -407,6 +430,10 @@ def filter_mr20_candidates(
     selected = passed_candidates[: cfg.max_candidates]
     for idx, cand in enumerate(selected, 1):
         cand["rank"] = idx
+
+    _f["final"] = len(selected)
+    if funnel is not None:
+        funnel.update(_f)
 
     return selected
 
@@ -464,13 +491,13 @@ def generate_mr20_orders(
     signal_date: Optional[str] = None,
     calendar: Optional[xcals.ExchangeCalendar] = None,
     config: Optional[MR20Config] = None,
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, Any]:
     """
     針對指定訊號日產生 MR20 訂單結構。
 
     Returns
     -------
-    dict: {"orders": [order_1, order_2, ...]}
+    dict: {"orders": [...], "diagnostic": {...}}
     """
     cfg = config or MR20Config()
     cal = calendar or get_calendar("XTAI")
@@ -484,7 +511,8 @@ def generate_mr20_orders(
     if cal is not None and not cal.is_session(signal_date):
         raise ValueError(f"Specified signal date '{signal_date}' is not a valid XTAI trading session.")
 
-    candidates = filter_mr20_candidates(close_df, vol_df, as_of_date=signal_date, config=cfg, calendar=cal)
+    funnel: dict[str, int] = {}
+    candidates = filter_mr20_candidates(close_df, vol_df, as_of_date=signal_date, config=cfg, calendar=cal, funnel=funnel)
     exec_date = get_next_trading_day(signal_date, calendar=cal)
 
     orders = []
@@ -501,11 +529,30 @@ def generate_mr20_orders(
         )
         orders.append(order)
 
-    return {"orders": orders}
+    # ── Diagnostic payload: always saved, even when zero candidates ──
+    diagnostic = {
+        "strategy": "mr20",
+        "signal_date": signal_date,
+        "execution_date": exec_date,
+        "funnel": dict(funnel),
+        "config": {
+            "rsi_max": cfg.rsi_max,
+            "ma_short": cfg.ma_short,
+            "ma_long": cfg.ma_long,
+            "liquidity_top_n": cfg.liquidity_top_n,
+            "min_history_days": cfg.min_history_days,
+            "rsi_period": cfg.rsi_period,
+            "max_candidates": cfg.max_candidates,
+        },
+        "universe_tickers": len(close_df.columns) if not close_df.empty else 0,
+        "universe_rows": len(close_df) if not close_df.empty else 0,
+        "saved_at": datetime.now(TAIPEI_TZ).isoformat(),
+    }
+    return {"orders": orders, "diagnostic": diagnostic}
 
 
 def save_orders_to_json(orders_dict: dict[str, Any], file_path: Path | str) -> Path:
-    """將訂單存成 JSON 檔案。"""
+    """將訂單存成 JSON 檔案。orders_dict may contain 'diagnostic' key for funnel data."""
     p = Path(file_path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(orders_dict, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -559,8 +606,8 @@ def parse_args(args=None):
         "--rsi-max",
         dest="rsi_max",
         type=float,
-        default=35.0,
-        help="RSI(5) 超賣上限門檻 (預設 35.0)",
+        default=40.0,
+        help="RSI(5) 超賣上限門檻 (預設 40.0)",
     )
     parser.add_argument(
         "--max-candidates",

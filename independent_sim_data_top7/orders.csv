@@ -1,1 +1,5 @@
 order_id,signal_date,execution_date,event_time,ticker,upstream_rank,score,selection_mode,reference_close,limit_price,open_price,status,fill_price,atr,tp_price,sl_price,shares,message
+top2_score_v1:2026-08-14:2059:buy,2026-08-14,2026-08-17,2026-08-24T13:31:23.161627+08:00,2059,1,4.0,auto,12235.0,12235.0,,PENDING,,771.6538347000686,,,0,Order placed for next session
+top2_score_v1:2026-08-14:6213:buy,2026-08-14,2026-08-17,2026-08-24T13:31:23.320027+08:00,6213,2,3.9333,auto,469.0,469.0,,PENDING,,26.639993447165544,,,0,Order placed for next session
+top2_score_v1:2026-08-14:2059:buy,2026-08-14,2026-08-17,2026-08-25T18:05:33.602393+08:00,2059,1,4.0,auto,12235.0,12235.0,,CANCELLED_EXPIRED,,771.6538347000686,,,0,Order expired before execution (2026-08-17 < 2026-08-25)
+top2_score_v1:2026-08-14:6213:buy,2026-08-14,2026-08-17,2026-08-25T18:05:33.602433+08:00,6213,2,3.9333,auto,469.0,469.0,,CANCELLED_EXPIRED,,26.639993447165544,,,0,Order expired before execution (2026-08-17 < 2026-08-25)

@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "strategy_id": "top2_score_v1",
+  "strategy_id": "mr20",
   "created_at": "2026-08-19T13:10:26.369653+08:00",
   "config": {
-    "initial_capital": 20000,
+    "initial_capital": 1000000,
     "max_positions": 2,
     "position_size": 0.45,
     "reserve_ratio": 0.1,
@@ -13,7 +13,7 @@
     "max_hold_days": 20,
     "entry_model": "signal_close_limit_next_open_v1"
   },
-  "cash": 20000,
+  "cash": 1000000,
   "positions": {},
   "pending_orders": [],
   "order_events": [],
@@ -21,20 +21,94 @@
   "equity_curve": [
     {
       "date": "2026-08-19",
-      "cash": 20000,
+      "cash": 1000000,
       "market_value": 0,
-      "equity": 20000,
+      "equity": 1000000,
       "daily_return": 0.0,
       "cumulative_return": 0.0,
       "benchmark_close": 104.9,
-      "benchmark_equity": 20000.0,
+      "benchmark_equity": 1000000.0,
       "benchmark_return": 0.0,
       "excess_return": 0.0,
+      "drawdown": 0.0
+    },
+    {
+      "date": "2026-08-20",
+      "cash": 1000000,
+      "market_value": 0,
+      "equity": 1000000,
+      "daily_return": 0.0,
+      "cumulative_return": 0.0,
+      "benchmark_close": 103.1,
+      "benchmark_equity": 982878.93,
+      "benchmark_return": -0.017121,
+      "excess_return": 0.017121,
+      "drawdown": 0.0
+    },
+    {
+      "date": "2026-08-21",
+      "cash": 1000000,
+      "market_value": 0,
+      "equity": 1000000,
+      "daily_return": 0.0,
+      "cumulative_return": 0.0,
+      "benchmark_close": 104.65,
+      "benchmark_equity": 997616.78,
+      "benchmark_return": -0.002383,
+      "excess_return": 0.002383,
+      "drawdown": 0.0
+    },
+    {
+      "date": "2026-08-25",
+      "cash": 1000000,
+      "market_value": 0,
+      "equity": 1000000,
+      "daily_return": 0.0,
+      "cumulative_return": 0.0,
+      "benchmark_close": 104.4,
+      "benchmark_equity": 995233.56,
+      "benchmark_return": -0.004766,
+      "excess_return": 0.004766,
+      "drawdown": 0.0
+    },
+    {
+      "date": "2026-08-26",
+      "cash": 1000000,
+      "market_value": 0,
+      "equity": 1000000,
+      "daily_return": 0.0,
+      "cumulative_return": 0.0,
+      "benchmark_close": 104.4,
+      "benchmark_equity": 995233.56,
+      "benchmark_return": -0.004766,
+      "excess_return": 0.004766,
+      "drawdown": 0.0
+    },
+    {
+      "date": "2026-08-27",
+      "cash": 1000000,
+      "market_value": 0,
+      "equity": 1000000,
+      "daily_return": 0.0,
+      "cumulative_return": 0.0,
+      "benchmark_close": 106.05,
+      "benchmark_equity": 1010962.82,
+      "benchmark_return": 0.010963,
+      "excess_return": -0.010963,
       "drawdown": 0.0
     }
   ],
   "processed_runs": [
     "open:2026-08-20",
-    "close-and-plan:2026-08-19"
+    "close-and-plan:2026-08-19",
+    "close-and-plan:2026-08-20",
+    "open:2026-08-24",
+    "close-and-plan:2026-08-21",
+    "open:2026-08-25",
+    "close-and-plan:2026-08-25",
+    "open:2026-08-26",
+    "open:2026-08-27",
+    "close-and-plan:2026-08-26",
+    "close-and-plan:2026-08-27"
   ]
 }
