@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Paper Trading v8.5 — 2026-08-26</title>
+    <title>Paper Trading v8.5 — 2026-08-27</title>
     <meta name="description" content="TW Stocker v8.5 Paper Trading 實時績效追蹤">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <style>
@@ -92,7 +92,7 @@
     <h1>📈 Paper Trading v8.5</h1>
     <p class="subtitle">
         <span class="badge badge-live">● LIVE</span>
-        起始日 2026-08-20 | 更新 2026-08-26 | 初始資金 200,000 | 保留本金 10%，其餘投入
+        起始日 2026-08-20 | 更新 2026-08-27 | 初始資金 200,000 | 保留本金 10%，其餘投入
     </p>
 
     <div class="metrics">
@@ -106,7 +106,7 @@
         </div>
         <div class="metric">
             <div class="label">年化報酬</div>
-            <div class="value green">+138.0%</div>
+            <div class="value green">+115.0%</div>
         </div>
         <div class="metric">
             <div class="label">最大回撤</div>
@@ -190,17 +190,17 @@
             
         <tr>
             <td><b>2059</b></td>
-            <td>14510.0</td>
-            <td>17701.0</td>
-            <td>12116.8</td>
-            <td>2026-08-27</td>
+            <td>14459.0</td>
+            <td>16627.8</td>
+            <td>13302.3</td>
+            <td>2026-08-28</td>
         </tr>
         <tr>
             <td><b>8039</b></td>
             <td>320.5</td>
-            <td>416.9</td>
-            <td>248.2</td>
-            <td>2026-08-27</td>
+            <td>368.6</td>
+            <td>294.9</td>
+            <td>2026-08-28</td>
         </tr>
         </table>
     </div>
@@ -224,10 +224,10 @@ const ctx = document.getElementById('equityChart').getContext('2d');
 new Chart(ctx, {
     type: 'line',
     data: {
-        labels: ["2026-08-20", "2026-08-21", "2026-08-24", "2026-08-25", "2026-08-26"],
+        labels: ["2026-08-20", "2026-08-21", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27"],
         datasets: [{
             label: 'Paper Trading 權益',
-            data: [200000, 200000, 197752.0, 200718.0, 205478.0],
+            data: [200000, 200000, 197752.0, 200718.0, 205478.0, 205478.0],
             borderColor: '#60a5fa',
             backgroundColor: 'rgba(96, 165, 250, 0.1)',
             fill: true,
@@ -236,7 +236,7 @@ new Chart(ctx, {
             borderWidth: 2,
         }, {
             label: '初始資金',
-            data: [200000, 200000, 200000, 200000, 200000],
+            data: [200000, 200000, 200000, 200000, 200000, 200000],
             borderColor: '#475569',
             borderDash: [5, 5],
             fill: false,
