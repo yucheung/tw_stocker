@@ -56,16 +56,16 @@
   },
   "pending_orders": [
     {
-      "ticker": "2059",
-      "entry": 14459.0,
-      "tp": 16627.85,
-      "sl": 13302.28,
-      "reference_close": 14459.0,
+      "ticker": "8039",
+      "entry": 343.5,
+      "tp": 395.025,
+      "sl": 316.02,
+      "reference_close": 343.5,
       "atr": null,
       "gap_limit_atr": 1.5,
-      "execution_date": "2026-08-28",
+      "execution_date": "2026-09-01",
       "max_hold_days": 20,
-      "signal_date": "2026-08-27",
+      "signal_date": "2026-08-31",
       "rank": 2,
       "position_size": 0.1,
       "regime_scale": 1.0,
@@ -77,16 +77,16 @@
       "action": "BUY"
     },
     {
-      "ticker": "8039",
-      "entry": 320.5,
-      "tp": 368.575,
-      "sl": 294.86,
-      "reference_close": 320.5,
+      "ticker": "3406",
+      "entry": 917.0,
+      "tp": 1054.55,
+      "sl": 843.64,
+      "reference_close": 917.0,
       "atr": null,
       "gap_limit_atr": 1.5,
-      "execution_date": "2026-08-28",
+      "execution_date": "2026-09-01",
       "max_hold_days": 20,
-      "signal_date": "2026-08-27",
+      "signal_date": "2026-08-31",
       "rank": 3,
       "position_size": 0.1,
       "regime_scale": 1.0,
@@ -138,6 +138,13 @@
     {
       "date": "2026-08-27",
       "equity": 205478.0,
+      "capital": 131341.0,
+      "n_positions": 5,
+      "n_closed_today": 0
+    },
+    {
+      "date": "2026-08-31",
+      "equity": 207552.0,
       "capital": 131341.0,
       "n_positions": 5,
       "n_closed_today": 0
@@ -214,6 +221,18 @@
         "3008",
         "3443",
         "2301"
+      ]
+    },
+    {
+      "date": "2026-08-31",
+      "tickers": [
+        "6213",
+        "8039",
+        "3406",
+        "3008",
+        "2059",
+        "2426",
+        "6805"
       ]
     }
   ],
@@ -458,6 +477,28 @@
       "limit_price": 320.5,
       "open_price": null,
       "status": "CANCELLED_NO_OPEN_PRICE",
+      "fill_price": null
+    },
+    {
+      "order_id": "2026-08-27:2059:buy",
+      "ticker": "2059",
+      "signal_date": "2026-08-27",
+      "execution_date": "2026-08-28",
+      "event_time": "2026-08-31T09:30:00+08:00",
+      "limit_price": 14459.0,
+      "open_price": null,
+      "status": "CANCELLED_EXPIRED",
+      "fill_price": null
+    },
+    {
+      "order_id": "2026-08-27:8039:buy",
+      "ticker": "8039",
+      "signal_date": "2026-08-27",
+      "execution_date": "2026-08-28",
+      "event_time": "2026-08-31T09:30:00+08:00",
+      "limit_price": 320.5,
+      "open_price": null,
+      "status": "CANCELLED_EXPIRED",
       "fill_price": null
     }
   ]
