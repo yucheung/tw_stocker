@@ -1,7 +1,7 @@
 {
   "start_date": "2026-08-20",
   "initial_capital": 200000,
-  "capital": 83214.16664999998,
+  "capital": 101784.37143399999,
   "positions": {
     "6213": {
       "entry": 509.0,
@@ -9,7 +9,7 @@
       "sl": 416.225,
       "entry_date": "2026-08-24",
       "shares": 39,
-      "day_count": 4,
+      "day_count": 5,
       "max_hold_days": 20,
       "entry_rank": 2
     },
@@ -19,7 +19,7 @@
       "sl": 4282.5,
       "entry_date": "2026-08-24",
       "shares": 3,
-      "day_count": 4,
+      "day_count": 5,
       "max_hold_days": 20,
       "entry_rank": 3
     },
@@ -29,7 +29,7 @@
       "sl": 411.275,
       "entry_date": "2026-08-24",
       "shares": 38,
-      "day_count": 4,
+      "day_count": 5,
       "max_hold_days": 20,
       "entry_rank": 6
     },
@@ -39,19 +39,9 @@
       "sl": 227.4832,
       "entry_date": "2026-08-25",
       "shares": 27,
-      "day_count": 3,
+      "day_count": 4,
       "max_hold_days": 20,
       "entry_rank": 5
-    },
-    "8039": {
-      "entry": 328.0,
-      "tp": 377.2,
-      "sl": 301.76,
-      "entry_date": "2026-09-01",
-      "shares": 62,
-      "day_count": 1,
-      "max_hold_days": 20,
-      "entry_rank": 2
     },
     "3406": {
       "entry": 970.0,
@@ -59,7 +49,7 @@
       "sl": 815.2,
       "entry_date": "2026-09-02",
       "shares": 21,
-      "day_count": 0,
+      "day_count": 1,
       "max_hold_days": 20,
       "entry_rank": 1
     },
@@ -69,12 +59,34 @@
       "sl": 6292.9881000000005,
       "entry_date": "2026-09-02",
       "shares": 2,
-      "day_count": 0,
+      "day_count": 1,
       "max_hold_days": 20,
       "entry_rank": 3
     }
   },
-  "pending_orders": [],
+  "pending_orders": [
+    {
+      "ticker": "2455",
+      "entry": 525.0,
+      "tp": 638.3,
+      "sl": 440.025,
+      "reference_close": 525.0,
+      "atr": 28.325,
+      "gap_limit_atr": 1.5,
+      "execution_date": "2026-09-04",
+      "max_hold_days": 20,
+      "signal_date": "2026-09-03",
+      "rank": 3,
+      "position_size": 0.1,
+      "regime_scale": 1.0,
+      "tp_sl_mode": "atr",
+      "tp_atr_mult": 4.0,
+      "sl_atr_mult": 3.0,
+      "tp_pct": 0.15,
+      "sl_pct": 0.08,
+      "action": "BUY"
+    }
+  ],
   "closed_trades": [
     {
       "ticker": "3008",
@@ -86,6 +98,18 @@
       "reason": "TP",
       "entry_date": "2026-08-25",
       "exit_date": "2026-09-01",
+      "days_held": 2
+    },
+    {
+      "ticker": "8039",
+      "entry": 328.0,
+      "exit": 301.76,
+      "shares": 62,
+      "pnl": -1795.0,
+      "pnl_pct": -8.0,
+      "reason": "SL",
+      "entry_date": "2026-09-01",
+      "exit_date": "2026-09-03",
       "days_held": 2
     }
   ],
@@ -152,6 +176,13 @@
       "capital": 83214.0,
       "n_positions": 7,
       "n_closed_today": 0
+    },
+    {
+      "date": "2026-09-03",
+      "equity": 199926.0,
+      "capital": 101784.0,
+      "n_positions": 6,
+      "n_closed_today": 1
     }
   ],
   "daily_signals": [
@@ -261,6 +292,18 @@
         "6213",
         "8039",
         "2455"
+      ]
+    },
+    {
+      "date": "2026-09-03",
+      "tickers": [
+        "3406",
+        "3008",
+        "2455",
+        "2426",
+        "8039",
+        "6213",
+        "2615"
       ]
     }
   ],
