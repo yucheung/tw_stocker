@@ -1649,9 +1649,20 @@ def run_close_and_plan(
         save_state_atomic(state, data_dir=d)
         export_ledgers(state, data_dir=d)
 
-        if planned_count > 0:
-            print(f"✅ Close-and-plan gap backfilled for {today_str}: {planned_count} new orders planned.")
-            if notify:
+        # F3 (docs/REVIEW-codex-r3-20260907.md): _resolve_and_plan_orders()
+        # clears today_str from planning_gaps whenever a source was found
+        # and processed, regardless of how many candidates it produced —
+        # a legitimate zero-signal day is a resolved gap, not an unresolved
+        # one. Gate the message on whether the gap is still open, not on
+        # planned_count, so "source found but 0 signals" and "no source
+        # found at all" are no longer reported identically.
+        gap_resolved = today_str not in state.get("planning_gaps", [])
+        if gap_resolved:
+            if planned_count > 0:
+                print(f"✅ Close-and-plan gap backfilled for {today_str}: {planned_count} new orders planned.")
+            else:
+                print(f"✅ Close-and-plan gap resolved for {today_str}: source found, 0 signals (legitimate zero-signal day).")
+            if notify and planned_count > 0:
                 strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
                 strat_cfg = get_strategy_config(strat_id)
                 strat_name = state.get("config", {}).get("name") or strat_cfg.get("name") or strat_id
