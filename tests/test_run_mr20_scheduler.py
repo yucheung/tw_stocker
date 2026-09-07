@@ -17,6 +17,7 @@ a `PYTHON` env var override) so the control flow can be exercised without
 network access, real market data, or the real trading calendar.
 """
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -326,3 +327,93 @@ class TestCheckProcessedRunsWiredIntoScheduler:
         result = _run("close", {"FAKE_CHECK_RC": "0"}, fake_bin)
         assert result.returncode == 0
         assert "check_processed_runs" in (result.stdout + result.stderr) or "Daily Monitor" in result.stdout
+
+
+def _git(args, cwd, **kwargs):
+    return subprocess.run(
+        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True, **kwargs
+    )
+
+
+@pytest.fixture
+def fake_bin_git(fake_bin, tmp_path):
+    """`fake_bin`'s workdir turned into a real git checkout with a bare
+    "origin" remote, so the delivery step (run_mr20.sh Step 4) has an actual
+    git repo to commit/push to — this is what a real cron host checkout
+    looks like, unlike the plain `fake_bin` tmp dir used by every other test
+    in this file (docs/REVIEW-opus-r5-20260907.md §2.2: the real producer of
+    artifacts/mr20/*.json is this script, on a git checkout, not any CI job).
+    """
+    python_path, poison_date_dir, workdir, script_path = fake_bin
+
+    remote = tmp_path / "origin.git"
+    remote.mkdir()
+    _git(["init", "--bare", "-b", "main", str(remote)], cwd=tmp_path)
+
+    _git(["init", "-b", "main", str(workdir)], cwd=tmp_path)
+    _git(["config", "user.email", "test@example.com"], cwd=workdir)
+    _git(["config", "user.name", "Test"], cwd=workdir)
+    _git(["remote", "add", "origin", str(remote)], cwd=workdir)
+    (workdir / "README.md").write_text("seed\n")
+    _git(["add", "README.md"], cwd=workdir)
+    _git(["commit", "-m", "seed"], cwd=workdir)
+    _git(["push", "origin", "HEAD:main"], cwd=workdir)
+
+    return python_path, poison_date_dir, workdir, script_path, remote
+
+
+class TestOrderArtifactDelivery:
+    """R4-3 交付端 (docs/REVIEW-opus-r5-20260907.md §2.2): the real producer
+    of artifacts/mr20/*.json is this scheduler script running on a cron
+    host git checkout — delivery (commit + push) must happen here, not in
+    an unrelated CI workflow that never runs the strategy."""
+
+    def test_delivers_new_orders_file_to_git_remote_on_success(self, fake_bin_git):
+        python_path, poison_date_dir, workdir, script_path, remote = fake_bin_git
+        result = _run("close", {}, (python_path, poison_date_dir, workdir, script_path))
+        assert result.returncode == 0
+        assert "Delivered" in result.stdout
+
+        orders_path = workdir / "artifacts/mr20/orders_mr20_20990105.json"
+        assert orders_path.exists()
+
+        remote_head = _git(["rev-parse", "main"], cwd=remote).stdout.strip()
+        local_head = _git(["rev-parse", "HEAD"], cwd=workdir).stdout.strip()
+        assert remote_head == local_head
+
+        shown = _git(
+            ["show", f"{remote_head}:artifacts/mr20/orders_mr20_20990105.json"], cwd=remote
+        ).stdout
+        assert shown == orders_path.read_text()
+
+    def test_no_delivery_when_strategy_generation_failed(self, fake_bin_git):
+        python_path, poison_date_dir, workdir, script_path, remote = fake_bin_git
+        result = _run(
+            "close", {"FAKE_STRATEGY_RC": "1"}, (python_path, poison_date_dir, workdir, script_path)
+        )
+        assert result.returncode != 0
+        assert "Skipping delivery" in result.stdout
+
+        remote_head = _git(["rev-parse", "main"], cwd=remote).stdout.strip()
+        seed_head = _git(["rev-parse", "HEAD"], cwd=workdir).stdout.strip()
+        # No orders file was produced — nothing new to commit, remote must
+        # still be at the seed commit pushed by the fixture.
+        assert remote_head == seed_head
+
+    def test_gracefully_skips_when_not_a_git_checkout(self, fake_bin):
+        # `fake_bin` (no git init at all) — the delivery step must not
+        # crash the script when the checkout isn't a git repo.
+        result = _run("close", {}, fake_bin)
+        assert result.returncode == 0
+        assert "Skipping delivery" in result.stdout
+
+    def test_push_failure_still_fails_run_but_settlement_already_ran(self, fake_bin_git):
+        python_path, poison_date_dir, workdir, script_path, remote = fake_bin_git
+        # Break the remote after the fixture's seed push so the delivery
+        # step's push (and its fetch/rebase retry) both fail.
+        shutil.rmtree(remote)
+
+        result = _run("close", {}, (python_path, poison_date_dir, workdir, script_path))
+        assert result.returncode != 0
+        assert "Step 2: Close-and-Plan" in result.stdout
+        assert "Failed to push" in result.stderr
