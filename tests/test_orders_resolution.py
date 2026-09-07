@@ -202,6 +202,43 @@ class TestCloseAndPlanGapBackfill:
         assert len(state["equity_curve"]) == 1
         assert state["pending_orders"] == []
 
+    def test_legitimate_zero_signal_backfill_resolves_gap_without_false_unresolved_message(self, temp_dir, capsys):
+        # docs/REVIEW-codex-r3-20260907.md F3: a late explicit orders file
+        # that legitimately contains zero buy candidates (source found, no
+        # signal) still clears planning_gaps inside _resolve_and_plan_orders
+        # (no candidates -> plan_orders no-ops -> gap removed), but the
+        # caller used to gate its success message on planned_count > 0 and
+        # print "still unresolved (no orders found)" even though the gap
+        # was already gone from state. The message must reflect whether the
+        # gap is actually still open, not whether any orders were planned.
+        sim.init_simulation(data_dir=temp_dir, capital=1_000_000.0, strategy="mr20")
+
+        with patch.object(sim, "fetch_market_bars", return_value={}), \
+             patch.object(sim, "fetch_benchmark_close", return_value=150.0), \
+             patch.object(sim, "resolve_orders_file", return_value=None):
+            sim.run_close_and_plan(data_dir=temp_dir, orders_path=None, as_of="2026-09-02")
+
+        state = sim.load_state(temp_dir)
+        assert state.get("planning_gaps") == ["2026-09-02"]
+
+        empty_file = temp_dir / "orders_mr20_empty_catchup.json"
+        empty_file.write_text(json.dumps({"orders": []}), encoding="utf-8")
+
+        capsys.readouterr()
+        with patch.object(sim, "fetch_market_bars", return_value={}), \
+             patch.object(sim, "fetch_benchmark_close", return_value=150.0):
+            sim.run_close_and_plan(
+                data_dir=temp_dir,
+                orders_path=empty_file,
+                as_of="2026-09-02",
+            )
+
+        captured = capsys.readouterr()
+        state = sim.load_state(temp_dir)
+        assert state.get("planning_gaps", []) == []
+        assert state["pending_orders"] == []
+        assert "still unresolved" not in captured.out
+
     def test_gap_rerun_with_missing_explicit_path_raises_and_keeps_gap(self, temp_dir):
         sim.init_simulation(data_dir=temp_dir, capital=1_000_000.0, strategy="mr20")
 
