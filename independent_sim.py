@@ -492,12 +492,21 @@ def _is_dateless_empty_orders(path: Path) -> bool:
     lookup in resolve_orders_file: the broad content-scan fallback has no
     independent date anchor and must not apply this leniency
     (docs/REVIEW-codex-r4-20260907.md R4-3 / docs/REVIEW-codex-r2-20260907.md F5).
+
+    A `diagnostic.signal_date` present in the file means it is NOT dateless
+    — it is a stale/leftover empty-orders artifact for some other day that
+    happens to sit at today's conventional filename, and must be rejected
+    rather than treated as a legitimate zero-signal day
+    (docs/REVIEW-opus-r5-20260907.md §2.1).
     """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return False
-    return isinstance(data, dict) and data.get("orders") == []
+    if not (isinstance(data, dict) and data.get("orders") == []):
+        return False
+    diag = data.get("diagnostic") or {}
+    return not diag.get("signal_date")
 
 
 def resolve_orders_file(
