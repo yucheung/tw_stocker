@@ -72,7 +72,7 @@ class TestRecomputeTpSl(unittest.TestCase):
 class TestBuyLimitLifecycle(unittest.TestCase):
     """PLAN_simulation.md Task 4: 訊號日收盤限價，次日開盤 <= 限價成交，否則 09:30 撤單。"""
 
-    def _run_open(self, bar_open, limit_price=150.0, bar_low=148.0, bar_high=155.0, atr=None, bar_date=None):
+    def _run_open(self, bar_open, limit_price=150.0, bar_low=148.0, bar_high=155.0, atr=None, bar_date=None, regime_scale=1.0):
         today = pt.date.today().isoformat()
         if bar_date is None:
             bar_date = today
@@ -92,7 +92,7 @@ class TestBuyLimitLifecycle(unittest.TestCase):
                 'execution_date': None,
                 'max_hold_days': 20,
                 'position_size': 0.10,
-                'regime_scale': 1.0,
+                'regime_scale': regime_scale,
                 'tp_atr_mult': None,
                 'sl_atr_mult': None,
                 'tp_pct': None,
@@ -181,6 +181,12 @@ class TestBuyLimitLifecycle(unittest.TestCase):
         pos = data['positions'].get('3231')
         self.assertIsNotNone(pos)
         self.assertAlmostEqual(pos['entry'], 130.0)
+
+    def test_regime_scale_zero_preserved_as_zero_exposure(self):
+        # regime_scale=0 是合法的「大盤不進場」訊號，不得被 <=0 檢查覆寫成 1.0 滿倉
+        data = self._run_open(149.0, limit_price=150.0, regime_scale=0.0)
+        self.assertNotIn('3231', data['positions'])
+        self.assertEqual(data['order_events'][-1]['status'], 'CANCELLED_INSUFFICIENT_CASH')
 
     def test_due_order_never_persists_to_pending(self):
         # 不論成交或撤單，執行過的 due order 都不得留在 pending_orders

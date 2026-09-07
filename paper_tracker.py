@@ -627,8 +627,8 @@ def update_tracker(data):
             regime_scale = _opt_float(sig.get('regime_scale'), 1.0)
             if position_size <= 0:
                 position_size = 0.07
-            if regime_scale <= 0:
-                regime_scale = 1.0
+            if regime_scale < 0:
+                regime_scale = 0.0
             available_cash = max(projected_capital - reserve_cash, 0)
             trade_amount = min(projected_equity * position_size * regime_scale, available_cash)
             shares = int(trade_amount / (fill_price * (1 + buy_cost_rate)))
