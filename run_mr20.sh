@@ -102,22 +102,28 @@ else
     EXIT1=$?
 fi
 
-if [ "$EXIT1" -ne 0 ] || [ ! -f "$ORDERS" ] || [ ! -s "$ORDERS" ]; then
-    echo ""
-    echo "❌ (No orders generated or strategy failed — skipping close-and-plan)" >&2
-    echo "=== Status ==="
-    "$PYTHON" independent_sim.py status -s mr20 --data-dir "$DATA_DIR"
-    exit 1
-fi
+# 拒絕不可信的新單（產單失敗或 freshness 未過）不得連帶擋掉當日既有部位
+# 的結算（SL/TP/TIME、equity mark）。FAILED=1 時不把 --orders 傳給
+# close-and-plan，改交由其 auto-discovery 處理：找不到當日訊號檔會記錄
+# planning_gaps 而非誤用不可信/過期資料，settlement 仍照常完成，最後才回
+# 報失敗 (docs/REVIEW-codex-r4-20260907.md R4-2)。
+FAILED=0
+CLOSE_PLAN_ORDERS_ARGS=(--orders "$ORDERS")
 
-EXPECTED_EXEC=$("$PYTHON" -c "
+if [ "$EXIT1" -ne 0 ] || [ ! -f "$ORDERS" ] || [ ! -s "$ORDERS" ]; then
+    FAILED=1
+    CLOSE_PLAN_ORDERS_ARGS=()
+    echo ""
+    echo "❌ (No orders generated or strategy failed — settlement will still run, planning gap recorded)" >&2
+else
+    EXPECTED_EXEC=$("$PYTHON" -c "
 from independent_sim import get_next_trading_day
 print(get_next_trading_day('$D'))
 ")
 
-# Freshness gate: verify the orders file's signal_date matches $D AND
-# execution_date matches the calendar-derived next trading day.
-if FRESHNESS_OK=$("$PYTHON" -c "
+    # Freshness gate: verify the orders file's signal_date matches $D AND
+    # execution_date matches the calendar-derived next trading day.
+    if FRESHNESS_OK=$("$PYTHON" -c "
 import json, sys
 try:
     data = json.load(open('$ORDERS'))
@@ -135,20 +141,20 @@ except Exception as e:
     print(f'PARSE_ERROR: {e}', file=sys.stderr)
     sys.exit(1)
 " 2>&1); then
-    echo "✅ Freshness gate passed: $FRESHNESS_OK"
-else
-    echo "❌ Freshness gate FAILED: $FRESHNESS_OK" >&2
-    echo "(Refusing to process stale orders — skipping close-and-plan)" >&2
-    echo "=== Status ==="
-    "$PYTHON" independent_sim.py status -s mr20 --data-dir "$DATA_DIR"
-    exit 1
+        echo "✅ Freshness gate passed: $FRESHNESS_OK"
+    else
+        FAILED=1
+        CLOSE_PLAN_ORDERS_ARGS=()
+        echo "❌ Freshness gate FAILED: $FRESHNESS_OK" >&2
+        echo "(Refusing to trust these orders — settlement will still run, planning gap recorded)" >&2
+    fi
 fi
 
 echo ""
 echo "=== Step 2: Close-and-Plan ($D) ==="
 "$PYTHON" independent_sim.py close-and-plan -s mr20 \
     --data-dir "$DATA_DIR" \
-    --orders "$ORDERS" \
+    "${CLOSE_PLAN_ORDERS_ARGS[@]}" \
     --as-of "$D"
 
 echo ""
@@ -161,5 +167,9 @@ echo "=== Step 3: Daily Monitor (check_processed_runs) ==="
 # 存在卻從未被排程實際呼叫 (docs/REVIEW-codex-r3-20260907.md F4)。
 if ! "$PYTHON" check_processed_runs.py -s mr20 --data-dir "$DATA_DIR" --date "$D"; then
     echo "❌ Daily monitor detected missing processed_runs / unresolved planning gap for $D" >&2
+    FAILED=1
+fi
+
+if [ "$FAILED" -ne 0 ]; then
     exit 1
 fi
