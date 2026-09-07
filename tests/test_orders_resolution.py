@@ -69,6 +69,28 @@ class TestResolveOrdersFile:
     def test_no_matching_file_returns_none(self, temp_dir):
         assert sim.resolve_orders_file("mr20", "2026-09-02", orders_dir=temp_dir) is None
 
+    def test_fast_path_matches_dateless_empty_orders_at_conventional_filename(self, temp_dir):
+        # mr20_strategy emits a bare {"orders": []} (no diagnostic/signal_date
+        # at all) when it has no data to derive a signal date from
+        # (strategy/mr20_strategy.py generate_mr20_orders). Saved at the
+        # conventional filename for today, this is a legitimate zero-signal
+        # day and must still be auto-discovered — the filename itself already
+        # encodes the expected date (docs/REVIEW-codex-r4-20260907.md R4-3).
+        f = temp_dir / "orders_mr20_20260902.json"
+        f.write_text(json.dumps({"orders": []}), encoding="utf-8")
+        found = sim.resolve_orders_file("mr20", "2026-09-02", orders_dir=temp_dir)
+        assert found == f
+
+    def test_glob_fallback_does_not_match_dateless_empty_orders_under_unconventional_name(self, temp_dir):
+        # The dateless-empty leniency only applies to the fast-path filename
+        # (which itself is anchored to today_str) — a same-shaped file under
+        # an arbitrary name has no independent date anchor and must not be
+        # picked up by the broad content-scan fallback.
+        f = temp_dir / "orders_mr20_stale_leftover.json"
+        f.write_text(json.dumps({"orders": []}), encoding="utf-8")
+        found = sim.resolve_orders_file("mr20", "2026-09-02", orders_dir=temp_dir)
+        assert found is None
+
 
 class TestCloseAndPlanMissingOrdersStateMachine:
     def test_explicit_orders_path_missing_raises_and_persists_nothing(self, temp_dir):

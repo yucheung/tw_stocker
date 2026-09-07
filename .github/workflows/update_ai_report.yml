@@ -133,6 +133,11 @@ jobs:
 
           git add stock_report.html backtest_chart.png paper_trading.html paper_equity.json || true
           git add -u artifacts || true
+          # `-u` only stages modifications to already-tracked files — it can
+          # never pick up a brand-new order artifact. artifacts/mr20/*.json
+          # is not gitignored (unlike top-level artifacts/*.json), so list
+          # its delivery path explicitly (docs/REVIEW-codex-r4-20260907.md R4-3).
+          git add artifacts/mr20 || true
 
           if git diff --cached --quiet; then
             echo "No changes"
@@ -210,6 +215,8 @@ jobs:
 
           git add factor_search_results.csv ablation_results.csv backtest_chart.png || true
           git add -u artifacts || true
+          # See the equivalent comment in the generate-report job above.
+          git add artifacts/mr20 || true
 
           if git diff --cached --quiet; then
             echo "No changes"
