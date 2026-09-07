@@ -419,6 +419,86 @@ class TestExtractSignalsFromOrdersFreshness(unittest.TestCase):
         self.assertEqual(signals[0]['signal_date'], today)
 
 
+class TestExtractSignalsFromReportStaleFallbackBoundary(unittest.TestCase):
+    """docs/REVIEW-codex-r2-20260907.md F3: extract_signals_from_report()
+    (the actual upstream entry point paper_tracker.update_tracker calls,
+    not just extract_signals_from_orders()) must distinguish three states —
+    no orders file at all ("缺檔"), a fresh orders file with zero buy
+    signals ("空單"), and an orders file whose content is for a different
+    day ("過期") — and only fall back to parsing the un-dated
+    stock_report.html when there is genuinely no source (缺檔). A rejected
+    stale source or a legitimate empty source must never fall through to
+    the HTML parser."""
+
+    def setUp(self):
+        self.orig_cwd = os.getcwd()
+        self.tmp_cwd = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.tmp_cwd, 'artifacts'))
+        os.chdir(self.tmp_cwd)
+
+    def tearDown(self):
+        os.chdir(self.orig_cwd)
+        shutil.rmtree(self.tmp_cwd, ignore_errors=True)
+
+    def _write_html_with_buy_row(self, ticker='2059'):
+        html = (
+            f"<table><tr><td>{ticker}</td><td>85.5</td><td>100.0</td>"
+            "<td>建議買進</td><td>停利: <span>120.0</span> 停損: <span>90.0</span></td></tr></table>"
+        )
+        with open('stock_report.html', 'w', encoding='utf-8') as f:
+            f.write(html)
+
+    def _write_orders_file(self, name, signal_date, orders=None):
+        path = os.path.join('artifacts', name)
+        if orders is None:
+            orders = [{
+                'side': 'buy',
+                'ticker': '2059',
+                'signal_date': signal_date,
+                'execution_date': signal_date,
+                'limit_price': 100.0,
+                'reference_close': 100.0,
+                'tp_price': 120.0,
+                'sl_price': 90.0,
+            }]
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'orders': orders}, f)
+        return path
+
+    def test_no_orders_file_falls_back_to_html(self):
+        # 缺檔: no artifacts/orders_*.json at all — the only legitimate
+        # case where the HTML fallback may be used.
+        self._write_html_with_buy_row(ticker='2059')
+
+        signals = pt.extract_signals_from_report()
+
+        self.assertEqual(len(signals), 1)
+        self.assertEqual(signals[0]['ticker'], '2059')
+
+    def test_stale_orders_file_does_not_fall_back_to_html(self):
+        # 過期: an orders file exists but its content signal_date is not
+        # today — rejected, and must stay rejected rather than silently
+        # picking up an undated HTML row instead.
+        self._write_orders_file('orders_20200101.json', '2020-01-01')
+        self._write_html_with_buy_row(ticker='2059')
+
+        signals = pt.extract_signals_from_report()
+
+        self.assertEqual(signals, [])
+
+    def test_fresh_empty_orders_file_does_not_fall_back_to_html(self):
+        # 空單: a fresh, valid orders file with zero buy signals is a
+        # legitimate "no trade today" result — not license to fall back to
+        # the undated HTML source.
+        today = pt.date.today().isoformat()
+        self._write_orders_file(f"orders_{today.replace('-', '')}.json", today, orders=[])
+        self._write_html_with_buy_row(ticker='2059')
+
+        signals = pt.extract_signals_from_report()
+
+        self.assertEqual(signals, [])
+
+
 class TestNewPendingOrderPreservesSourceSignalDate(unittest.TestCase):
     """astro P0-3 / docs/REVIEW-opus-20260907.md §3.2 步驟4:
     paper_tracker.py:714 過去無條件把 signal_date 覆寫成 today，使舊訂單
