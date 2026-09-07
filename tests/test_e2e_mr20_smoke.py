@@ -103,14 +103,17 @@ def test_orders_to_plan_to_open_lands_terminal_event(temp_dir):
     # open already ran above; run its close-and-plan (settle + plan next,
     # no new orders) to complete the pair and confirm the daily check goes
     # green for a genuinely fully-processed trading day.
+    empty_orders_file = temp_dir / "orders_mr20_no_new_signal.json"
+    empty_orders_file.write_text(json.dumps({"orders": []}), encoding="utf-8")
     with patch_market_bars(sim, {"3037": {"date": EXEC_DATE, "open": 960.0, "high": 980.0, "low": 955.0, "close": 970.0}}), \
          patch_benchmark_close(sim, 150.0):
         sim.run_close_and_plan(
             data_dir=temp_dir,
-            # Explicit nonexistent path avoids the auto-discovery fallback
-            # (which searches the real repo's artifacts/mr20/ dir and would
-            # otherwise pick up production orders_mr20_20260903.json).
-            orders_path=temp_dir / "no_such_orders_file.json",
+            # Explicit empty-orders file (rather than orders_path=None) avoids
+            # the auto-discovery fallback, which searches the real repo's
+            # artifacts/mr20/ dir and would otherwise pick up production
+            # orders_mr20_20260903.json.
+            orders_path=empty_orders_file,
             as_of=EXEC_DATE,
         )
 

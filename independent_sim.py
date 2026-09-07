@@ -442,6 +442,57 @@ def load_orders(orders_path: Path | str, calendar: Optional[xcals.ExchangeCalend
     return orders
 
 
+def _orders_signal_date(path: Path | str) -> Optional[str]:
+    """Best-effort peek at an orders artifact's signal_date without full validation."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    orders = data.get("orders") or []
+    if orders and isinstance(orders, list):
+        sig = orders[0].get("signal_date")
+        if sig:
+            return sig
+    diag = data.get("diagnostic") or {}
+    return diag.get("signal_date")
+
+
+def resolve_orders_file(
+    strat_id: str,
+    today_str: str,
+    orders_dir: Optional[Path | str] = None,
+) -> Optional[Path]:
+    """Locate the orders artifact whose *content* signal_date matches today_str.
+
+    Previously this only checked whether a filename built from today_str
+    existed, which silently mis-resolves whenever an orders file is saved
+    late or under an unexpected name (docs/REVIEW-opus-20260907.md §3.1-1).
+    This tries the conventional filename first (fast path, content-verified),
+    then falls back to scanning orders_dir for any file whose content
+    signal_date matches.
+    """
+    strat_cfg = get_strategy_config(strat_id)
+    compact_date = today_str.replace("-", "")
+    base_dir = Path(orders_dir) if orders_dir is not None else Path(strat_cfg.get("orders_dir", "artifacts"))
+    pattern = strat_cfg.get("orders_pattern", "orders_{date}.json")
+
+    fast_candidates = [base_dir / pattern.format(date=compact_date)]
+    if strat_id == DEFAULT_STRATEGY_ID:
+        fast_candidates.append(Path("artifacts") / f"orders_{compact_date}.json")
+
+    for cf in fast_candidates:
+        if cf.exists() and _orders_signal_date(cf) == today_str:
+            return cf
+
+    if base_dir.exists():
+        glob_pattern = pattern.format(date="*")
+        for cf in sorted(base_dir.glob(glob_pattern)):
+            if _orders_signal_date(cf) == today_str:
+                return cf
+
+    return None
+
+
 def select_candidates(
     orders: list[dict[str, Any]],
     held: set[str],
@@ -1509,26 +1560,24 @@ def run_close_and_plan(
     mark_equity(state, closes=closes, benchmark_close=bm_close, as_of=today_str)
 
     # 3. Plan next session orders
-    orders_file = None
+    # An explicit --orders path that doesn't exist is a hard error: the
+    # caller asked for a specific file, so silently skipping planning would
+    # hide a typo or an upstream failure behind a normal-looking "0 orders
+    # planned" run. Nothing has been persisted yet at this point, so raising
+    # here leaves the day fully retryable (docs/REVIEW-opus-20260907.md
+    # §3.2 步驟3).
     if orders_path:
         orders_file = Path(orders_path)
+        if not orders_file.exists():
+            raise FileNotFoundError(
+                f"Explicit --orders path not found: {orders_file} (as-of {today_str})"
+            )
     else:
-        compact_date = today_str.replace("-", "")
         strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
-        strat_cfg = get_strategy_config(strat_id)
-        candidate_files = [
-            Path(strat_cfg.get("orders_dir", "artifacts")) / strat_cfg.get("orders_pattern", "orders_{date}.json").format(date=compact_date),
-            Path("artifacts") / strat_id / f"orders_{strat_id}_{compact_date}.json",
-        ]
-        if strat_id == DEFAULT_STRATEGY_ID:
-            candidate_files.append(Path("artifacts") / f"orders_{compact_date}.json")
-        for cf in candidate_files:
-            if cf.exists():
-                orders_file = cf
-                break
+        orders_file = resolve_orders_file(strat_id, today_str)
 
     planned_count = 0
-    if orders_file and orders_file.exists():
+    if orders_file is not None:
         orders = load_orders(orders_file)
         held_set = set(state["positions"].keys())
         pending_set = {p["ticker"] for p in state["pending_orders"]}
@@ -1544,8 +1593,15 @@ def run_close_and_plan(
         new_pending = plan_orders(state, candidates, as_of=today_str)
         planned_count = len(new_pending)
     else:
+        # Auto-discovery found nothing: could be a legitimate day with no
+        # upstream signal, or the order-generation hop silently failed to
+        # run at all — the two are indistinguishable from here. Settlement
+        # already happened above and can't be safely re-run, so this day
+        # is still marked processed, but the gap is flagged in state for a
+        # daily check (see check_processed_runs.py) to surface separately.
         strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
-        print(f"   ℹ️ [{strat_id}] 未找到今日訂單檔，略過訂單規劃")
+        state.setdefault("planning_gaps", []).append(today_str)
+        print(f"   ⚠️ [{strat_id}] 找不到 signal_date={today_str} 的訂單檔（自動搜尋未命中），已記錄為 planning_gaps")
 
     mark_run_processed(state, run_id)
     save_state_atomic(state, data_dir=d)
