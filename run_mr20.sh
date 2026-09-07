@@ -170,6 +170,45 @@ if ! "$PYTHON" check_processed_runs.py -s mr20 --data-dir "$DATA_DIR" --date "$D
     FAILED=1
 fi
 
+echo ""
+echo "=== Step 4: Deliver Order Artifact ($D) ==="
+# 真正的 mr20 訂單產出者是這支排程腳本本身（在 cron 主機上執行），不是
+# CI workflow — update_ai_report.yml 從不呼叫 run_mr20.sh／mr20_strategy，
+# 之前把交付接在那條路上等於沒接 (docs/REVIEW-opus-r5-20260907.md §2.2)。
+# 這裡才是新訂單檔真正落地的地方，交付也接在這裡：commit + push 到
+# origin/main，讓下游（其他主機、CI）能撿到。找不到 git checkout（例如在
+# 隔離的測試 workdir 執行）時優雅略過，不影響 settlement 已完成的結果。
+if [ -f "$ORDERS" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [ -n "$(git status --porcelain -- "$ORDERS")" ]; then
+        git add "$ORDERS"
+        git -c user.email="mr20-scheduler@localhost" -c user.name="MR20 Scheduler" \
+            commit -m "chore(mr20): deliver orders_mr20_${D_COMPACT}.json ($D)" -- "$ORDERS" >/dev/null
+
+        PUSH_OK=0
+        if git push origin HEAD:main; then
+            PUSH_OK=1
+        elif git fetch --no-tags --depth=50 origin main:refs/remotes/origin/main \
+            && git rebase --autostash origin/main; then
+            if git push origin HEAD:main; then
+                PUSH_OK=1
+            fi
+        else
+            git rebase --abort >/dev/null 2>&1 || true
+        fi
+
+        if [ "$PUSH_OK" -ne 1 ]; then
+            echo "❌ Failed to push $ORDERS to origin/main — order artifact undelivered" >&2
+            FAILED=1
+        else
+            echo "✅ Delivered $ORDERS to origin/main"
+        fi
+    else
+        echo "  $ORDERS already delivered (no working-tree changes)"
+    fi
+else
+    echo "  Skipping delivery: $ORDERS missing or $SCRIPT_DIR is not a git checkout"
+fi
+
 if [ "$FAILED" -ne 0 ]; then
     exit 1
 fi
