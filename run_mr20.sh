@@ -19,8 +19,13 @@
 # expectations before close-and-plan runs; stale/mismatched orders are
 # refused rather than silently processed.
 set -euo pipefail
-cd /root/work/tw_stocker
-export PYTHONPATH=/root/work/tw_stocker
+# Portable checkout root: wherever this script physically lives, not a
+# hardcoded path — a hardcoded `cd` here made this script (and any test
+# driving it) unable to run from any other checkout
+# (docs/REVIEW-codex-r4-20260907.md R4-4).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+export PYTHONPATH="$SCRIPT_DIR"
 PYTHON="${PYTHON:-.venv/bin/python3}"
 DATA_DIR=independent_sim_data_mr20
 

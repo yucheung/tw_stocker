@@ -130,9 +130,23 @@ FAKE_DATE_SRC = textwrap.dedent(r"""
 
 @pytest.fixture
 def fake_bin(tmp_path):
-    """A fake `$PYTHON` + a fake `date` (in PATH) that fails loudly if
-    called, to prove run_mr20.sh no longer resolves TODAY via bare `date`.
+    """An isolated run_mr20.sh checkout: the real script copied into its own
+    tmp workdir (with an `artifacts/mr20` directory precreated), plus a fake
+    `$PYTHON` + a fake `date` (in PATH) that fails loudly if called, to prove
+    run_mr20.sh no longer resolves TODAY via bare `date`.
+
+    run_mr20.sh now `cd`s to its own script directory rather than a
+    hardcoded checkout path (docs/REVIEW-codex-r4-20260907.md R4-4), so this
+    fixture runs a copy of it from a disposable tmp dir instead of touching
+    the real repo checkout's artifacts/mr20/.
     """
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    (workdir / "artifacts" / "mr20").mkdir(parents=True)
+    script_path = workdir / "run_mr20.sh"
+    script_path.write_text(SCRIPT.read_text())
+    script_path.chmod(script_path.stat().st_mode | stat.S_IEXEC)
+
     python_path = tmp_path / "fake_python3"
     python_path.write_text(FAKE_PYTHON_SRC.lstrip("\n"))
     python_path.chmod(python_path.stat().st_mode | stat.S_IEXEC)
@@ -143,19 +157,14 @@ def fake_bin(tmp_path):
     date_path.write_text(FAKE_DATE_SRC.lstrip("\n"))
     date_path.chmod(date_path.stat().st_mode | stat.S_IEXEC)
 
-    return python_path, bin_dir
+    return python_path, bin_dir, workdir, script_path
 
 
 def _run(mode, env_overrides, fake_bin):
-    python_path, poison_date_dir = fake_bin
+    python_path, poison_date_dir, workdir, script_path = fake_bin
     env = dict(os.environ)
     env["PYTHON"] = str(python_path)
     env["PATH"] = f"{poison_date_dir}:{env['PATH']}"
-    # Deliberately implausible date: run_mr20.sh writes/reads
-    # artifacts/mr20/orders_mr20_<D_COMPACT>.json in the REAL repo checkout
-    # (it hardcodes `cd /root/work/tw_stocker`), so this test touches a real
-    # path on disk. A real-looking date could collide with and destroy a
-    # genuine production artifact; 2099 never will.
     env.setdefault("FAKE_TODAY", "2099-01-05")
     env.setdefault("FAKE_NEXT_DAY", "2099-01-06")
     env.setdefault("FAKE_SESSION_RC", "0")
@@ -169,29 +178,19 @@ def _run(mode, env_overrides, fake_bin):
     )
     env.update(env_overrides)
     # ORDERS filename is derived from D_COMPACT ("%s" % D with '-' stripped);
-    # point the strategy stub at the exact path run_mr20.sh will look for.
+    # point the strategy stub at the exact path run_mr20.sh will look for,
+    # relative to the isolated workdir (run_mr20.sh cd's there first).
     d_compact = env["FAKE_TODAY"].replace("-", "")
-    real_orders_path = REPO_ROOT / f"artifacts/mr20/orders_mr20_{d_compact}.json"
-    env["FAKE_ORDERS_PATH"] = str(real_orders_path)
-    # Refuse to run against a path that already exists on disk — never
-    # delete a file this test didn't create itself.
-    if real_orders_path.exists():
-        pytest.fail(
-            f"{real_orders_path} already exists; refusing to run (would risk "
-            "deleting a real file). Pick a different FAKE_TODAY."
-        )
-    try:
-        result = subprocess.run(
-            ["bash", str(SCRIPT), mode],
-            cwd=str(REPO_ROOT),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    finally:
-        if real_orders_path.exists():
-            real_orders_path.unlink()
+    orders_path = workdir / f"artifacts/mr20/orders_mr20_{d_compact}.json"
+    env["FAKE_ORDERS_PATH"] = str(orders_path)
+    result = subprocess.run(
+        ["bash", str(script_path), mode],
+        cwd=str(workdir),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
     return result
 
 
