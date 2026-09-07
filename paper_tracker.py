@@ -180,26 +180,35 @@ def _resolve_order_limit_price(order):
     return None
 
 
-def extract_signals_from_orders():
-    """從 artifacts/orders_YYYYMMDD.json 擷取今日機器可讀訂單（買進限價單）。"""
+def _extract_signals_from_orders_status():
+    """從 artifacts/orders_YYYYMMDD.json 擷取今日機器可讀訂單，並回傳三態：
+
+    - 'no_source': 完全沒有 orders_*.json（缺檔）— 唯一允許 HTML fallback 的狀態
+    - 'stale':     檔案存在但內容 signal_date 與今日不符（過期）— 拒絕，不得 fallback
+    - 'ok':        檔案存在且內容為今日（可能為空單，即合法零訊號日）— 不得 fallback
+
+    extract_signals_from_report() 依此區分「無來源」與「拒絕來源」，只在
+    'no_source' 時才允許回退未帶日期驗證的 stock_report.html
+    (docs/REVIEW-codex-r2-20260907.md F3)。
+    """
     order_files = glob.glob('artifacts/orders_*.json')
     if not order_files:
-        return []
+        return 'no_source', []
     latest = max(order_files, key=os.path.getmtime)
     try:
         with open(latest, encoding='utf-8') as f:
             payload = json.load(f)
     except Exception as e:
         print(f"   ⚠️ orders JSON 讀取失敗: {e}")
-        return []
+        return 'no_source', []
 
     # 新鮮度檢查：mtime 最新不代表內容最新（例如人工補跑留下的舊檔）。
     # signal_date 與今日不符時視為過期，寧可略過也不得誤用舊訊號。
     today = date.today().isoformat()
     file_signal_dates = {o.get('signal_date') for o in payload.get('orders', []) if o.get('signal_date')}
     if file_signal_dates and today not in file_signal_dates:
-        print(f"   ⚠️ {latest} signal_date={sorted(file_signal_dates)} 與今日 {today} 不符（mtime 最新 ≠ 內容最新），略過")
-        return []
+        print(f"   ⚠️ {latest} signal_date={sorted(file_signal_dates)} 與今日 {today} 不符（mtime 最新 ≠ 內容最新），拒絕使用（過期，不回退 HTML）")
+        return 'stale', []
 
     signals = []
     for order in payload.get('orders', []):
@@ -249,12 +258,22 @@ def extract_signals_from_orders():
         })
     if signals:
         print(f"   📦 使用 orders JSON: {latest}")
+    return 'ok', signals
+
+
+def extract_signals_from_orders():
+    """從 artifacts/orders_YYYYMMDD.json 擷取今日機器可讀訂單（買進限價單）。"""
+    _, signals = _extract_signals_from_orders_status()
     return signals
 
+
 def extract_signals_from_report():
-    """從 stock_report.html 擷取今日買入信號。"""
-    order_signals = extract_signals_from_orders()
-    if order_signals:
+    """今日買入信號來源：orders JSON 為主，僅在完全缺檔時才回退
+    stock_report.html。過期或內容驗證後為空的 orders JSON 都是「已有來源」
+    的明確結果，不得被未經日期驗證的 HTML fallback 靜默覆蓋
+    (docs/REVIEW-codex-r2-20260907.md F3)。"""
+    status, order_signals = _extract_signals_from_orders_status()
+    if status != 'no_source':
         return order_signals
 
     report_path = 'stock_report.html'
