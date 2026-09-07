@@ -503,8 +503,12 @@ class TestExtractSignalsFromReportStaleFallbackBoundary(unittest.TestCase):
         os.chdir(self.orig_cwd)
         shutil.rmtree(self.tmp_cwd, ignore_errors=True)
 
-    def _write_html_with_buy_row(self, ticker='2059'):
+    def _write_html_with_buy_row(self, ticker='2059', report_date=...):
+        if report_date is ...:
+            report_date = pt.date.today().isoformat()
+        date_line = f"報表日期: {report_date}" if report_date is not None else ""
         html = (
+            f"<div>{date_line}</div>"
             f"<table><tr><td>{ticker}</td><td>85.5</td><td>100.0</td>"
             "<td>建議買進</td><td>停利: <span>120.0</span> 停損: <span>90.0</span></td></tr></table>"
         )
@@ -560,6 +564,44 @@ class TestExtractSignalsFromReportStaleFallbackBoundary(unittest.TestCase):
         signals = pt.extract_signals_from_report()
 
         self.assertEqual(signals, [])
+
+    def test_broken_json_does_not_fall_back_to_html(self):
+        # docs/REVIEW-codex-r3-20260907.md F2: 檔案存在但無法解析（截斷／
+        # 格式錯誤）不是「完全缺檔」，不得回退未驗日期的 HTML。
+        path = os.path.join('artifacts', 'orders_broken.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('{broken')
+        self._write_html_with_buy_row(ticker='2059')
+
+        signals = pt.extract_signals_from_report()
+
+        self.assertEqual(signals, [])
+
+    def test_html_fallback_rejects_missing_report_date(self):
+        # F2: 缺檔時仍回退 HTML，但 HTML 入口本身也必須驗證來源日期；
+        # 沒有日期標記時無法確認新鮮度，視同過期拒絕。
+        self._write_html_with_buy_row(ticker='2059', report_date=None)
+
+        signals = pt.extract_signals_from_report()
+
+        self.assertEqual(signals, [])
+
+    def test_html_fallback_rejects_stale_report_date(self):
+        # F2: HTML 報表日期與今日不符時拒絕，不得使用過期報表訊號。
+        self._write_html_with_buy_row(ticker='2059', report_date='2020-01-01')
+
+        signals = pt.extract_signals_from_report()
+
+        self.assertEqual(signals, [])
+
+    def test_html_fallback_accepts_fresh_report_date(self):
+        # F2: 缺檔且 HTML 報表日期為今日時，仍應正常回退（不可矯枉過正）。
+        self._write_html_with_buy_row(ticker='2059')
+
+        signals = pt.extract_signals_from_report()
+
+        self.assertEqual(len(signals), 1)
+        self.assertEqual(signals[0]['ticker'], '2059')
 
 
 class TestNewPendingOrderPreservesSourceSignalDate(unittest.TestCase):

@@ -181,15 +181,17 @@ def _resolve_order_limit_price(order):
 
 
 def _extract_signals_from_orders_status():
-    """從 artifacts/orders_YYYYMMDD.json 擷取今日機器可讀訂單，並回傳三態：
+    """從 artifacts/orders_YYYYMMDD.json 擷取今日機器可讀訂單，並回傳四態：
 
-    - 'no_source': 完全沒有 orders_*.json（缺檔）— 唯一允許 HTML fallback 的狀態
-    - 'stale':     檔案存在但內容 signal_date 與今日不符（過期）— 拒絕，不得 fallback
-    - 'ok':        檔案存在且內容為今日（可能為空單，即合法零訊號日）— 不得 fallback
+    - 'no_source':   完全沒有 orders_*.json（缺檔）— 唯一允許 HTML fallback 的狀態
+    - 'unreadable':  檔案存在但無法讀取／解析（截斷、格式錯誤等）— 拒絕，不得 fallback
+    - 'stale':       檔案存在但內容 signal_date 與今日不符（過期）— 拒絕，不得 fallback
+    - 'ok':          檔案存在且內容為今日（可能為空單，即合法零訊號日）— 不得 fallback
 
     extract_signals_from_report() 依此區分「無來源」與「拒絕來源」，只在
-    'no_source' 時才允許回退未帶日期驗證的 stock_report.html
-    (docs/REVIEW-codex-r2-20260907.md F3)。
+    'no_source' 時才允許回退 stock_report.html（HTML 入口本身仍須驗證報表
+    日期，見該函式）(docs/REVIEW-codex-r2-20260907.md F3,
+    docs/REVIEW-codex-r3-20260907.md F2)。
     """
     order_files = glob.glob('artifacts/orders_*.json')
     if not order_files:
@@ -200,7 +202,7 @@ def _extract_signals_from_orders_status():
             payload = json.load(f)
     except Exception as e:
         print(f"   ⚠️ orders JSON 讀取失敗: {e}")
-        return 'no_source', []
+        return 'unreadable', []
 
     # 新鮮度檢查：mtime 最新不代表內容最新（例如人工補跑留下的舊檔）。
     # signal_date 與今日不符時視為過期，寧可略過也不得誤用舊訊號。
@@ -276,10 +278,12 @@ def extract_signals_from_orders():
 
 
 def extract_signals_from_report():
-    """今日買入信號來源：orders JSON 為主，僅在完全缺檔時才回退
-    stock_report.html。過期或內容驗證後為空的 orders JSON 都是「已有來源」
-    的明確結果，不得被未經日期驗證的 HTML fallback 靜默覆蓋
-    (docs/REVIEW-codex-r2-20260907.md F3)。"""
+    """今日買入信號來源：orders JSON 為主，僅在完全缺檔（'no_source'）時才
+    回退 stock_report.html。過期、無法讀取（'unreadable'）或內容驗證後為
+    空的 orders JSON 都是「已有來源」的明確結果，不得被 HTML fallback 靜默
+    覆蓋 (docs/REVIEW-codex-r2-20260907.md F3)。HTML fallback 本身也必須
+    驗證報表日期，缺日期或非今日一律拒絕，不得使用未經驗證的舊報表
+    (docs/REVIEW-codex-r3-20260907.md F2)。"""
     status, order_signals = _extract_signals_from_orders_status()
     if status != 'no_source':
         return order_signals
@@ -290,6 +294,13 @@ def extract_signals_from_report():
 
     with open(report_path) as f:
         html = f.read()
+
+    today = date.today().isoformat()
+    report_date_m = re.search(r'報表日期[:：]\s*(\d{4}-\d{2}-\d{2})', html)
+    report_date = report_date_m.group(1) if report_date_m else None
+    if report_date != today:
+        print(f"   ⚠️ stock_report.html 報表日期={report_date!r} 與今日 {today} 不符或缺漏，拒絕回退（過期，不使用 HTML）")
+        return []
 
     # Format: <td>TICKER</td><td>SCORE</td><td>ENTRY</td><td>...建議買進...</td>
     #         <td>停利: TP ... 停損: SL ...</td>
