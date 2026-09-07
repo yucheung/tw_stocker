@@ -276,6 +276,47 @@ class TestFailuresExitNonZero:
         assert result.returncode == 0
 
 
+class TestSettlementStillRunsOnOrderGenerationFailure:
+    """R4-2 (docs/REVIEW-codex-r4-20260907.md): rejecting untrustworthy new
+    orders must not also block settling today's existing positions — the
+    close-and-plan step (SL/TP/TIME settlement, equity mark, planning-gap
+    bookkeeping) has to run either way, with failure reported afterward."""
+
+    def test_strategy_failure_still_runs_close_and_plan(self, fake_bin):
+        result = _run("close", {"FAKE_STRATEGY_RC": "1"}, fake_bin)
+        assert result.returncode != 0
+        assert "Step 2: Close-and-Plan" in result.stdout
+
+    def test_strategy_failure_close_and_plan_does_not_receive_untrusted_orders_path(self, fake_bin):
+        # No orders file was produced at all — must not pass a bogus/missing
+        # --orders path through; let close-and-plan auto-discover (finds
+        # nothing, records a planning gap) instead.
+        result = _run("close", {"FAKE_STRATEGY_RC": "1"}, fake_bin)
+        assert result.returncode != 0
+        assert "CLOSE_AND_PLAN_ORDERS_ARG_ABSENT" in result.stdout
+
+    def test_freshness_failure_still_runs_close_and_plan(self, fake_bin):
+        env = {
+            "FAKE_ORDERS_CONTENT": '{"diagnostic": {"signal_date": "2020-01-01", "execution_date": "2020-01-02"}}',
+        }
+        result = _run("close", env, fake_bin)
+        assert result.returncode != 0
+        assert "Step 2: Close-and-Plan" in result.stdout
+
+    def test_freshness_failure_close_and_plan_does_not_receive_stale_orders_path(self, fake_bin):
+        env = {
+            "FAKE_ORDERS_CONTENT": '{"diagnostic": {"signal_date": "2020-01-01", "execution_date": "2020-01-02"}}',
+        }
+        result = _run("close", env, fake_bin)
+        assert result.returncode != 0
+        assert "CLOSE_AND_PLAN_ORDERS_ARG_ABSENT" in result.stdout
+
+    def test_healthy_run_still_passes_fresh_orders_path_to_close_and_plan(self, fake_bin):
+        result = _run("close", {}, fake_bin)
+        assert result.returncode == 0
+        assert "CLOSE_AND_PLAN_ORDERS_ARG_PRESENT" in result.stdout
+
+
 class TestCheckProcessedRunsWiredIntoScheduler:
     def test_daily_monitor_failure_fails_the_close_run(self, fake_bin):
         result = _run("close", {"FAKE_CHECK_RC": "1"}, fake_bin)
