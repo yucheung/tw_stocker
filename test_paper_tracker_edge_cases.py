@@ -7,6 +7,11 @@ PLAN_simulation.md Task 4: 買進限價單 09:30 生命週期）
 執行方式：
     python3 -m unittest test_paper_tracker_edge_cases -v
 """
+import json
+import os
+import shutil
+import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -357,6 +362,120 @@ class TestBuyLimitLifecycle(unittest.TestCase):
         self.assertEqual(data['order_events'][-1]['execution_date'], yesterday)
         self.assertIsNone(data['order_events'][-1]['open_price'])
         self.assertIsNone(data['order_events'][-1]['fill_price'])
+
+
+class TestExtractSignalsFromOrdersFreshness(unittest.TestCase):
+    """astro P0-3 / docs/REVIEW-opus-20260907.md §3.2 步驟4:
+    paper_tracker.py:188 只以 mtime 選最新訂單檔，沒有 signal_date 新鮮度
+    檢查——一份 mtime 較新但內容過期的檔案會被誤當今日訊號使用。"""
+
+    def setUp(self):
+        self.orig_cwd = os.getcwd()
+        self.tmp_cwd = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.tmp_cwd, 'artifacts'))
+        os.chdir(self.tmp_cwd)
+
+    def tearDown(self):
+        os.chdir(self.orig_cwd)
+        shutil.rmtree(self.tmp_cwd, ignore_errors=True)
+
+    def _write_orders_file(self, name, signal_date, execution_date, mtime_offset_seconds):
+        path = os.path.join('artifacts', name)
+        payload = {
+            'orders': [{
+                'side': 'buy',
+                'ticker': '2059',
+                'signal_date': signal_date,
+                'execution_date': execution_date,
+                'limit_price': 100.0,
+                'reference_close': 100.0,
+                'tp_price': 120.0,
+                'sl_price': 90.0,
+            }]
+        }
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(payload, f)
+        now = time.time()
+        os.utime(path, (now + mtime_offset_seconds, now + mtime_offset_seconds))
+        return path
+
+    def test_stale_latest_mtime_file_is_rejected(self):
+        today = pt.date.today().isoformat()
+        # Stale file has the newest mtime (e.g. left over from a manual run)
+        self._write_orders_file('orders_20200101.json', '2020-01-01', '2020-01-02', mtime_offset_seconds=100)
+        # Today's real file is older by mtime (written earlier in the day)
+        self._write_orders_file(f"orders_{today.replace('-', '')}.json", today, today, mtime_offset_seconds=0)
+
+        signals = pt.extract_signals_from_orders()
+        self.assertEqual(signals, [])
+
+    def test_fresh_latest_mtime_file_is_used(self):
+        today = pt.date.today().isoformat()
+        self._write_orders_file(f"orders_{today.replace('-', '')}.json", today, today, mtime_offset_seconds=0)
+
+        signals = pt.extract_signals_from_orders()
+        self.assertEqual(len(signals), 1)
+        self.assertEqual(signals[0]['ticker'], '2059')
+        self.assertEqual(signals[0]['signal_date'], today)
+
+
+class TestNewPendingOrderPreservesSourceSignalDate(unittest.TestCase):
+    """astro P0-3 / docs/REVIEW-opus-20260907.md §3.2 步驟4:
+    paper_tracker.py:714 過去無條件把 signal_date 覆寫成 today，使舊訂單
+    來源不易辨識；應保留來源本身的 signal_date，缺漏時才退回 today。"""
+
+    def _run_with_signal(self, signal):
+        today = pt.date.today().isoformat()
+        data = {
+            'start_date': '2026-01-01',
+            'initial_capital': 200_000,
+            'capital': 200_000,
+            'positions': {},
+            'pending_orders': [],
+            'closed_trades': [],
+            'equity_curve': [],
+            'daily_signals': [],
+            'order_events': [],
+        }
+        mock_cal = mock.MagicMock()
+        mock_cal.is_session.return_value = True
+        with mock.patch.object(pt, 'get_current_bars', return_value={}), \
+             mock.patch.object(pt, 'extract_signals_from_report', return_value=[signal]), \
+             mock.patch.object(pt.xcals, 'get_calendar', return_value=mock_cal), \
+             mock.patch.object(pt, 'save_data'), \
+             mock.patch.object(pt, 'generate_html'):
+            pt.update_tracker(data)
+        return data, today
+
+    def test_preserves_explicit_source_signal_date(self):
+        source_signal_date = '2026-09-02'
+        signal = {
+            'ticker': '2059',
+            'entry': 100.0,
+            'tp': 120.0,
+            'sl': 80.0,
+            'reference_close': 100.0,
+            'execution_date': '2099-01-01',
+            'signal_date': source_signal_date,
+            'rank': 1,
+        }
+        data, _today = self._run_with_signal(signal)
+        self.assertEqual(len(data['pending_orders']), 1)
+        self.assertEqual(data['pending_orders'][0]['signal_date'], source_signal_date)
+
+    def test_falls_back_to_today_when_signal_date_missing(self):
+        signal = {
+            'ticker': '2059',
+            'entry': 100.0,
+            'tp': 120.0,
+            'sl': 80.0,
+            'reference_close': 100.0,
+            'execution_date': '2099-01-01',
+            'rank': 1,
+        }
+        data, today = self._run_with_signal(signal)
+        self.assertEqual(len(data['pending_orders']), 1)
+        self.assertEqual(data['pending_orders'][0]['signal_date'], today)
 
 
 if __name__ == '__main__':

@@ -403,8 +403,21 @@ def compute_v85_atr20(closes: pd.Series) -> Optional[float]:
     return float(val)
 
 
-def load_orders(orders_path: Path | str, calendar: Optional[xcals.ExchangeCalendar] = None) -> list[dict[str, Any]]:
-    """Load and strictly validate upstream Top-7 orders from JSON artifact."""
+def load_orders(
+    orders_path: Path | str,
+    calendar: Optional[xcals.ExchangeCalendar] = None,
+    as_of: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    """Load and strictly validate upstream Top-7 orders from JSON artifact.
+
+    When `as_of` is given, the orders' signal_date must equal it. Without
+    this, an internally-consistent but stale file (signal_date -> next
+    XTAI session -> execution_date all checking out, just for the wrong
+    day) is silently accepted as if it were fresh — the exact failure mode
+    behind the TOP7 "8/24 規劃 8/14 訊號" incident, most easily triggered
+    via an explicit --orders path pointing at an old file
+    (docs/REVIEW-opus-20260907.md §1.3 :430, §2.3-1).
+    """
     p = Path(orders_path)
     if not p.exists():
         raise FileNotFoundError(f"Orders file not found: {p}")
@@ -428,6 +441,10 @@ def load_orders(orders_path: Path | str, calendar: Optional[xcals.ExchangeCalend
         raise ValueError(f"Inconsistent signal_date found in orders: {signal_dates}")
 
     sig_date = list(signal_dates)[0]
+    if as_of is not None and sig_date != as_of:
+        raise ValueError(
+            f"Orders file signal_date {sig_date} does not match requested as-of {as_of}: {p}"
+        )
     expected_exec_date = cal.next_session(sig_date).strftime("%Y-%m-%d")
 
     for idx, o in enumerate(orders):
@@ -748,8 +765,13 @@ def plan_orders(
 
     for candidate in selected_candidates[:capacity]:
         ticker = candidate["ticker"]
-        sig_date = candidate.get("signal_date", as_of)
-        exec_date = candidate.get("execution_date") or get_next_trading_day(sig_date)
+        # Stamp with the run's actual as_of, not whatever signal/execution
+        # date the candidate dict happens to carry — trusting the candidate
+        # here let a stale upstream file's dates flow straight into a
+        # pending order as if it were fresh (docs/REVIEW-opus-20260907.md
+        # §1.3 :700/:701).
+        sig_date = as_of
+        exec_date = get_next_trading_day(sig_date)
         order_id = f"{state['strategy_id']}:{sig_date}:{ticker}:buy"
 
         # Check existing order_id in pending_orders or order_events to ensure idempotency
@@ -1578,7 +1600,7 @@ def run_close_and_plan(
 
     planned_count = 0
     if orders_file is not None:
-        orders = load_orders(orders_file)
+        orders = load_orders(orders_file, as_of=today_str)
         held_set = set(state["positions"].keys())
         pending_set = {p["ticker"] for p in state["pending_orders"]}
         eff_max_price = max_price if max_price is not None else state["config"].get("max_price")

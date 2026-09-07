@@ -193,6 +193,14 @@ def extract_signals_from_orders():
         print(f"   ⚠️ orders JSON 讀取失敗: {e}")
         return []
 
+    # 新鮮度檢查：mtime 最新不代表內容最新（例如人工補跑留下的舊檔）。
+    # signal_date 與今日不符時視為過期，寧可略過也不得誤用舊訊號。
+    today = date.today().isoformat()
+    file_signal_dates = {o.get('signal_date') for o in payload.get('orders', []) if o.get('signal_date')}
+    if file_signal_dates and today not in file_signal_dates:
+        print(f"   ⚠️ {latest} signal_date={sorted(file_signal_dates)} 與今日 {today} 不符（mtime 最新 ≠ 內容最新），略過")
+        return []
+
     signals = []
     for order in payload.get('orders', []):
         if order.get('side') != 'buy':
@@ -711,7 +719,9 @@ def update_tracker(data):
                 'gap_limit_atr': s.get('gap_limit_atr', 1.5),
                 'execution_date': s.get('execution_date'),
                 'max_hold_days': s.get('max_hold_days', max_hold),
-                'signal_date': today,
+                # 保留來源自身的 signal_date（缺漏才退回 today），避免覆寫成
+                # 執行當下的日期而讓舊訊號來源不易辨識
+                'signal_date': s.get('signal_date', today),
                 'rank': s.get('rank'),
                 # TP/SL 重算與 sizing 參數：開倉時以實際開盤價為錨重算
                 'position_size': s.get('position_size'),
