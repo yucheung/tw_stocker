@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Daily alert: has today's close-and-plan + open both actually run?
+"""Daily alert: has today's close-and-plan + open both actually run, and did
+close-and-plan's planning hop actually find an orders file?
 
 `independent_sim.py`'s `processed_runs` is repo-internal evidence of whether
 the planning and execution hops were invoked at all — orchestration/cron can
@@ -29,7 +30,15 @@ from independent_sim import (
 
 
 def check_processed_runs(data_dir: Union[Path, str], date: str) -> list[str]:
-    """Return run_ids expected but missing from processed_runs for `date`.
+    """Return run_ids missing from processed_runs, plus any unresolved
+    planning gap, for `date`.
+
+    A day can have both close-and-plan:{date} and open:{date} marked
+    processed and still be unhealthy: close-and-plan settled but couldn't
+    find an orders file, which independent_sim.py's run_close_and_plan
+    records in state["planning_gaps"] instead of silently treating the day
+    as fully done (docs/REVIEW-codex-r2-20260907.md F1). That gap must
+    surface here too, or a real miss shows up as a false-green day.
 
     Non-trading days expect nothing, so they always return an empty list.
     """
@@ -37,7 +46,10 @@ def check_processed_runs(data_dir: Union[Path, str], date: str) -> list[str]:
         return []
     state = load_state(data_dir)
     expected = [f"close-and-plan:{date}", f"open:{date}"]
-    return [run_id for run_id in expected if not is_run_processed(state, run_id)]
+    missing = [run_id for run_id in expected if not is_run_processed(state, run_id)]
+    if date in state.get("planning_gaps", []):
+        missing.append(f"planning_gap:{date}")
+    return missing
 
 
 def main() -> None:

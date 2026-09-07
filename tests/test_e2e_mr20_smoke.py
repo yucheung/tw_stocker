@@ -1,25 +1,33 @@
-"""End-to-end smoke test for the MR20 pipeline: orders artifact -> plan ->
+"""End-to-end smoke test for the MR20 pipeline: order generation -> plan ->
 next-day open -> terminal order_events landed.
 
-Ref: docs/REVIEW-opus-20260907.md §3.1-3 / §3.2 步驟2 — this must go green
-before any strategy parameter is touched. The "order generation" hop itself
-(strategy/mr20_strategy.py, which needs network data) is out of scope here;
-this test starts from a realistic orders_mr20_*.json artifact (schema
-matches artifacts/mr20/orders_mr20_20260902.json) and drives the rest of the
-pipeline that independent_sim.py owns.
+Ref: docs/REVIEW-opus-20260907.md §3.1-3 / §3.2 步驟2, and
+docs/REVIEW-codex-r2-20260907.md F2 — the smoke test previously started from
+a hand-written orders JSON, skipping the order-generation hop entirely (no
+call to strategy.mr20_strategy.generate_mr20_orders / the CLI). That let a
+break in hop 1 go undetected. This drives the real generate_mr20_orders()
+against a fixed, deterministic synthetic price panel (no network) to
+produce the orders artifact, then feeds that real artifact through the rest
+of the pipeline independent_sim.py owns — three hops end to end: generate
+-> close-and-plan -> open.
 """
 import json
 import shutil
 import tempfile
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
+import exchange_calendars as xcals
 
 import independent_sim as sim
 from check_processed_runs import check_processed_runs
+from strategy.mr20_strategy import generate_mr20_orders, save_orders_to_json
 
 SIGNAL_DATE = "2026-09-02"
 EXEC_DATE = "2026-09-03"
+TICKER = "2330"
 
 
 @pytest.fixture
@@ -29,40 +37,34 @@ def temp_dir():
     shutil.rmtree(d, ignore_errors=True)
 
 
-def _mr20_orders_artifact():
-    return {
-        "orders": [
-            {
-                "signal_date": SIGNAL_DATE,
-                "execution_date": EXEC_DATE,
-                "ticker": "3037",
-                "side": "buy",
-                "order_type": "limit",
-                "limit_price": 973.0,
-                "reference_close": 973.0,
-                "rank": 1,
-                "score": 73.4577,
-                "atr": 27.9166,
-                "tp_atr_mult": 4.0,
-                "sl_atr_mult": 3.0,
-                "max_hold_days": 20,
-                "position_size": 0.45,
-                "tp_sl_mode": "atr",
-            }
-        ],
-        "diagnostic": {
-            "strategy": "mr20",
-            "signal_date": SIGNAL_DATE,
-            "execution_date": EXEC_DATE,
-        },
-    }
+def _generate_real_orders_artifact(orders_file: Path) -> dict:
+    """Hop 1: real order generation via a fixed synthetic price panel — no
+    network fetch, but the actual MR20 filter/scoring/order-building code
+    path, not a hand-authored JSON fixture."""
+    calendar = xcals.get_calendar("XTAI")
+    dates = pd.date_range(end=SIGNAL_DATE, periods=70, freq="B")
+    assert dates[-1].strftime("%Y-%m-%d") == SIGNAL_DATE
+
+    # Uptrend into an oversold RSI(5) pullback near MA20 — passes the MR20
+    # filter (same shape as tests/test_mr20_strategy.py's known-passing
+    # fixture).
+    prices = np.linspace(60.0, 180.0, 65).tolist() + [160.0, 150.0, 140.0, 132.0, 136.0]
+    close_df = pd.DataFrame({TICKER: prices}, index=dates)
+    vol_df = pd.DataFrame({TICKER: np.full(70, 10_000_000.0)}, index=dates)
+
+    orders_dict = generate_mr20_orders(close_df, vol_df, signal_date=SIGNAL_DATE, calendar=calendar)
+    assert len(orders_dict["orders"]) == 1
+    assert orders_dict["orders"][0]["ticker"] == TICKER
+    save_orders_to_json(orders_dict, orders_file)
+    return orders_dict
 
 
-def test_orders_to_plan_to_open_lands_terminal_event(temp_dir):
+def test_generate_to_plan_to_open_lands_terminal_event(temp_dir):
     sim.init_simulation(data_dir=temp_dir, capital=1_000_000.0, strategy="mr20")
 
     orders_file = temp_dir / f"orders_mr20_{SIGNAL_DATE.replace('-', '')}.json"
-    orders_file.write_text(json.dumps(_mr20_orders_artifact()), encoding="utf-8")
+    orders_dict = _generate_real_orders_artifact(orders_file)
+    limit_price = orders_dict["orders"][0]["limit_price"]
 
     # Hop 2: close-and-plan on the signal date (D 18:05) — reads the orders
     # artifact produced by hop 1 and plans a pending order for EXEC_DATE.
@@ -75,11 +77,13 @@ def test_orders_to_plan_to_open_lands_terminal_event(temp_dir):
 
     state = sim.load_state(temp_dir)
     assert len(state["pending_orders"]) == 1
-    assert state["pending_orders"][0]["ticker"] == "3037"
+    assert state["pending_orders"][0]["ticker"] == TICKER
 
-    # Hop 3: open execution on the next trading day (D+1 09:35).
+    # Hop 3: open execution on the next trading day (D+1 09:35). Open below
+    # the limit price so the order actually fills.
+    assert limit_price > 130.0
     open_bars = {
-        "3037": {"date": EXEC_DATE, "open": 960.0, "high": 980.0, "low": 955.0, "close": 970.0},
+        TICKER: {"date": EXEC_DATE, "open": 130.0, "high": 138.0, "low": 128.0, "close": 133.0},
     }
     with patch_market_bars(sim, open_bars):
         sim.run_open(data_dir=temp_dir, as_of=EXEC_DATE)
@@ -93,9 +97,9 @@ def test_orders_to_plan_to_open_lands_terminal_event(temp_dir):
     assert statuses.count("PENDING") == 1
     assert statuses.count("FILLED") == 1
     filled = next(e for e in state["order_events"] if e["status"] == "FILLED")
-    assert filled["ticker"] == "3037"
+    assert filled["ticker"] == TICKER
     assert state["pending_orders"] == []
-    assert "3037" in state["positions"]
+    assert TICKER in state["positions"]
 
     # SIGNAL_DATE only ever gets a close-and-plan (this is D-1, the very
     # first day of the sim — nothing was pending before it to open). The
@@ -105,7 +109,7 @@ def test_orders_to_plan_to_open_lands_terminal_event(temp_dir):
     # green for a genuinely fully-processed trading day.
     empty_orders_file = temp_dir / "orders_mr20_no_new_signal.json"
     empty_orders_file.write_text(json.dumps({"orders": []}), encoding="utf-8")
-    with patch_market_bars(sim, {"3037": {"date": EXEC_DATE, "open": 960.0, "high": 980.0, "low": 955.0, "close": 970.0}}), \
+    with patch_market_bars(sim, {TICKER: {"date": EXEC_DATE, "open": 130.0, "high": 138.0, "low": 128.0, "close": 133.0}}), \
          patch_benchmark_close(sim, 150.0):
         sim.run_close_and_plan(
             data_dir=temp_dir,
@@ -118,16 +122,21 @@ def test_orders_to_plan_to_open_lands_terminal_event(temp_dir):
         )
 
     assert check_processed_runs(temp_dir, EXEC_DATE) == []
+    # An explicit, fresh, but empty orders file is a legitimate zero-signal
+    # day — not a planning gap.
+    state = sim.load_state(temp_dir)
+    assert state.get("planning_gaps", []) == []
 
 
-def test_missing_orders_file_still_marks_close_and_plan_hop_processed(temp_dir):
-    # If hop 1 (order generation) never produced a file for the signal date,
-    # close-and-plan must still record its own hop as processed (a zero-order
-    # day is a legitimate outcome, not an error) while planning zero orders.
-    # The check correctly still flags open:no_orders_date as missing here
-    # since this test never calls run_open — it only exercises close-and-plan.
-    # Uses a date with no real orders_mr20_*.json fixture anywhere in the
-    # repo, so the auto-discovery fallback in run_close_and_plan (which
+def test_auto_discovery_miss_is_a_real_gap_surfaced_by_the_daily_check(temp_dir):
+    # If hop 1 (order generation) never produced a file for the signal date
+    # and auto-discovery can't find one either, that is genuinely
+    # indistinguishable from an upstream failure — close-and-plan still
+    # records its own hop as processed (settlement can't be undone), but
+    # the miss must show up as an unresolved planning_gap in the daily
+    # check, not as a silently healthy day (docs/REVIEW-codex-r2-20260907.md
+    # F1). Uses a date with no real orders_mr20_*.json fixture anywhere in
+    # the repo, so the auto-discovery fallback in run_close_and_plan (which
     # searches the real artifacts/mr20/ dir, not temp_dir) can't accidentally
     # pick up production data.
     no_orders_date = "2026-09-10"
@@ -142,6 +151,32 @@ def test_missing_orders_file_still_marks_close_and_plan_hop_processed(temp_dir):
 
     state = sim.load_state(temp_dir)
     assert state["pending_orders"] == []
+    assert state.get("planning_gaps") == [no_orders_date]
+    assert check_processed_runs(temp_dir, no_orders_date) == [
+        f"open:{no_orders_date}",
+        f"planning_gap:{no_orders_date}",
+    ]
+
+    # The gap is retryable same-day once a late orders file shows up —
+    # backfilling it clears the alert without re-running settlement.
+    late_orders_file = temp_dir / "orders_mr20_late_catchup.json"
+    calendar = xcals.get_calendar("XTAI")
+    dates = pd.date_range(end=no_orders_date, periods=70, freq="B")
+    prices = np.linspace(60.0, 180.0, 65).tolist() + [160.0, 150.0, 140.0, 132.0, 136.0]
+    close_df = pd.DataFrame({TICKER: prices}, index=dates)
+    vol_df = pd.DataFrame({TICKER: np.full(70, 10_000_000.0)}, index=dates)
+    orders_dict = generate_mr20_orders(close_df, vol_df, signal_date=no_orders_date, calendar=calendar)
+    save_orders_to_json(orders_dict, late_orders_file)
+
+    sim.run_close_and_plan(
+        data_dir=temp_dir,
+        orders_path=late_orders_file,
+        as_of=no_orders_date,
+    )
+
+    state = sim.load_state(temp_dir)
+    assert state.get("planning_gaps", []) == []
+    assert len(state["pending_orders"]) == 1
     assert check_processed_runs(temp_dir, no_orders_date) == [f"open:{no_orders_date}"]
 
 
