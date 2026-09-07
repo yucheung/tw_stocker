@@ -49,20 +49,27 @@ print(get_taipei_today())
 # 0=交易日、1=休市、2=判斷本身失敗（曆表查詢例外）。過去以布林收斂所有例
 # 外為「非交易日」，讓真正的錯誤被誤判為休市而靜默跳過
 # (docs/REVIEW-codex-r3-20260907.md F4)。
+#
+# exit code 本身不足以區分「真休市」與「其他任何非零結果」：helper 被訊號
+# 殺掉（例如 exit 137）、或 Python 啟動／匯入階段在 CLI 的 try 之前就崩潰
+# （通常也是 exit 1），都與合法休市的 exit 1 無法單靠退出碼分辨。因此只有
+# exit 1 且輸出可辨認的 SESSION_RESULT:HOLIDAY 協定字串時才視為休市略過；
+# 其餘一律視為失敗、非零退出 (docs/REVIEW-codex-r4-20260907.md R4-1)。
 set +e
-"$PYTHON" independent_sim.py is-session --date "$TODAY"
+SESSION_OUT=$("$PYTHON" independent_sim.py is-session --date "$TODAY" 2>&1)
 SESSION_RC=$?
 set -e
 
-if [ "$SESSION_RC" -eq 2 ]; then
-    echo "=== MR20 Scheduler [$MODE] [$TODAY] ==="
-    echo "❌ 交易日判斷失敗（曆表查詢例外），非休市，中止執行" >&2
-    exit 1
-fi
-if [ "$SESSION_RC" -ne 0 ]; then
+if [ "$SESSION_RC" -eq 1 ] && printf '%s\n' "$SESSION_OUT" | grep -q "^SESSION_RESULT:HOLIDAY:"; then
     echo "=== MR20 Scheduler [$MODE] [$TODAY] ==="
     echo "$TODAY 非 XTAI 交易日，略過本次執行"
     exit 0
+fi
+if [ "$SESSION_RC" -ne 0 ]; then
+    echo "=== MR20 Scheduler [$MODE] [$TODAY] ==="
+    echo "❌ 交易日判斷失敗（非可辨認休市結果，exit=$SESSION_RC），中止執行" >&2
+    printf '%s\n' "$SESSION_OUT" >&2
+    exit 1
 fi
 
 if [ "$MODE" = "open" ]; then

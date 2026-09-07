@@ -1863,7 +1863,16 @@ def main() -> None:
         except Exception as e:
             print(f"ERROR: trading-day lookup failed for {date_str}: {e}", file=sys.stderr)
             sys.exit(2)
-        sys.exit(0 if session else 1)
+        # A recognizable stdout marker, not just the exit code, so callers
+        # (run_mr20.sh) can tell a genuine holiday apart from any other
+        # non-zero outcome (killed by signal, or an uncaught crash that
+        # also happens to exit 1) that never reaches this line
+        # (docs/REVIEW-codex-r4-20260907.md R4-1).
+        if session:
+            print(f"SESSION_RESULT:TRADING_DAY:{date_str}")
+            sys.exit(0)
+        print(f"SESSION_RESULT:HOLIDAY:{date_str}")
+        sys.exit(1)
 
     # Resolve strategy & data_dir
     strategy = getattr(args, "strategy", None)
