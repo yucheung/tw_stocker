@@ -1,0 +1,30 @@
+{
+  "orders": [],
+  "diagnostic": {
+    "strategy": "mr20",
+    "signal_date": "2026-09-01",
+    "execution_date": "2026-09-02",
+    "funnel": {
+      "requested": 1085,
+      "valid_60d": 1084,
+      "liquid_top50": 50,
+      "trend": 30,
+      "pullback": 5,
+      "rsi": 2,
+      "bounce": 0,
+      "final": 0
+    },
+    "config": {
+      "rsi_max": 40.0,
+      "ma_short": 20,
+      "ma_long": 60,
+      "liquidity_top_n": 50,
+      "min_history_days": 60,
+      "rsi_period": 5,
+      "max_candidates": 7
+    },
+    "universe_tickers": 1085,
+    "universe_rows": 124,
+    "saved_at": "2026-09-02T13:33:00.361410+08:00"
+  }
+}
