@@ -484,6 +484,22 @@ def _orders_signal_date(path: Path | str) -> Optional[str]:
     return diag.get("signal_date")
 
 
+def _is_dateless_empty_orders(path: Path) -> bool:
+    """A bare `{"orders": []}` artifact with no signal_date anywhere in it
+    (mr20_strategy emits this shape when it has no data to derive a signal
+    date from — see generate_mr20_orders). Only trusted at a conventional
+    filename that already encodes the expected date via the fast-path
+    lookup in resolve_orders_file: the broad content-scan fallback has no
+    independent date anchor and must not apply this leniency
+    (docs/REVIEW-codex-r4-20260907.md R4-3 / docs/REVIEW-codex-r2-20260907.md F5).
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return isinstance(data, dict) and data.get("orders") == []
+
+
 def resolve_orders_file(
     strat_id: str,
     today_str: str,
@@ -508,7 +524,11 @@ def resolve_orders_file(
         fast_candidates.append(Path("artifacts") / f"orders_{compact_date}.json")
 
     for cf in fast_candidates:
-        if cf.exists() and _orders_signal_date(cf) == today_str:
+        if not cf.exists():
+            continue
+        if _orders_signal_date(cf) == today_str:
+            return cf
+        if _is_dateless_empty_orders(cf):
             return cf
 
     if base_dir.exists():
