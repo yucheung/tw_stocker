@@ -215,6 +215,14 @@ def _extract_signals_from_orders_status():
         if order.get('side') != 'buy':
             continue
         ticker = order.get('ticker', '?')
+        # F1 (docs/REVIEW-codex-r3-20260907.md): 逐單驗證 signal_date，
+        # 檔案級 file_signal_dates 檢查只保證「至少一筆」是今日，混合日期檔
+        # 仍可能夾帶過期或缺日期訂單隨今日訂單一起輸出。缺日期視同無法驗證
+        # 新鮮度，比照過期一律拒絕，不放行。
+        order_signal_date = order.get('signal_date')
+        if order_signal_date != today:
+            print(f"   ⚠️ {ticker} signal_date={order_signal_date!r} 與今日 {today} 不符或缺漏，逐單拒絕採用")
+            continue
         limit_price = _resolve_order_limit_price(order)
         if limit_price is None:
             print(f"   ⚠️ {ticker} 委託缺乏有效限價（limit_price/reference_close/entry 皆無效），略過")
