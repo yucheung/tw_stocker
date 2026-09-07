@@ -43,6 +43,7 @@ class TestIsSessionCliExitCodeContract:
             cwd=str(REPO_ROOT), capture_output=True, text=True,
         )
         assert result.returncode == 0
+        assert "SESSION_RESULT:TRADING_DAY:" in result.stdout
 
     def test_weekend_exits_one(self):
         result = subprocess.run(
@@ -50,6 +51,10 @@ class TestIsSessionCliExitCodeContract:
             cwd=str(REPO_ROOT), capture_output=True, text=True,
         )
         assert result.returncode == 1
+        # run_mr20.sh must be able to tell a genuine holiday apart from any
+        # other exit-1 (e.g. an uncaught crash) via a recognizable marker,
+        # not exit code alone (docs/REVIEW-codex-r4-20260907.md R4-1).
+        assert "SESSION_RESULT:HOLIDAY:" in result.stdout
 
     def test_malformed_date_exits_two_not_one(self):
         # A broken calendar lookup must not look like a plain holiday.
@@ -104,8 +109,22 @@ FAKE_PYTHON_SRC = textwrap.dedent(r"""
     if argv and argv[0] == 'independent_sim.py':
         sub = argv[1] if len(argv) > 1 else None
         if sub == 'is-session':
-            sys.exit(int(os.environ.get('FAKE_SESSION_RC', '0')))
+            rc = int(os.environ.get('FAKE_SESSION_RC', '0'))
+            # Real CLI only ever prints SESSION_RESULT:* for rc 0/1. Any
+            # other rc (2, or a signal kill like 137) — and, to simulate an
+            # uncaught crash that happens to also exit 1 — leave FAKE_SESSION_NO_MARKER
+            # unset to omit the marker even for rc 1.
+            if not os.environ.get('FAKE_SESSION_NO_MARKER'):
+                if rc == 0:
+                    print(f"SESSION_RESULT:TRADING_DAY:{os.environ.get('FAKE_TODAY', '')}")
+                elif rc == 1:
+                    print(f"SESSION_RESULT:HOLIDAY:{os.environ.get('FAKE_TODAY', '')}")
+            sys.exit(rc)
         if sub == 'close-and-plan':
+            if '--orders' in argv:
+                print('CLOSE_AND_PLAN_ORDERS_ARG_PRESENT')
+            else:
+                print('CLOSE_AND_PLAN_ORDERS_ARG_ABSENT')
             sys.exit(int(os.environ.get('FAKE_CLOSE_PLAN_RC', '0')))
         if sub == 'open':
             sys.exit(int(os.environ.get('FAKE_OPEN_RC', '0')))
@@ -217,6 +236,23 @@ class TestSessionCheckErrorVsHoliday:
 
     def test_session_lookup_error_is_not_treated_as_holiday(self, fake_bin):
         result = _run("close", {"FAKE_SESSION_RC": "2"}, fake_bin)
+        assert result.returncode != 0
+        assert "非 XTAI 交易日" not in result.stdout
+
+    def test_session_helper_killed_by_signal_is_not_treated_as_holiday(self, fake_bin):
+        # exit 137 == killed by SIGKILL (128+9). Previously any non-2, non-0
+        # exit code silently collapsed into "holiday, skip" — hiding the
+        # helper being killed (docs/REVIEW-codex-r4-20260907.md R4-1).
+        result = _run("close", {"FAKE_SESSION_RC": "137"}, fake_bin)
+        assert result.returncode != 0
+        assert "非 XTAI 交易日" not in result.stdout
+
+    def test_session_exit_one_without_holiday_marker_is_not_treated_as_holiday(self, fake_bin):
+        # A generic exit(1) (e.g. an uncaught exception/import failure
+        # before the CLI's own holiday branch ever runs) is indistinguishable
+        # from a real holiday by exit code alone — it must not be skipped
+        # silently just because rc == 1 (docs/REVIEW-codex-r4-20260907.md R4-1).
+        result = _run("close", {"FAKE_SESSION_RC": "1", "FAKE_SESSION_NO_MARKER": "1"}, fake_bin)
         assert result.returncode != 0
         assert "非 XTAI 交易日" not in result.stdout
 
