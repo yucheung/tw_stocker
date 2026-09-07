@@ -1,0 +1,1 @@
+trade_id,ticker,signal_date,entry_date,exit_date,entry_price,exit_price,shares,atr,tp_price,sl_price,days_held,exit_reason,buy_cost,sell_cost,slippage_cost,gross_pnl,net_pnl,net_return_pct
