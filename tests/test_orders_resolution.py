@@ -91,6 +91,20 @@ class TestResolveOrdersFile:
         found = sim.resolve_orders_file("mr20", "2026-09-02", orders_dir=temp_dir)
         assert found is None
 
+    def test_fast_path_rejects_stale_dated_empty_orders_at_conventional_filename(self, temp_dir):
+        # {"orders": [], "diagnostic": {"signal_date": <different day>}} is
+        # NOT the dateless shape mr20_strategy emits on a true no-data day —
+        # it carries a signal_date, just for a stale/different day. Sitting
+        # at today's conventional filename must not grant it the
+        # dateless-empty leniency (docs/REVIEW-opus-r5-20260907.md §2.1).
+        f = temp_dir / "orders_mr20_20260902.json"
+        f.write_text(json.dumps({
+            "orders": [],
+            "diagnostic": {"signal_date": "2026-08-14"},
+        }), encoding="utf-8")
+        found = sim.resolve_orders_file("mr20", "2026-09-02", orders_dir=temp_dir)
+        assert found is None
+
 
 class TestCloseAndPlanMissingOrdersStateMachine:
     def test_explicit_orders_path_missing_raises_and_persists_nothing(self, temp_dir):
@@ -127,6 +141,31 @@ class TestCloseAndPlanMissingOrdersStateMachine:
         assert len(state["equity_curve"]) == 1
         assert state["pending_orders"] == []
         assert state.get("planning_gaps") == ["2026-09-02"]
+
+    def test_stale_dated_empty_orders_at_conventional_filename_records_gap(self, temp_dir):
+        # End-to-end reproduction of docs/REVIEW-opus-r5-20260907.md §2.1:
+        # a stale-dated empty-orders artifact sitting at today's conventional
+        # filename must still be flagged as a planning gap, not silently
+        # accepted as a legitimate zero-signal day.
+        sim.init_simulation(data_dir=temp_dir, capital=1_000_000.0, strategy="mr20")
+        f = temp_dir / "orders_mr20_20260902.json"
+        f.write_text(json.dumps({
+            "orders": [],
+            "diagnostic": {"signal_date": "2026-08-14"},
+        }), encoding="utf-8")
+
+        with patch.dict(sim.STRATEGY_CONFIGS["mr20"], {"orders_dir": str(temp_dir)}), \
+             patch.object(sim, "fetch_market_bars", return_value={}), \
+             patch.object(sim, "fetch_benchmark_close", return_value=150.0):
+            sim.run_close_and_plan(
+                data_dir=temp_dir,
+                orders_path=None,
+                as_of="2026-09-02",
+            )
+
+        state = sim.load_state(temp_dir)
+        assert state.get("planning_gaps") == ["2026-09-02"]
+        assert state["pending_orders"] == []
 
     def test_auto_discovery_hit_under_unconventional_name_still_plans(self, temp_dir):
         sim.init_simulation(data_dir=temp_dir, capital=1_000_000.0, strategy="mr20")
