@@ -166,6 +166,16 @@ def is_trading_day(dt_str: str, calendar: Optional[xcals.ExchangeCalendar] = Non
         return False
 
 
+def is_trading_day_strict(dt_str: str, calendar: Optional[xcals.ExchangeCalendar] = None) -> bool:
+    """Like is_trading_day, but propagates calendar-lookup errors instead of
+    treating them as "not a trading day". Backs the `is-session` CLI command
+    so run_mr20.sh can tell a genuine holiday (skip, exit 0) apart from a
+    broken trading-calendar lookup, which must not be silently treated as a
+    day off (docs/REVIEW-codex-r3-20260907.md F4)."""
+    cal = calendar or get_calendar("XTAI")
+    return bool(cal.is_session(dt_str))
+
+
 def get_next_trading_day(dt_str: str, calendar: Optional[xcals.ExchangeCalendar] = None) -> str:
     """Get the next XTAI trading session date after dt_str."""
     cal = calendar or get_calendar("XTAI")
@@ -1833,12 +1843,27 @@ def build_cli_parser() -> argparse.ArgumentParser:
     p_stat.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal)")
     p_stat.add_argument("--data-dir", type=str, default=None, help="Data directory")
 
+    # is-session: exit 0 (session) / 1 (not a session) / 2 (lookup error).
+    # Lets cron scripts (run_mr20.sh) distinguish a real holiday from a
+    # broken trading-calendar lookup (docs/REVIEW-codex-r3-20260907.md F4).
+    p_sess = subparsers.add_parser("is-session", help="Check if a date is an XTAI trading session (exit 0=session/1=holiday/2=error)")
+    p_sess.add_argument("--date", type=str, default=None, help="Date to check (YYYY-MM-DD), default today (Taipei)")
+
     return parser
 
 
 def main() -> None:
     parser = build_cli_parser()
     args = parser.parse_args()
+
+    if args.command == "is-session":
+        date_str = args.date or get_taipei_today()
+        try:
+            session = is_trading_day_strict(date_str)
+        except Exception as e:
+            print(f"ERROR: trading-day lookup failed for {date_str}: {e}", file=sys.stderr)
+            sys.exit(2)
+        sys.exit(0 if session else 1)
 
     # Resolve strategy & data_dir
     strategy = getattr(args, "strategy", None)

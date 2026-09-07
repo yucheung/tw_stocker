@@ -21,7 +21,7 @@
 set -euo pipefail
 cd /root/work/tw_stocker
 export PYTHONPATH=/root/work/tw_stocker
-PYTHON=.venv/bin/python3
+PYTHON="${PYTHON:-.venv/bin/python3}"
 DATA_DIR=independent_sim_data_mr20
 
 MODE="${1:-}"
@@ -32,17 +32,29 @@ if [ "$MODE" != "close" ] && [ "$MODE" != "open" ]; then
     exit 2
 fi
 
-TODAY=$(date +%Y-%m-%d)
+# TODAY 固定以 Asia/Taipei 曆日計算（independent_sim.get_taipei_today），
+# 不使用主機 `date`：host TZ 若非 Asia/Taipei（例如 cron 跑在 UTC 主機），
+# 會在午夜前後算出錯誤的交易日 (docs/REVIEW-codex-r3-20260907.md F4)。
+TODAY=$("$PYTHON" -c "
+from independent_sim import get_taipei_today
+print(get_taipei_today())
+")
 
-is_session() {
-    "$PYTHON" -c "
-from independent_sim import is_trading_day
-import sys
-sys.exit(0 if is_trading_day('$1') else 1)
-"
-}
+# 交易日判斷透過 independent_sim.py is-session 取得三態退出碼：
+# 0=交易日、1=休市、2=判斷本身失敗（曆表查詢例外）。過去以布林收斂所有例
+# 外為「非交易日」，讓真正的錯誤被誤判為休市而靜默跳過
+# (docs/REVIEW-codex-r3-20260907.md F4)。
+set +e
+"$PYTHON" independent_sim.py is-session --date "$TODAY"
+SESSION_RC=$?
+set -e
 
-if ! is_session "$TODAY"; then
+if [ "$SESSION_RC" -eq 2 ]; then
+    echo "=== MR20 Scheduler [$MODE] [$TODAY] ==="
+    echo "❌ 交易日判斷失敗（曆表查詢例外），非休市，中止執行" >&2
+    exit 1
+fi
+if [ "$SESSION_RC" -ne 0 ]; then
     echo "=== MR20 Scheduler [$MODE] [$TODAY] ==="
     echo "$TODAY 非 XTAI 交易日，略過本次執行"
     exit 0
@@ -64,7 +76,7 @@ fi
 
 # ── MODE = close ──
 D="$TODAY"
-D_COMPACT=$(date +%Y%m%d)
+D_COMPACT="${D//-/}"
 ORDERS="artifacts/mr20/orders_mr20_${D_COMPACT}.json"
 
 echo "=== MR20 Scheduler [close] [$D] ==="
@@ -80,10 +92,10 @@ fi
 
 if [ "$EXIT1" -ne 0 ] || [ ! -f "$ORDERS" ] || [ ! -s "$ORDERS" ]; then
     echo ""
-    echo "(No orders generated or strategy failed — skipping close-and-plan)"
+    echo "❌ (No orders generated or strategy failed — skipping close-and-plan)" >&2
     echo "=== Status ==="
     "$PYTHON" independent_sim.py status -s mr20 --data-dir "$DATA_DIR"
-    exit 0
+    exit 1
 fi
 
 EXPECTED_EXEC=$("$PYTHON" -c "
@@ -113,11 +125,11 @@ except Exception as e:
 " 2>&1); then
     echo "✅ Freshness gate passed: $FRESHNESS_OK"
 else
-    echo "⚠️  Freshness gate FAILED: $FRESHNESS_OK"
-    echo "(Refusing to process stale orders — skipping close-and-plan)"
+    echo "❌ Freshness gate FAILED: $FRESHNESS_OK" >&2
+    echo "(Refusing to process stale orders — skipping close-and-plan)" >&2
     echo "=== Status ==="
     "$PYTHON" independent_sim.py status -s mr20 --data-dir "$DATA_DIR"
-    exit 0
+    exit 1
 fi
 
 echo ""
@@ -130,3 +142,12 @@ echo "=== Step 2: Close-and-Plan ($D) ==="
 echo ""
 echo "=== Status ==="
 "$PYTHON" independent_sim.py status -s mr20 --data-dir "$DATA_DIR"
+
+echo ""
+echo "=== Step 3: Daily Monitor (check_processed_runs) ==="
+# 將每日 processed_runs / planning_gaps 監控接進排程呼叫鏈，避免監控腳本
+# 存在卻從未被排程實際呼叫 (docs/REVIEW-codex-r3-20260907.md F4)。
+if ! "$PYTHON" check_processed_runs.py -s mr20 --data-dir "$DATA_DIR" --date "$D"; then
+    echo "❌ Daily monitor detected missing processed_runs / unresolved planning gap for $D" >&2
+    exit 1
+fi
