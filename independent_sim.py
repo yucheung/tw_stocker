@@ -1543,6 +1543,71 @@ def run_open(
         notify_telegram("\n".join(msg_lines))
 
 
+def _resolve_and_plan_orders(
+    state: dict[str, Any],
+    today_str: str,
+    orders_path: Optional[Path | str],
+    max_price: Optional[float],
+    tickers: Optional[list[str]],
+) -> int:
+    """Resolve today's orders artifact and plan next-session orders in-place.
+
+    Returns the number of newly planned pending orders. A resolution miss
+    (auto-discovery found nothing) is recorded in state["planning_gaps"]
+    instead of raising — a legitimate zero-signal day and a silently failed
+    upstream hop are indistinguishable from here, and settlement may already
+    be done and unable to be safely re-run. An explicit --orders path that
+    doesn't exist is always a hard error: the caller asked for a specific
+    file, so silently skipping planning would hide a typo or an upstream
+    failure behind a normal-looking "0 orders planned" run
+    (docs/REVIEW-opus-20260907.md §3.2 步驟3).
+    """
+    if orders_path:
+        orders_file = Path(orders_path)
+        if not orders_file.exists():
+            raise FileNotFoundError(
+                f"Explicit --orders path not found: {orders_file} (as-of {today_str})"
+            )
+    else:
+        strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
+        orders_file = resolve_orders_file(strat_id, today_str)
+
+    if orders_file is None:
+        # Auto-discovery found nothing: could be a legitimate day with no
+        # upstream signal, or the order-generation hop silently failed to
+        # run at all — the two are indistinguishable from here. The gap is
+        # flagged in state for a daily check (see check_processed_runs.py)
+        # to surface separately, and for a same-day rerun with a late
+        # orders file to backfill (see run_close_and_plan).
+        strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
+        gaps = state.setdefault("planning_gaps", [])
+        if today_str not in gaps:
+            gaps.append(today_str)
+        print(f"   ⚠️ [{strat_id}] 找不到 signal_date={today_str} 的訂單檔（自動搜尋未命中），已記錄為 planning_gaps")
+        return 0
+
+    orders = load_orders(orders_file, as_of=today_str)
+    held_set = set(state["positions"].keys())
+    pending_set = {p["ticker"] for p in state["pending_orders"]}
+    eff_max_price = max_price if max_price is not None else state["config"].get("max_price")
+    candidates = select_candidates(
+        orders,
+        held=held_set,
+        pending=pending_set,
+        max_picks=state["config"].get("max_positions", 2),
+        max_price=eff_max_price,
+        manual_tickers=tickers,
+    )
+    new_pending = plan_orders(state, candidates, as_of=today_str)
+
+    # A late/explicit orders file just resolved a previously-flagged gap.
+    gaps = state.get("planning_gaps")
+    if gaps and today_str in gaps:
+        gaps.remove(today_str)
+
+    return len(new_pending)
+
+
 def run_close_and_plan(
     data_dir: Path | str = DEFAULT_DATA_DIR,
     orders_path: Optional[Path | str] = None,
@@ -1551,7 +1616,19 @@ def run_close_and_plan(
     tickers: Optional[list[str]] = None,
     notify: bool = False,
 ) -> None:
-    """Run 18:05 close settlement and order planning on trading day as_of."""
+    """Run 18:05 close settlement and order planning on trading day as_of.
+
+    Settlement (position SL/TP/TIME, equity mark, pending-order expiry) only
+    ever runs once per day and is not safely re-runnable. Planning is
+    decoupled from it: a resolution miss still marks the run processed but
+    records today_str in state["planning_gaps"] rather than treating the day
+    as fully done. A same-day rerun while that gap is still open (e.g. a
+    late-arriving orders file, including an explicit --orders path) is
+    recognized here and only retries planning — settlement is not touched
+    again — so late order delivery has a legitimate backfill path instead of
+    being blocked outright by the idempotent-skip on an already-processed
+    run_id (docs/REVIEW-codex-r2-20260907.md F1).
+    """
     today_str = as_of or get_taipei_today()
     if not is_trading_day(today_str):
         print(f"Notice: {today_str} is not an XTAI trading session. Skipping close-and-plan.")
@@ -1560,8 +1637,27 @@ def run_close_and_plan(
     d = Path(data_dir)
     state = load_state(d)
     run_id = f"close-and-plan:{today_str}"
-    if is_run_processed(state, run_id):
+    already_processed = is_run_processed(state, run_id)
+    has_open_gap = today_str in state.get("planning_gaps", [])
+
+    if already_processed and not has_open_gap:
         print(f"Notice: Run {run_id} was already processed. Idempotent skip.")
+        return
+
+    if already_processed and has_open_gap:
+        planned_count = _resolve_and_plan_orders(state, today_str, orders_path, max_price, tickers)
+        save_state_atomic(state, data_dir=d)
+        export_ledgers(state, data_dir=d)
+
+        if planned_count > 0:
+            print(f"✅ Close-and-plan gap backfilled for {today_str}: {planned_count} new orders planned.")
+            if notify:
+                strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
+                strat_cfg = get_strategy_config(strat_id)
+                strat_name = state.get("config", {}).get("name") or strat_cfg.get("name") or strat_id
+                notify_telegram(f"📝 *{strat_name} Gap Backfilled ({today_str})*\n{planned_count} 檔已排定（補跑）")
+        else:
+            print(f"Notice: Run {run_id} planning gap for {today_str} still unresolved (no orders found).")
         return
 
     # 0. Expire outdated pending orders
@@ -1582,48 +1678,7 @@ def run_close_and_plan(
     mark_equity(state, closes=closes, benchmark_close=bm_close, as_of=today_str)
 
     # 3. Plan next session orders
-    # An explicit --orders path that doesn't exist is a hard error: the
-    # caller asked for a specific file, so silently skipping planning would
-    # hide a typo or an upstream failure behind a normal-looking "0 orders
-    # planned" run. Nothing has been persisted yet at this point, so raising
-    # here leaves the day fully retryable (docs/REVIEW-opus-20260907.md
-    # §3.2 步驟3).
-    if orders_path:
-        orders_file = Path(orders_path)
-        if not orders_file.exists():
-            raise FileNotFoundError(
-                f"Explicit --orders path not found: {orders_file} (as-of {today_str})"
-            )
-    else:
-        strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
-        orders_file = resolve_orders_file(strat_id, today_str)
-
-    planned_count = 0
-    if orders_file is not None:
-        orders = load_orders(orders_file, as_of=today_str)
-        held_set = set(state["positions"].keys())
-        pending_set = {p["ticker"] for p in state["pending_orders"]}
-        eff_max_price = max_price if max_price is not None else state["config"].get("max_price")
-        candidates = select_candidates(
-            orders,
-            held=held_set,
-            pending=pending_set,
-            max_picks=state["config"].get("max_positions", 2),
-            max_price=eff_max_price,
-            manual_tickers=tickers,
-        )
-        new_pending = plan_orders(state, candidates, as_of=today_str)
-        planned_count = len(new_pending)
-    else:
-        # Auto-discovery found nothing: could be a legitimate day with no
-        # upstream signal, or the order-generation hop silently failed to
-        # run at all — the two are indistinguishable from here. Settlement
-        # already happened above and can't be safely re-run, so this day
-        # is still marked processed, but the gap is flagged in state for a
-        # daily check (see check_processed_runs.py) to surface separately.
-        strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
-        state.setdefault("planning_gaps", []).append(today_str)
-        print(f"   ⚠️ [{strat_id}] 找不到 signal_date={today_str} 的訂單檔（自動搜尋未命中），已記錄為 planning_gaps")
+    planned_count = _resolve_and_plan_orders(state, today_str, orders_path, max_price, tickers)
 
     mark_run_processed(state, run_id)
     save_state_atomic(state, data_dir=d)

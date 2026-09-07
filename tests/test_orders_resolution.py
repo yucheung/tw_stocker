@@ -124,3 +124,102 @@ class TestCloseAndPlanMissingOrdersStateMachine:
         assert len(state["pending_orders"]) == 1
         assert state["pending_orders"][0]["ticker"] == "2059"
         assert state.get("planning_gaps", []) == []
+
+
+class TestCloseAndPlanGapBackfill:
+    """docs/REVIEW-codex-r2-20260907.md F1 — a planning_gaps miss must be
+    retryable same-day once a late orders artifact (including an explicit
+    --orders path) shows up, without silently being blocked by the
+    idempotent-skip on an already-processed run_id, and without re-running
+    settlement a second time."""
+
+    def test_late_explicit_orders_backfills_gap_without_resettling(self, temp_dir):
+        sim.init_simulation(data_dir=temp_dir, capital=1_000_000.0, strategy="mr20")
+
+        with patch.object(sim, "fetch_market_bars", return_value={}), \
+             patch.object(sim, "fetch_benchmark_close", return_value=150.0), \
+             patch.object(sim, "resolve_orders_file", return_value=None):
+            sim.run_close_and_plan(
+                data_dir=temp_dir,
+                orders_path=None,
+                as_of="2026-09-02",
+            )
+
+        state = sim.load_state(temp_dir)
+        assert state.get("planning_gaps") == ["2026-09-02"]
+        assert len(state["equity_curve"]) == 1
+
+        late_file = temp_dir / "orders_mr20_late_catchup.json"
+        _write_orders(late_file, "2026-09-02", "2026-09-03")
+
+        with patch.object(sim, "fetch_market_bars", return_value={}), \
+             patch.object(sim, "fetch_benchmark_close", return_value=150.0):
+            sim.run_close_and_plan(
+                data_dir=temp_dir,
+                orders_path=late_file,
+                as_of="2026-09-02",
+            )
+
+        state = sim.load_state(temp_dir)
+        assert state.get("planning_gaps", []) == []
+        assert len(state["pending_orders"]) == 1
+        assert state["pending_orders"][0]["ticker"] == "2059"
+        # Settlement (equity mark) must not have run a second time.
+        assert len(state["equity_curve"]) == 1
+        assert state["processed_runs"].count("close-and-plan:2026-09-02") == 1
+
+    def test_rerun_without_gap_is_still_a_true_idempotent_skip(self, temp_dir, capsys):
+        sim.init_simulation(data_dir=temp_dir, capital=1_000_000.0, strategy="mr20")
+        f = temp_dir / "orders_mr20_20260902.json"
+        _write_orders(f, "2026-09-02", "2026-09-03")
+
+        with patch.object(sim, "fetch_market_bars", return_value={}), \
+             patch.object(sim, "fetch_benchmark_close", return_value=150.0):
+            sim.run_close_and_plan(data_dir=temp_dir, orders_path=f, as_of="2026-09-02")
+
+        state_before = sim.load_state(temp_dir)
+
+        with patch.object(sim, "fetch_market_bars", return_value={}), \
+             patch.object(sim, "fetch_benchmark_close", return_value=150.0):
+            sim.run_close_and_plan(data_dir=temp_dir, orders_path=f, as_of="2026-09-02")
+
+        captured = capsys.readouterr()
+        assert "Idempotent skip" in captured.out
+        state_after = sim.load_state(temp_dir)
+        assert state_after == state_before
+
+    def test_gap_rerun_with_still_missing_orders_stays_a_retryable_gap(self, temp_dir):
+        sim.init_simulation(data_dir=temp_dir, capital=1_000_000.0, strategy="mr20")
+
+        with patch.object(sim, "fetch_market_bars", return_value={}), \
+             patch.object(sim, "fetch_benchmark_close", return_value=150.0), \
+             patch.object(sim, "resolve_orders_file", return_value=None):
+            sim.run_close_and_plan(data_dir=temp_dir, orders_path=None, as_of="2026-09-02")
+            sim.run_close_and_plan(data_dir=temp_dir, orders_path=None, as_of="2026-09-02")
+
+        state = sim.load_state(temp_dir)
+        assert state.get("planning_gaps") == ["2026-09-02"]
+        assert len(state["equity_curve"]) == 1
+        assert state["pending_orders"] == []
+
+    def test_gap_rerun_with_missing_explicit_path_raises_and_keeps_gap(self, temp_dir):
+        sim.init_simulation(data_dir=temp_dir, capital=1_000_000.0, strategy="mr20")
+
+        with patch.object(sim, "fetch_market_bars", return_value={}), \
+             patch.object(sim, "fetch_benchmark_close", return_value=150.0), \
+             patch.object(sim, "resolve_orders_file", return_value=None):
+            sim.run_close_and_plan(data_dir=temp_dir, orders_path=None, as_of="2026-09-02")
+
+        missing_path = temp_dir / "still_does_not_exist.json"
+        with patch.object(sim, "fetch_market_bars", return_value={}), \
+             patch.object(sim, "fetch_benchmark_close", return_value=150.0):
+            with pytest.raises(FileNotFoundError):
+                sim.run_close_and_plan(
+                    data_dir=temp_dir,
+                    orders_path=missing_path,
+                    as_of="2026-09-02",
+                )
+
+        state = sim.load_state(temp_dir)
+        assert state.get("planning_gaps") == ["2026-09-02"]
+        assert len(state["equity_curve"]) == 1
