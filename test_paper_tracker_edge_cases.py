@@ -419,6 +419,69 @@ class TestExtractSignalsFromOrdersFreshness(unittest.TestCase):
         self.assertEqual(signals[0]['signal_date'], today)
 
 
+class TestExtractSignalsFromOrdersMixedDates(unittest.TestCase):
+    """docs/REVIEW-codex-r3-20260907.md F1: 單一檔案內混雜今日與過期
+    signal_date 時，過去只檢查「日期集合是否包含 today」就放行整份檔案，
+    導致過期訂單與缺日期訂單都隨今日訂單一起輸出。必須逐單驗證
+    signal_date == today，不符或缺漏者個別拒絕，不影響同檔其餘今日訂單。"""
+
+    def setUp(self):
+        self.orig_cwd = os.getcwd()
+        self.tmp_cwd = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.tmp_cwd, 'artifacts'))
+        os.chdir(self.tmp_cwd)
+
+    def tearDown(self):
+        os.chdir(self.orig_cwd)
+        shutil.rmtree(self.tmp_cwd, ignore_errors=True)
+
+    def _base_order(self, ticker, signal_date, execution_date):
+        order = {
+            'side': 'buy',
+            'ticker': ticker,
+            'execution_date': execution_date,
+            'limit_price': 100.0,
+            'reference_close': 100.0,
+            'tp_price': 120.0,
+            'sl_price': 90.0,
+        }
+        if signal_date is not None:
+            order['signal_date'] = signal_date
+        return order
+
+    def _write_orders_file(self, name, orders):
+        path = os.path.join('artifacts', name)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'orders': orders}, f)
+        return path
+
+    def test_mixed_today_and_stale_order_rejects_only_stale(self):
+        today = pt.date.today().isoformat()
+        orders = [
+            self._base_order('2330', today, today),
+            self._base_order('2059', '2020-01-01', '2020-01-02'),
+        ]
+        self._write_orders_file(f"orders_{today.replace('-', '')}.json", orders)
+
+        signals = pt.extract_signals_from_orders()
+
+        self.assertEqual(len(signals), 1)
+        self.assertEqual(signals[0]['ticker'], '2330')
+
+    def test_missing_signal_date_order_rejected(self):
+        today = pt.date.today().isoformat()
+        orders = [
+            self._base_order('2330', today, today),
+            self._base_order('2059', None, today),
+        ]
+        self._write_orders_file(f"orders_{today.replace('-', '')}.json", orders)
+
+        signals = pt.extract_signals_from_orders()
+
+        self.assertEqual(len(signals), 1)
+        self.assertEqual(signals[0]['ticker'], '2330')
+
+
 class TestExtractSignalsFromReportStaleFallbackBoundary(unittest.TestCase):
     """docs/REVIEW-codex-r2-20260907.md F3: extract_signals_from_report()
     (the actual upstream entry point paper_tracker.update_tracker calls,
