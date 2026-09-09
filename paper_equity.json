@@ -9,7 +9,7 @@
       "sl": 416.225,
       "entry_date": "2026-08-24",
       "shares": 39,
-      "day_count": 8,
+      "day_count": 9,
       "max_hold_days": 20,
       "entry_rank": 2
     },
@@ -19,7 +19,7 @@
       "sl": 4282.5,
       "entry_date": "2026-08-24",
       "shares": 3,
-      "day_count": 8,
+      "day_count": 9,
       "max_hold_days": 20,
       "entry_rank": 3
     },
@@ -29,7 +29,7 @@
       "sl": 411.275,
       "entry_date": "2026-08-24",
       "shares": 38,
-      "day_count": 8,
+      "day_count": 9,
       "max_hold_days": 20,
       "entry_rank": 6
     },
@@ -39,7 +39,7 @@
       "sl": 227.4832,
       "entry_date": "2026-08-25",
       "shares": 27,
-      "day_count": 7,
+      "day_count": 8,
       "max_hold_days": 20,
       "entry_rank": 5
     },
@@ -49,7 +49,7 @@
       "sl": 815.2,
       "entry_date": "2026-09-02",
       "shares": 21,
-      "day_count": 4,
+      "day_count": 5,
       "max_hold_days": 20,
       "entry_rank": 1
     },
@@ -59,24 +59,24 @@
       "sl": 6292.9881000000005,
       "entry_date": "2026-09-02",
       "shares": 2,
-      "day_count": 4,
+      "day_count": 5,
       "max_hold_days": 20,
       "entry_rank": 3
     }
   },
   "pending_orders": [
     {
-      "ticker": "2426",
-      "entry": 97.5,
-      "tp": 130.14,
-      "sl": 73.02,
-      "reference_close": 97.5,
-      "atr": 8.16,
+      "ticker": "2455",
+      "entry": 533.0,
+      "tp": 658.4,
+      "sl": 438.95,
+      "reference_close": 533.0,
+      "atr": 31.35,
       "gap_limit_atr": 1.5,
-      "execution_date": "2026-09-09",
+      "execution_date": "2026-09-10",
       "max_hold_days": 20,
-      "signal_date": "2026-09-08",
-      "rank": 2,
+      "signal_date": "2026-09-09",
+      "rank": 3,
       "position_size": 0.1,
       "regime_scale": 1.0,
       "tp_sl_mode": "atr",
@@ -201,6 +201,13 @@
     {
       "date": "2026-09-08",
       "equity": 200569.0,
+      "capital": 101784.0,
+      "n_positions": 6,
+      "n_closed_today": 0
+    },
+    {
+      "date": "2026-09-09",
+      "equity": 204283.0,
       "capital": 101784.0,
       "n_positions": 6,
       "n_closed_today": 0
@@ -361,6 +368,18 @@
         "3167",
         "3653",
         "8039"
+      ]
+    },
+    {
+      "date": "2026-09-09",
+      "tickers": [
+        "3406",
+        "3008",
+        "2455",
+        "2426",
+        "3653",
+        "2615",
+        "3167"
       ]
     }
   ],
@@ -703,6 +722,17 @@
       "event_time": "2026-09-08T09:30:00+08:00",
       "limit_price": 327.0,
       "open_price": 327.5,
+      "status": "CANCELLED_OPEN_ABOVE_LIMIT",
+      "fill_price": null
+    },
+    {
+      "order_id": "2026-09-08:2426:buy",
+      "ticker": "2426",
+      "signal_date": "2026-09-08",
+      "execution_date": "2026-09-09",
+      "event_time": "2026-09-09T09:30:00+08:00",
+      "limit_price": 97.5,
+      "open_price": 102.0,
       "status": "CANCELLED_OPEN_ABOVE_LIMIT",
       "fill_price": null
     }
