@@ -118,12 +118,14 @@ class TestTurnoverIntegration(unittest.TestCase):
             "order_events": [],
         }
 
-        # Market bars: all existing positions close at 100, NEW_TKR opens at 99 (<= 100 limit)
+        # Market bars: all existing positions close at 100, NEW_TKR opens at 5
+        # (<= 100 limit). Low price chosen post-A1 so a full 1,000-share board
+        # lot still fits inside the modest toy cash scale used by this fixture.
         bars = {
             f"T{i}": {"open": 100.0, "high": 105.0, "low": 95.0, "close": 100.0, "date": today}
             for i in range(7)
         }
-        bars["NEW_TKR"] = {"open": 99.0, "high": 102.0, "low": 98.0, "close": 101.0, "date": today}
+        bars["NEW_TKR"] = {"open": 5.0, "high": 8.0, "low": 4.0, "close": 6.0, "date": today}
 
         mock_cal = mock.MagicMock()
         mock_cal.is_session.return_value = True
@@ -341,8 +343,10 @@ class TestTurnoverIntegration(unittest.TestCase):
         self.assertEqual(len(data["positions"]), 7)
         # 2. No trades should be recorded in closed_trades
         self.assertEqual(len(data["closed_trades"]), 0)
-        # 3. Order should be cancelled due to insufficient cash
-        self.assertEqual(data["order_events"][-1]["status"], "CANCELLED_INSUFFICIENT_CASH")
+        # 3. Order should be cancelled: at 200,000/share, the position slot
+        # itself can't afford one board lot (A1: CANCELLED_BELOW_LOT_SIZE),
+        # distinct from a plain cash shortfall.
+        self.assertEqual(data["order_events"][-1]["status"], "CANCELLED_BELOW_LOT_SIZE")
 
     def test_position_tp_sl_time_skipped_when_bar_date_stale(self):
         """New-1: When market bar date != today, position day_count must NOT advance and exits must NOT trigger."""
@@ -465,7 +469,7 @@ class TestTurnoverIntegration(unittest.TestCase):
         data = {
             "start_date": "2026-01-01",
             "initial_capital": 100_000,
-            "capital": 30_000,
+            "capital": 400_200,
             "positions": {},
             "pending_orders": [
                 {
@@ -490,9 +494,10 @@ class TestTurnoverIntegration(unittest.TestCase):
             "order_events": [],
         }
 
-        # fill_price = 100.0. trade_amount = 10,000.
-        # Without buy_cost_rate: shares = int(10,000 / 100) = 100 -> cost = 10,000 + 14.25 = 10014.25 > 10,000 (cancel!)
-        # With buy_cost_rate: shares = int(10,000 / (100 * 1.001425)) = 99 -> cost = 9900 + 14.11 = 9914.11 <= 10,000 (filled!)
+        # fill_price = 100.0. trade_amount = 200,100 (A1 rescale: lot-scale).
+        # Without buy_cost_rate: shares = int(200,100 / 100) = 2001 -> 2000 (2 lots).
+        # With buy_cost_rate: shares = int(200,100 / (100 * 1.001425)) = 1998 -> 1000 (1 lot).
+        # Commission deduction still decides the lot count: 2000 vs 1000.
         bars = {
             "BUY_TKR": {"open": 100.0, "high": 102.0, "low": 98.0, "close": 100.0, "date": today}
         }
@@ -507,7 +512,7 @@ class TestTurnoverIntegration(unittest.TestCase):
             pt.update_tracker(data)
 
         self.assertIn("BUY_TKR", data["positions"])
-        self.assertEqual(data["positions"]["BUY_TKR"]["shares"], 99)
+        self.assertEqual(data["positions"]["BUY_TKR"]["shares"], 1000)
         self.assertEqual(data["order_events"][-1]["status"], "FILLED")
         self.assertGreaterEqual(data["capital"], 20_000)  # preserved reserve_cash
 

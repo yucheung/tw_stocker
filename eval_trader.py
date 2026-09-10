@@ -19,6 +19,7 @@ import pandas as pd
 from strategy.ai_strategy import fetch_panel_data
 from strategy.order_execution import evaluate_buy_limit_at_open
 from strategy.risk_metrics import compute_risk_metrics
+from strategy.sizing import size_position
 
 # ── Cost constants (TWSE, configurable) ──────────────────────────────────────
 COMMISSION_RATE = 0.001425    # 0.1425% brokerage (ceiling; brokers vary)
@@ -184,20 +185,27 @@ def _execute_orders(state, open_df, exec_date):
             else:
                 mkt_val += p["entry"] * p["shares"]
         equity_now = state["cash"] + mkt_val
-        slot = equity_now * POSITION_SIZE
-        shares = math.floor(slot / (fill_price * (1.0 + BUY_COST))) if fill_price > 0 else 0
-        # Round down to board lot
-        shares = (shares // LOT_SIZE) * LOT_SIZE
-        cost = _buy_commission(shares * fill_price)
-        if shares < 1 or state["cash"] - shares * fill_price - cost < INIT_CAPITAL * RESERVE_RATIO:
+        sizing = size_position(
+            equity=equity_now,
+            position_size=POSITION_SIZE,
+            fill_price=fill_price,
+            cash=state["cash"],
+            reserve=INIT_CAPITAL * RESERVE_RATIO,
+            lot_size=LOT_SIZE,
+            min_commission=MIN_COMMISSION,
+            buy_cost_rate=BUY_COST,
+        )
+        if not sizing.ok:
             fills.append({"ticker": tkr, "limit_price": limit, "open_price": bar_open,
-                          "status": "CANCELLED_INSUFFICIENT_CASH", "exec_date": exec_date})
+                          "status": sizing.status, "exec_date": exec_date})
             continue
 
+        shares = sizing.shares
+        cost = sizing.commission
         atr = order["atr"]
         tp = fill_price + TP_ATR * atr
         sl = fill_price - SL_ATR * atr
-        state["cash"] -= (shares * fill_price + cost)
+        state["cash"] -= (sizing.trade_amount + cost)
         state["positions"][tkr] = {
             "entry": fill_price, "shares": shares, "tp": tp, "sl": sl,
             "entry_date": exec_date, "day_count": 0,

@@ -208,6 +208,9 @@ def test_generate_markdown_report_dynamic_headers_top2(temp_dir):
 def test_order_level_tp_sl_override_in_position_and_report(temp_dir):
     """P2-4: Verify order-level TP/SL overrides are stored on position and reflected per row in report."""
     state = sim.init_simulation(data_dir=temp_dir / "override_test", strategy="top2_score_v1")
+    # Bump capital so the 45% position slot clears the 1,000-share board-lot minimum (A1 guard).
+    state["config"]["initial_capital"] = 1_000_000.0
+    state["cash"] = 1_000_000.0
     state["pending_orders"] = [
         {
             "order_id": "test_1",
@@ -277,11 +280,15 @@ def test_heterogeneous_positions_render_independent_tp_sl(temp_dir):
 def test_independent_sim_shares_sizing_deducts_buy_commission(temp_dir):
     """New-2: Simulator share calculation accounts for BUY_COST_RATE so orders do not cancel on exact cash."""
     state = sim.init_simulation(data_dir=temp_dir / "commission_test", strategy="rsi_reversal")
-    # Set capital so available_cash = exactly 10,000 (reserve_cash = 200,000, cash = 210,000)
-    state["cash"] = 210_000.0
-    state["config"]["initial_capital"] = 1_000_000.0
-    state["config"]["reserve_cash_ratio"] = 0.20  # reserve = 200,000 -> available_cash = 10,000
-    state["config"]["position_size"] = 0.50  # target_amount will be capped at available_cash (10,000)
+    # Set capital so available_cash = exactly 10,000,000 (reserve_cash = 20,000,000, cash = 30,000,000).
+    # Scaled up from the pre-A1 board-lot guard so the boundary still resolves to a whole
+    # number of lots: ignoring commission would afford 100 lots exactly; accounting for it
+    # (as size_position does) shaves it down to 99 lots, proving commission is deducted
+    # from the share ceiling rather than causing a cancel.
+    state["cash"] = 30_000_000.0
+    state["config"]["initial_capital"] = 100_000_000.0
+    state["config"]["reserve_ratio"] = 0.20  # reserve = 20,000,000 -> available_cash = 10,000,000
+    state["config"]["position_size"] = 0.50  # target_amount will be capped at available_cash (10,000,000)
 
     state["pending_orders"] = [
         {
@@ -300,13 +307,16 @@ def test_independent_sim_shares_sizing_deducts_buy_commission(temp_dir):
     terminal_events = sim.execute_open_orders(state, bars, as_of="2026-08-21")
     assert len(terminal_events) == 1
     assert terminal_events[0]["status"] == "FILLED"
-    assert state["positions"]["2330"]["shares"] == 99
-    assert state["cash"] >= 200_000.0
+    assert state["positions"]["2330"]["shares"] == 99_000
+    assert state["cash"] >= 20_000_000.0
 
 
 def test_partial_override_tp_only_execution_and_report(temp_dir):
     """Verify TP-only override switches both TP and SL to fixed_pct mode in execution and report."""
     state = sim.init_simulation(data_dir=temp_dir / "tp_only", strategy="top2_score_v1")
+    # Bump capital so the 45% position slot clears the 1,000-share board-lot minimum (A1 guard).
+    state["config"]["initial_capital"] = 1_000_000.0
+    state["cash"] = 1_000_000.0
     state["pending_orders"] = [
         {
             "order_id": "test_tp_only",
@@ -341,6 +351,9 @@ def test_partial_override_tp_only_execution_and_report(temp_dir):
 def test_partial_override_sl_only_execution_and_report(temp_dir):
     """Verify SL-only override switches both TP and SL to fixed_pct mode in execution and report."""
     state = sim.init_simulation(data_dir=temp_dir / "sl_only", strategy="top2_score_v1")
+    # Bump capital so the 45% position slot clears the 1,000-share board-lot minimum (A1 guard).
+    state["config"]["initial_capital"] = 1_000_000.0
+    state["cash"] = 1_000_000.0
     state["pending_orders"] = [
         {
             "order_id": "test_sl_only",
@@ -376,6 +389,9 @@ def test_partial_override_atr_mult_only_execution_and_report(temp_dir):
     """Verify partial ATR mult overrides retain ATR mode and use strategy defaults for unspecified leg."""
     # TP ATR only
     state = sim.init_simulation(data_dir=temp_dir / "tp_atr_only", strategy="top2_score_v1")
+    # Bump capital so the 45% position slot clears the 1,000-share board-lot minimum (A1 guard).
+    state["config"]["initial_capital"] = 1_000_000.0
+    state["cash"] = 1_000_000.0
     state["pending_orders"] = [
         {
             "order_id": "test_tp_atr_only",
@@ -403,6 +419,9 @@ def test_partial_override_atr_mult_only_execution_and_report(temp_dir):
 
     # SL ATR only
     state2 = sim.init_simulation(data_dir=temp_dir / "sl_atr_only", strategy="top2_score_v1")
+    # Bump capital so the 45% position slot clears the 1,000-share board-lot minimum (A1 guard).
+    state2["config"]["initial_capital"] = 1_000_000.0
+    state2["cash"] = 1_000_000.0
     state2["pending_orders"] = [
         {
             "order_id": "test_sl_atr_only",

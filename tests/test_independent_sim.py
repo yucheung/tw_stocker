@@ -380,27 +380,28 @@ class TestOpenLimitExecution:
                 "selection_mode": "auto",
             }
         ]
-        # Open price is 98.0 (<= 100.0 limit) -> FILLED
+        # Open price is 80.0 (<= 100.0 limit) -> FILLED. Price chosen (post-A1)
+        # so one 1,000-share board lot still fits inside the 90,000 slot.
         bars = {
-            "2059": {"date": "2026-08-17", "open": 98.0, "high": 102.0, "low": 97.0, "close": 101.0}
+            "2059": {"date": "2026-08-17", "open": 80.0, "high": 102.0, "low": 79.0, "close": 101.0}
         }
         events = sim.execute_open_orders(state, bars, as_of="2026-08-17")
         assert len(events) == 1
         assert events[0]["status"] == "FILLED"
-        assert events[0]["fill_price"] == 98.0
+        assert events[0]["fill_price"] == 80.0
         assert "2059" in state["positions"]
         pos = state["positions"]["2059"]
-        assert pos["entry"] == 98.0
-        # TP = 98.0 + 4.0 * 5.0 = 118.0, SL = 98.0 - 3.0 * 5.0 = 83.0
-        assert pos["tp"] == 118.0
-        assert pos["sl"] == 83.0
+        assert pos["entry"] == 80.0
+        # TP = 80.0 + 4.0 * 5.0 = 100.0, SL = 80.0 - 3.0 * 5.0 = 65.0
+        assert pos["tp"] == 100.0
+        assert pos["sl"] == 65.0
         assert len(state["pending_orders"]) == 0
-        # Shares and cash deduction
+        # Shares are rounded down to a full 1,000-share board lot (A1).
         # Target amount = min(200000 * 0.45, 200000 - 20000) = min(90000, 180000) = 90000
-        # shares = floor(90000 / (98 * (1 + 0.001425))) = 917
-        assert pos["shares"] == 917
-        trade_amount = 917 * 98.0
-        buy_cost = trade_amount * 0.001425
+        # raw affordable shares = floor(90000 / (80 * 1.001425)) = 1124 -> lot-rounded to 1000
+        assert pos["shares"] == 1000
+        trade_amount = 1000 * 80.0
+        buy_cost = max(trade_amount * 0.001425, 20.0)
         assert math.isclose(state["cash"], 200000.0 - trade_amount - buy_cost, abs_tol=0.01)
 
     def test_execute_open_cancel_above_limit(self, temp_dir):
@@ -449,7 +450,16 @@ class TestOpenLimitExecution:
 
     def test_execute_open_insufficient_cash(self, temp_dir):
         state = sim.get_default_state(capital=200000.0)
-        state["cash"] = 15000.0  # Less than reserve cash (20,000)
+        # Existing position inflates equity so the 45% slot can afford a full
+        # board lot at the fill price, isolating this as a pure cash (not
+        # lot-size) shortfall -- distinguishing CANCELLED_INSUFFICIENT_CASH
+        # from CANCELLED_BELOW_LOT_SIZE (A1).
+        state["cash"] = 800.0  # Far below reserve cash (20,000)
+        state["positions"]["9999"] = {
+            "ticker": "9999", "entry": 100.0, "shares": 5000, "tp": 999.0, "sl": 1.0,
+            "atr": 5.0, "entry_date": "2026-08-01", "day_count": 1, "max_hold_days": 20,
+            "signal_date": "2026-08-01", "order_id": "existing",
+        }
         state["pending_orders"] = [
             {
                 "order_id": "top2_score_v1:2026-08-14:2059:buy",
@@ -460,10 +470,35 @@ class TestOpenLimitExecution:
                 "atr": 5.0,
             }
         ]
-        bars = {"2059": {"date": "2026-08-17", "open": 95.0}}
+        bars = {
+            "9999": {"date": "2026-08-17", "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0},
+            "2059": {"date": "2026-08-17", "open": 95.0},
+        }
         events = sim.execute_open_orders(state, bars, as_of="2026-08-17")
         assert len(events) == 1
         assert events[0]["status"] == "CANCELLED_INSUFFICIENT_CASH"
+
+    def test_execute_open_below_lot_size_high_price(self, temp_dir):
+        """A1: a high-price stock whose 45% slot can't afford one board lot
+        is CANCELLED_BELOW_LOT_SIZE, distinct from a plain cash shortfall."""
+        state = sim.get_default_state(capital=200000.0)
+        state["pending_orders"] = [
+            {
+                "order_id": "top2_score_v1:2026-08-14:6446:buy",
+                "signal_date": "2026-08-14",
+                "execution_date": "2026-08-17",
+                "ticker": "6446",
+                "limit_price": 1400.0,
+                "atr": 40.0,
+            }
+        ]
+        # slot = 200000 * 0.45 = 90,000; one lot @ 1315 costs ~1.32M -> unaffordable
+        bars = {"6446": {"date": "2026-08-17", "open": 1315.0, "high": 1320.0, "low": 1300.0, "close": 1310.0}}
+        events = sim.execute_open_orders(state, bars, as_of="2026-08-17")
+        assert len(events) == 1
+        assert events[0]["status"] == "CANCELLED_BELOW_LOT_SIZE"
+        assert state["cash"] == 200000.0
+        assert "6446" not in state["positions"]
 
 
 # =====================================================================
@@ -758,9 +793,10 @@ class TestReporting:
 
 class TestSmokeWorkflow:
     def test_full_offline_simulation_smoke_test(self, temp_dir, sample_orders_data):
-        # 1. Initialize
-        state = sim.init_simulation(data_dir=temp_dir, capital=200000.0)
-        assert state["cash"] == 200000.0
+        # 1. Initialize (capital large enough that a 45% slot can still afford
+        # a full board lot at the fixture's ~120 fill price post-A1 lot rounding)
+        state = sim.init_simulation(data_dir=temp_dir, capital=2000000.0)
+        assert state["cash"] == 2000000.0
 
         # Create sample orders artifact
         orders_file = temp_dir / "orders_20260814.json"
