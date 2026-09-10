@@ -96,7 +96,7 @@ class TestBuyLimitLifecycle(unittest.TestCase):
                 'gap_limit_atr': 1.5,
                 'execution_date': None,
                 'max_hold_days': 20,
-                'position_size': 0.10,
+                'position_size': 1.0,
                 'regime_scale': regime_scale,
                 'tp_atr_mult': None,
                 'sl_atr_mult': None,
@@ -191,7 +191,7 @@ class TestBuyLimitLifecycle(unittest.TestCase):
         # regime_scale=0 是合法的「大盤不進場」訊號，不得被 <=0 檢查覆寫成 1.0 滿倉
         data = self._run_open(149.0, limit_price=150.0, regime_scale=0.0)
         self.assertNotIn('3231', data['positions'])
-        self.assertEqual(data['order_events'][-1]['status'], 'CANCELLED_INSUFFICIENT_CASH')
+        self.assertEqual(data['order_events'][-1]['status'], 'CANCELLED_ZERO_EXPOSURE')
 
     def test_due_order_never_persists_to_pending(self):
         # 不論成交或撤單，執行過的 due order 都不得留在 pending_orders

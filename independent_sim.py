@@ -30,6 +30,7 @@ import pandas as pd
 
 import exchange_calendars as xcals
 from strategy.order_execution import DEFAULT_TP_SL, evaluate_buy_limit_at_open
+from strategy.sizing import compute_commission, size_position
 
 # =====================================================================
 # Constants & Defaults
@@ -955,29 +956,40 @@ def execute_open_orders(
             terminal_events.append(event)
             continue
 
-        # Sizing and Cash allocation
+        # Sizing and Cash allocation (integer board-lot, shared with paper_tracker/eval_trader — A1)
         fill_price = decision.fill_price
         current_market_val = sum(
             pos["shares"] * bars.get(t, {}).get("close", pos["entry"])
             for t, pos in state["positions"].items()
         )
         current_equity = state["cash"] + current_market_val
-        available_cash = max(0.0, state["cash"] - reserve_cash)
-        target_amount = min(current_equity * pos_size, available_cash)
-        shares = math.floor(target_amount / (fill_price * (1.0 + BUY_COST_RATE))) if fill_price > 0 else 0
-        trade_amount = shares * fill_price
-        buy_cost = trade_amount * BUY_COST_RATE
+        sizing = size_position(
+            equity=current_equity,
+            position_size=pos_size,
+            fill_price=fill_price,
+            cash=state["cash"],
+            reserve=reserve_cash,
+        )
 
-        if shares < 1 or (state["cash"] - trade_amount - buy_cost < reserve_cash):
+        if not sizing.ok:
+            message = (
+                f"Position slot cannot afford one board lot at {fill_price:.2f}"
+                if sizing.status == "CANCELLED_BELOW_LOT_SIZE"
+                else f"Insufficient cash to buy 1 lot while preserving reserve {reserve_cash:.0f}"
+            )
             event = {
                 **event_base,
                 "open_price": open_price,
-                "status": "CANCELLED_INSUFFICIENT_CASH",
-                "message": f"Insufficient cash to buy 1 share while preserving reserve {reserve_cash:.0f}",
+                "status": sizing.status,
+                "message": message,
             }
             state["order_events"].append(event)
             terminal_events.append(event)
             continue
+
+        shares = sizing.shares
+        trade_amount = sizing.trade_amount
+        buy_cost = sizing.commission
 
         # Deduct cash
         state["cash"] -= (trade_amount + buy_cost)
@@ -1090,10 +1102,10 @@ def settle_positions(
         if reason:
             shares = pos["shares"]
             entry_price = pos["entry"]
-            sell_cost = exit_price * shares * SELL_COST_RATE
+            sell_cost = compute_commission(exit_price * shares, BUY_COST_RATE) + exit_price * shares * (SELL_COST_RATE - BUY_COST_RATE)
             slippage_cost = exit_price * shares * SLIPPAGE
             proceeds = exit_price * shares - sell_cost - slippage_cost
-            buy_cost = entry_price * shares * BUY_COST_RATE
+            buy_cost = compute_commission(entry_price * shares, BUY_COST_RATE)
             cost_basis = entry_price * shares + buy_cost
             gross_pnl = (exit_price - entry_price) * shares
             net_pnl = proceeds - cost_basis
@@ -1285,7 +1297,8 @@ def compute_performance(
     # Fill rate from terminal orders
     terminal_orders = [e for e in order_events if e.get("status") in [
         "FILLED", "CANCELLED_OPEN_ABOVE_LIMIT", "CANCELLED_NO_OPEN_PRICE",
-        "CANCELLED_NO_CAPACITY", "CANCELLED_INSUFFICIENT_CASH", "CANCELLED_EXPIRED"
+        "CANCELLED_NO_CAPACITY", "CANCELLED_INSUFFICIENT_CASH", "CANCELLED_BELOW_LOT_SIZE",
+        "CANCELLED_EXPIRED"
     ]]
     if terminal_orders:
         filled_count = sum(1 for e in terminal_orders if e.get("status") == "FILLED")

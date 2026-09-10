@@ -26,6 +26,7 @@ import pandas as pd
 import exchange_calendars as xcals
 
 from strategy.order_execution import DEFAULT_TP_SL, evaluate_buy_limit_at_open
+from strategy.sizing import compute_commission, size_position
 
 DATA_FILE = 'paper_equity.json'
 HTML_FILE = 'paper_trading.html'
@@ -398,10 +399,10 @@ def close_position(data: dict, ticker: str, exit_price: float, today: str, reaso
                    slippage: float = 0.003) -> dict:
     """執行部位平倉結算，更新現金與 closed_trades 並自 positions 移除。"""
     pos = data['positions'][ticker]
-    sell_cost = exit_price * pos['shares'] * sell_cost_rate
+    sell_cost = compute_commission(exit_price * pos['shares'], buy_cost_rate) + exit_price * pos['shares'] * (sell_cost_rate - buy_cost_rate)
     slippage_cost = exit_price * pos['shares'] * slippage
     proceeds = exit_price * pos['shares'] - sell_cost - slippage_cost
-    cost_basis = pos['entry'] * pos['shares'] * (1 + buy_cost_rate)
+    cost_basis = pos['entry'] * pos['shares'] + compute_commission(pos['entry'] * pos['shares'], buy_cost_rate)
     pnl = proceeds - cost_basis
     pnl_pct = (exit_price / pos['entry'] - 1) * 100
 
@@ -675,22 +676,43 @@ def update_tracker(data):
                 position_size = 0.07
             if regime_scale < 0:
                 regime_scale = 0.0
-            available_cash = max(projected_capital - reserve_cash, 0)
-            trade_amount = min(projected_equity * position_size * regime_scale, available_cash)
-            shares = int(trade_amount / (fill_price * (1 + buy_cost_rate)))
-
-            actual_trade_amount = shares * fill_price
-            buy_cost = actual_trade_amount * buy_cost_rate  # 限價單買進不再加 slippage
-            if shares <= 0 or projected_capital - actual_trade_amount - buy_cost < reserve_cash:
+            if position_size * regime_scale <= 0:
                 order_events.append({
                     **event_base,
                     'limit_price': limit_price,
                     'open_price': open_price,
-                    'status': 'CANCELLED_INSUFFICIENT_CASH',
+                    'status': 'CANCELLED_ZERO_EXPOSURE',
                     'fill_price': None,
                 })
-                print(f"   💵 資金不足撤單 {ticker}")
+                print(f"   🛑 零曝險撤單 {ticker}: regime_scale={regime_scale}")
                 continue
+            # A1: 整股單位（board lot）+ NT$20 最低手續費，與 independent_sim.py /
+            # eval_trader.py 共用 strategy/sizing.py，不再允許零股成交。
+            sizing = size_position(
+                equity=projected_equity,
+                position_size=position_size * regime_scale,
+                fill_price=fill_price,
+                cash=projected_capital,
+                reserve=reserve_cash,
+            )
+
+            if not sizing.ok:
+                order_events.append({
+                    **event_base,
+                    'limit_price': limit_price,
+                    'open_price': open_price,
+                    'status': sizing.status,
+                    'fill_price': None,
+                })
+                if sizing.status == 'CANCELLED_BELOW_LOT_SIZE':
+                    print(f"   📏 部位額度買不起一張撤單 {ticker}")
+                else:
+                    print(f"   💵 資金不足撤單 {ticker}")
+                continue
+
+            shares = sizing.shares
+            actual_trade_amount = sizing.trade_amount
+            buy_cost = sizing.commission  # 限價單買進不再加 slippage
 
             # 資金驗證通過後，才執行換倉平倉與建倉（保證換倉原子性）
             if replace_ticker is not None:
