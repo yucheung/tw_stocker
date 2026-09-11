@@ -9,7 +9,7 @@
       "sl": 416.225,
       "entry_date": "2026-08-24",
       "shares": 39,
-      "day_count": 10,
+      "day_count": 11,
       "max_hold_days": 20,
       "entry_rank": 2
     },
@@ -19,7 +19,7 @@
       "sl": 4282.5,
       "entry_date": "2026-08-24",
       "shares": 3,
-      "day_count": 10,
+      "day_count": 11,
       "max_hold_days": 20,
       "entry_rank": 3
     },
@@ -29,7 +29,7 @@
       "sl": 411.275,
       "entry_date": "2026-08-24",
       "shares": 38,
-      "day_count": 10,
+      "day_count": 11,
       "max_hold_days": 20,
       "entry_rank": 6
     },
@@ -39,7 +39,7 @@
       "sl": 227.4832,
       "entry_date": "2026-08-25",
       "shares": 27,
-      "day_count": 9,
+      "day_count": 10,
       "max_hold_days": 20,
       "entry_rank": 5
     },
@@ -49,7 +49,7 @@
       "sl": 815.2,
       "entry_date": "2026-09-02",
       "shares": 21,
-      "day_count": 6,
+      "day_count": 7,
       "max_hold_days": 20,
       "entry_rank": 1
     },
@@ -59,7 +59,7 @@
       "sl": 6292.9881000000005,
       "entry_date": "2026-09-02",
       "shares": 2,
-      "day_count": 6,
+      "day_count": 7,
       "max_hold_days": 20,
       "entry_rank": 3
     },
@@ -69,12 +69,35 @@
       "sl": 438.95,
       "entry_date": "2026-09-10",
       "shares": 37,
-      "day_count": 0,
+      "day_count": 1,
       "max_hold_days": 20,
       "entry_rank": 3
     }
   },
-  "pending_orders": [],
+  "pending_orders": [
+    {
+      "ticker": "2426",
+      "entry": 97.1,
+      "tp": 130.86,
+      "sl": 71.78,
+      "reference_close": 97.1,
+      "atr": 8.44,
+      "gap_limit_atr": 1.5,
+      "execution_date": "2026-09-14",
+      "max_hold_days": 20,
+      "signal_date": "2026-09-11",
+      "rank": 2,
+      "position_size": 0.1,
+      "regime_scale": 1.0,
+      "tp_sl_mode": "atr",
+      "tp_atr_mult": 4.0,
+      "sl_atr_mult": 3.0,
+      "tp_pct": 0.15,
+      "sl_pct": 0.08,
+      "action": "REPLACE",
+      "replace_target": "2408"
+    }
+  ],
   "closed_trades": [
     {
       "ticker": "3008",
@@ -203,6 +226,13 @@
     {
       "date": "2026-09-10",
       "equity": 202667.0,
+      "capital": 82035.0,
+      "n_positions": 7,
+      "n_closed_today": 0
+    },
+    {
+      "date": "2026-09-11",
+      "equity": 200029.0,
       "capital": 82035.0,
       "n_positions": 7,
       "n_closed_today": 0
@@ -387,6 +417,18 @@
         "1303",
         "3653",
         "2615"
+      ]
+    },
+    {
+      "date": "2026-09-11",
+      "tickers": [
+        "3406",
+        "2426",
+        "3008",
+        "2455",
+        "6805",
+        "2615",
+        "3653"
       ]
     }
   ],
