@@ -138,6 +138,10 @@ jobs:
           # is not gitignored (unlike top-level artifacts/*.json), so list
           # its delivery path explicitly (docs/REVIEW-codex-r4-20260907.md R4-3).
           git add artifacts/mr20 || true
+          # TOP7 訊號檔：ai_report 每次都寫 artifacts/orders_YYYYMMDD.json，
+          # 但它被 artifacts/*.json 忽略且從未交付，本地 Top-7 close 永遠找不到
+          # 當日訊號（planning_gaps 連爆）。配 .gitignore 的 negation 一起生效。
+          git add artifacts/orders_*.json || true
 
           if git diff --cached --quiet; then
             echo "No changes"

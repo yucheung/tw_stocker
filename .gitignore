@@ -173,6 +173,8 @@ cython_debug/
 # Generated strategy reports and paper-trading state
 artifacts/*.csv
 artifacts/*.json
+# 例外：TOP7 每日訊號檔需交付給本地 close-and-plan（workflow 有對應 git add）
+!artifacts/orders_*.json
 artifacts/*.html
 stock_report.html
 paper_trading.html
