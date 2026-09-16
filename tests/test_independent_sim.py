@@ -299,7 +299,7 @@ class TestATRAndPlanning:
     def test_plan_orders_creates_pending_orders_with_atr(self, temp_dir, sample_orders_data):
         state = sim.get_default_state(capital=200000.0)
         selected = sample_orders_data["orders"][:2]
-        pending = sim.plan_orders(state, selected, as_of="2026-08-14")
+        pending = sim.plan_orders(state, selected, as_of="2026-08-14", today="2026-08-14")
         assert len(pending) == 2
         assert pending[0]["order_id"] == "top2_score_v1:2026-08-14:2059:buy"
         assert pending[0]["limit_price"] == 122.0
@@ -322,7 +322,7 @@ class TestATRAndPlanning:
         }
         # mock fetch_closes returning insufficient data
         with patch.object(sim, "fetch_ticker_closes", return_value=pd.Series([100.0] * 10)):
-            pending = sim.plan_orders(state, [candidate_no_atr], as_of="2026-08-14")
+            pending = sim.plan_orders(state, [candidate_no_atr], as_of="2026-08-14", today="2026-08-14")
             assert len(pending) == 0
             assert len(state["pending_orders"]) == 0
             assert len(state["order_events"]) == 1
@@ -919,3 +919,232 @@ class TestMarketDataProviders:
             mock_yf.assert_called_once()
             _, kwargs = mock_yf.call_args
             assert "start" in kwargs and "end" in kwargs
+
+
+# =====================================================================
+# Tests for Batch A (A2, A3, A4, A5)
+# =====================================================================
+
+class TestBatchA2toA5:
+    # A2: DAY_UNTIL_0930 intraday touch
+    def test_execute_open_orders_day_until_0930_intraday_touch(self, temp_dir):
+        state = sim.get_default_state(capital=5000000.0)
+        state["pending_orders"] = [
+            {
+                "order_id": "test:2099-01-01:6446:buy",
+                "signal_date": "2099-01-01",
+                "execution_date": "2099-01-02",
+                "ticker": "6446",
+                "limit_price": 1315.0,
+                "atr": 20.0,
+                "tp_atr_mult": 4.0,
+                "sl_atr_mult": 3.0,
+                "max_hold_days": 20,
+                "time_in_force": "DAY_UNTIL_0930",
+            }
+        ]
+        # Open is 1345 (> 1315), but low is 1300 (<= 1315) -> filled at limit 1315
+        bars = {
+            "6446": {"date": "2099-01-02", "open": 1345.0, "high": 1350.0, "low": 1300.0, "close": 1320.0}
+        }
+        events = sim.execute_open_orders(state, bars, as_of="2099-01-02")
+        assert len(events) == 1
+        assert events[0]["status"] in ("FILLED", "FILLED_INTRADAY_ESTIMATED")
+        assert events[0]["fill_price"] == 1315.0
+        assert "6446" in state["positions"]
+        assert state["positions"]["6446"]["entry"] == 1315.0
+
+    # A3: Stale pricing & marks
+    def test_mark_equity_stale_pricing_uses_last_valid_close(self, temp_dir):
+        state = sim.get_default_state(capital=200000.0)
+        state["cash"] = 100000.0
+        state["positions"] = {
+            "2059": {
+                "ticker": "2059",
+                "entry": 100.0,
+                "shares": 1000,
+                "tp": 120.0,
+                "sl": 80.0,
+                "entry_date": "2099-01-02",
+                "day_count": 0,
+                "max_hold_days": 20,
+                "last_valid_close": 100.0,
+                "last_valid_date": "2099-01-02",
+            }
+        }
+        # Day 1: valid quote at 110
+        rec1 = sim.mark_equity(state, {"2059": 110.0}, benchmark_close=100.0, as_of="2099-01-02")
+        assert rec1["market_value"] == 110000.0
+        assert rec1["equity"] == 210000.0
+        assert rec1["stale_marks"] == 0
+        assert rec1["stale_ratio"] == 0.0
+        assert state["positions"]["2059"]["last_valid_close"] == 110.0
+
+        # Day 2: missing quote -> uses last_valid_close 110.0, not entry 100.0
+        rec2 = sim.mark_equity(state, {}, benchmark_close=100.0, as_of="2099-01-05")
+        assert rec2["market_value"] == 110000.0
+        assert rec2["equity"] == 210000.0
+        assert rec2["stale_marks"] == 1
+        assert rec2["stale_ratio"] == 1.0
+
+        # Day 3: another missing quote -> still 110.0
+        rec3 = sim.mark_equity(state, {}, benchmark_close=100.0, as_of="2099-01-06")
+        assert rec3["market_value"] == 110000.0
+        assert rec3["stale_marks"] == 1
+
+        # Day 4: price drops to 90.0
+        rec4 = sim.mark_equity(state, {"2059": 90.0}, benchmark_close=100.0, as_of="2099-01-07")
+        assert rec4["market_value"] == 90000.0
+        assert rec4["stale_marks"] == 0
+        assert state["positions"]["2059"]["last_valid_close"] == 90.0
+
+    # A4: Idempotence and out-of-order sorting
+    def test_mark_equity_idempotence(self, temp_dir):
+        state = sim.get_default_state(capital=200000.0)
+        # Call 3 times on same date
+        r1 = sim.mark_equity(state, {}, benchmark_close=100.0, as_of="2099-01-05")
+        r2 = sim.mark_equity(state, {}, benchmark_close=100.0, as_of="2099-01-05")
+        r3 = sim.mark_equity(state, {}, benchmark_close=100.0, as_of="2099-01-05")
+        assert len(state["equity_curve"]) == 1
+        assert r1["equity"] == r2["equity"] == r3["equity"]
+        assert r1["daily_return"] == r2["daily_return"] == r3["daily_return"]
+
+    def test_mark_equity_out_of_order_backfill(self, temp_dir):
+        state = sim.get_default_state(capital=200000.0)
+        state["cash"] = 200000.0
+        # D1: cash=200000
+        sim.mark_equity(state, {}, benchmark_close=100.0, as_of="2099-01-01")
+        # D3: cash drops to 180000 (-10%)
+        state["cash"] = 180000.0
+        sim.mark_equity(state, {}, benchmark_close=100.0, as_of="2099-01-03")
+        # Backfill D2: cash was 190000 (-5% from D1)
+        state["cash"] = 190000.0
+        sim.mark_equity(state, {}, benchmark_close=100.0, as_of="2099-01-02")
+
+        # Dates must be sorted strictly ascending
+        dates = [e["date"] for e in state["equity_curve"]]
+        assert dates == ["2099-01-01", "2099-01-02", "2099-01-03"]
+
+        # D2 daily return based on D1 (190k / 200k - 1 = -0.05)
+        d2 = state["equity_curve"][1]
+        assert math.isclose(d2["daily_return"], -0.05, abs_tol=1e-4)
+
+        # D3 daily return based on D2 (180k / 190k - 1 = -0.052632)
+        d3 = state["equity_curve"][2]
+        assert math.isclose(d3["daily_return"], 180000.0 / 190000.0 - 1.0, abs_tol=1e-4)
+
+    # A5: Trading calendar day_count & pending time exit
+    def test_settle_positions_missing_bars_advances_day_count_and_exits(self, temp_dir):
+        state = sim.get_default_state(capital=200000.0)
+        state["positions"] = {
+            "2059": {
+                "ticker": "2059",
+                "entry": 100.0,
+                "shares": 1000,
+                "tp": 200.0,
+                "sl": 50.0,
+                "entry_date": "2026-08-17",
+                "day_count": 0,
+                "max_hold_days": 20,
+            }
+        }
+        # Simulate missing bars across multiple dates: position should age and eventually mark pending time exit
+        # Day 1: 2026-08-18 (empty bar)
+        sim.settle_positions(state, {}, as_of="2026-08-18")
+        assert state["positions"]["2059"]["day_count"] == 1
+
+        # Day 10: 2026-08-31
+        sim.settle_positions(state, {}, as_of="2026-08-31")
+        assert state["positions"]["2059"]["day_count"] == 10
+
+        # Day 21: 2026-09-15 (> 20 max hold)
+        sim.settle_positions(state, {}, as_of="2026-09-15")
+        assert state["positions"]["2059"]["day_count"] >= 20
+        assert state["positions"]["2059"].get("pending_time_exit") is True
+
+        # Next valid bar on 2026-09-16: should exit with reason "TIME" and days_held capped at 20
+        bars = {"2059": {"date": "2026-09-16", "open": 105.0, "high": 106.0, "low": 104.0, "close": 105.0}}
+        closed = sim.settle_positions(state, bars, as_of="2026-09-16")
+        assert len(closed) == 1
+        assert closed[0]["exit_reason"] == "TIME"
+        assert closed[0]["days_held"] <= 20
+        assert "2059" not in state["positions"]
+
+    def test_day_count_immune_to_skipped_run(self, temp_dir):
+        state = sim.get_default_state(capital=200000.0)
+        state["positions"] = {
+            "2059": {
+                "ticker": "2059",
+                "entry": 100.0,
+                "shares": 1000,
+                "tp": 200.0,
+                "sl": 50.0,
+                "entry_date": "2026-08-17",
+                "day_count": 0,
+                "max_hold_days": 20,
+            }
+        }
+        # Run on D1 (2026-08-18)
+        sim.settle_positions(state, {}, as_of="2026-08-18")
+        assert state["positions"]["2059"]["day_count"] == 1
+
+        # Skip D2 (2026-08-19), run directly on D3 (2026-08-20)
+        sim.settle_positions(state, {}, as_of="2026-08-20")
+        assert state["positions"]["2059"]["day_count"] == 3
+
+
+
+# =====================================================================
+# 執行鏈修復（2026-09-16）：TIF 攜帶＋stale 拒單＋重複 PENDING 去重
+# =====================================================================
+
+class TestPlanOrdersExecutionChainFix:
+    def _cand(self, **kw):
+        d = {
+            "signal_date": "2026-09-14",
+            "execution_date": "2026-09-15",
+            "ticker": "2301",
+            "rank": 1,
+            "score": 71.0,
+            "reference_close": 277.5,
+            "limit_price": 277.5,
+            "atr": 8.8,
+            "time_in_force": "DAY_UNTIL_0930",
+            "cancel_time": "09:30:00",
+        }
+        d.update(kw)
+        return d
+
+    def test_time_in_force_carried_to_pending(self, temp_dir):
+        state = sim.get_default_state(capital=200000.0)
+        pending = sim.plan_orders(state, [self._cand()], as_of="2026-09-14", today="2026-09-14")
+        assert len(pending) == 1
+        assert pending[0]["time_in_force"] == "DAY_UNTIL_0930"
+        assert pending[0]["cancel_time"] == "09:30:00"
+
+    def test_stale_execution_date_refused(self, temp_dir):
+        # TOP7 09-08 重下 09-03 舊單：exec 已過去，下了也是等過期
+        state = sim.get_default_state(capital=200000.0)
+        pending = sim.plan_orders(state, [self._cand(ticker="3406")], as_of="2026-09-03", today="2026-09-08")
+        assert pending == []
+        assert state["pending_orders"] == []
+        assert state["order_events"][-1]["status"] == "STALE_NOT_PLACED"
+        assert "3406" in state["order_events"][-1]["order_id"]
+
+    def test_duplicate_pending_event_not_replaced(self, temp_dir):
+        state = sim.get_default_state(capital=200000.0)
+        c = self._cand()
+        first = sim.plan_orders(state, [c], as_of="2026-09-14", today="2026-09-14")
+        assert len(first) == 1
+        # 上游重送同一批：不重複放單、不重複記 PENDING 事件
+        second = sim.plan_orders(state, [c], as_of="2026-09-14", today="2026-09-14")
+        assert second == []
+        pendings = [e for e in state["order_events"] if e["status"] == "PENDING"]
+        assert len(pendings) == 1
+
+    def test_day_until_0930_fills_on_intraday_touchback(self, temp_dir):
+        # MR20 6446 情境：開盤跳空過 limit，盤中拉回碰到 → 應成交（估算價）
+        from strategy.order_execution import evaluate_buy_limit_until_0930
+        d = evaluate_buy_limit_until_0930(limit_price=1315.0, open_price=1345.0, low_price=1300.0)
+        assert d.filled
+        assert d.status == "FILLED_INTRADAY_ESTIMATED"

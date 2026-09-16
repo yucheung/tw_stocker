@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 
 import exchange_calendars as xcals
-from strategy.order_execution import DEFAULT_TP_SL, evaluate_buy_limit_at_open
+from strategy.order_execution import DEFAULT_TP_SL, evaluate_buy_limit_at_open, evaluate_buy_limit_until_0930
 from strategy.sizing import compute_commission, size_position
 
 # =====================================================================
@@ -189,6 +189,36 @@ def get_previous_trading_day(dt_str: str, calendar: Optional[xcals.ExchangeCalen
     cal = calendar or get_calendar("XTAI")
     prev = cal.previous_session(dt_str)
     return prev.strftime("%Y-%m-%d")
+
+
+def calculate_trading_days(
+    start_date: str,
+    end_date: str,
+    calendar: Optional[xcals.ExchangeCalendar] = None,
+) -> int:
+    """Calculate number of trading sessions between start_date and end_date (start exclusive, end inclusive).
+    Returns 0 if start_date == end_date or start_date > end_date.
+    """
+    if start_date == end_date:
+        return 0
+    cal = calendar or get_calendar("XTAI")
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+    if start_dt >= end_dt:
+        return 0
+    try:
+        if start_dt >= cal.first_session and end_dt <= cal.last_session:
+            sessions = cal.sessions_in_range(start_date, end_date)
+            if cal.is_session(start_date):
+                return max(0, len(sessions) - 1)
+            else:
+                return len(sessions)
+    except Exception:
+        pass
+    # Fallback for out-of-bounds or synthetic dates (e.g. 2099 test dates)
+    bus_days = pd.bdate_range(start_dt, end_dt)
+    return max(0, len(bus_days) - 1)
+
 
 
 def _opt_float(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -789,6 +819,7 @@ def plan_orders(
     selected_candidates: list[dict[str, Any]],
     as_of: str,
     fetch_closes_fn: Optional[Callable[[str], pd.Series]] = None,
+    today: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """Plan buy limit orders for next trading session based on selected candidates."""
     cfg = state["config"]
@@ -802,6 +833,7 @@ def plan_orders(
 
     fetcher = fetch_closes_fn or (lambda tkr: fetch_ticker_closes(tkr, end_date=as_of))
     new_pending = []
+    today_str = today or get_taipei_today()
 
     for candidate in selected_candidates[:capacity]:
         ticker = candidate["ticker"]
@@ -816,6 +848,36 @@ def plan_orders(
 
         # Check existing order_id in pending_orders or order_events to ensure idempotency
         if any(p["order_id"] == order_id for p in state["pending_orders"]):
+            continue
+        if any(e.get("order_id") == order_id and e.get("status") == "PENDING"
+               for e in state.get("order_events", [])):
+            # 同單已下過 PENDING（例如上游重送舊檔），不再重複放單／重複記事件
+            continue
+
+        # Stale guard：execution 已過去（或就是今天但 open 已跑完）的單，
+        # 下了也永遠輪不到執行，只會變成 CANCELLED_EXPIRED 污染報表。
+        # 起因：TOP7 2026-09-08 把 signal 09-03 的舊單重下，09-09 全數過期。
+        if exec_date < today_str or (exec_date == today_str and is_run_processed(state, f"open:{today_str}")):
+            state["order_events"].append({
+                "order_id": order_id,
+                "signal_date": sig_date,
+                "execution_date": exec_date,
+                "event_time": get_taipei_now_iso(),
+                "ticker": ticker,
+                "upstream_rank": candidate.get("rank"),
+                "score": candidate.get("score"),
+                "selection_mode": candidate.get("selection_mode", "auto"),
+                "reference_close": _opt_float(candidate.get("reference_close", candidate.get("limit_price"))),
+                "limit_price": _opt_float(candidate.get("limit_price", candidate.get("reference_close"))),
+                "open_price": None,
+                "fill_price": None,
+                "atr": _opt_float(candidate.get("atr")),
+                "tp_price": None,
+                "sl_price": None,
+                "shares": 0,
+                "status": "STALE_NOT_PLACED",
+                "message": f"Refused: execution_date {exec_date} already passed (today {today_str})",
+            })
             continue
 
         ref_close = _opt_float(candidate.get("reference_close", candidate.get("limit_price")))
@@ -864,6 +926,11 @@ def plan_orders(
             "selection_mode": candidate.get("selection_mode", "auto"),
             "reference_close": ref_close,
             "limit_price": limit_price,
+            # 上游給的委託效期（例如 MR20 的 DAY_UNTIL_0930）必須帶進 pending，
+            # 否則 execute_open_orders 讀不到、永遠走嚴格開盤價判定，
+            # 開盤跳空就整批 CANCELLED_OPEN_ABOVE_LIMIT（MR20 6446 2026-09-08）。
+            "time_in_force": candidate.get("time_in_force"),
+            "cancel_time": candidate.get("cancel_time"),
             "atr": atr_val,
             "tp_atr_mult": candidate.get("tp_atr_mult", cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT)),
             "sl_atr_mult": candidate.get("sl_atr_mult", cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT)),
@@ -943,9 +1010,18 @@ def execute_open_orders(
             continue
 
         open_price = bar.get("open")
-        decision = evaluate_buy_limit_at_open(limit_price=limit_price, open_price=open_price)
+        time_in_force = order.get("time_in_force")
+        if time_in_force == "DAY_UNTIL_0930":
+            decision = evaluate_buy_limit_until_0930(
+                limit_price=limit_price,
+                open_price=open_price,
+                low_price=bar.get("low"),
+                high_price=bar.get("high"),
+            )
+        else:
+            decision = evaluate_buy_limit_at_open(limit_price=limit_price, open_price=open_price)
 
-        if decision.status != "FILLED":
+        if not decision.filled:
             event = {
                 **event_base,
                 "open_price": open_price,
@@ -1024,6 +1100,8 @@ def execute_open_orders(
         state["positions"][ticker] = {
             "ticker": ticker,
             "entry": fill_price,
+            "last_valid_close": fill_price,
+            "last_valid_date": as_of,
             "shares": int(shares),
             "tp": round(tp_price, 2),
             "sl": round(sl_price, 2),
@@ -1043,12 +1121,12 @@ def execute_open_orders(
         event = {
             **event_base,
             "open_price": open_price,
-            "status": "FILLED",
+            "status": decision.status,
             "fill_price": fill_price,
             "tp_price": round(tp_price, 2),
             "sl_price": round(sl_price, 2),
             "shares": int(shares),
-            "message": f"Filled at open {fill_price:.2f}",
+            "message": f"Filled intraday (estimated) at {fill_price:.2f}" if getattr(decision, "is_estimated", False) else f"Filled at open {fill_price:.2f}",
         }
         state["order_events"].append(event)
         terminal_events.append(event)
@@ -1072,22 +1150,28 @@ def settle_positions(
     for ticker, pos in state["positions"].items():
         if pos.get("entry_date") == as_of:
             continue
-        bar = bars.get(ticker)
-        if not bar or bar.get("close") is None:
-            # No valid bar today; do not increment day count or check exit
-            continue
-        if bar.get("date") != as_of:
-            continue
 
-        pos["day_count"] = pos.get("day_count", 0) + 1
-        day_count = pos["day_count"]
+        # Calculate calendar trading days (A5)
+        day_count = calculate_trading_days(pos.get("entry_date", as_of), as_of)
+        pos["day_count"] = day_count
         max_hold = pos.get("max_hold_days", DEFAULT_MAX_HOLD_DAYS)
+
+        bar = bars.get(ticker)
+        if not bar or bar.get("close") is None or bar.get("date") != as_of:
+            # Missing quote: do not check TP/SL, but if hold period expired, mark pending time exit
+            if day_count >= max_hold:
+                pos["pending_time_exit"] = True
+            continue
 
         reason = None
         exit_price = bar["close"]
 
-        # Conservative priority: SL > TP > TIME
-        if bar.get("low") is not None and bar["low"] <= pos["sl"]:
+        if pos.get("pending_time_exit"):
+            reason = "TIME"
+            open_px = bar.get("open")
+            exit_price = open_px if (open_px is not None and math.isfinite(open_px) and open_px > 0) else bar["close"]
+        elif bar.get("low") is not None and bar["low"] <= pos["sl"]:
+            # Conservative priority: SL > TP > TIME
             reason = "SL"
             open_px = bar.get("open")
             exit_price = open_px if (open_px is not None and open_px < pos["sl"]) else pos["sl"]
@@ -1113,6 +1197,9 @@ def settle_positions(
 
             state["cash"] += proceeds
 
+            # Cap reported days_held at max_hold for TIME exits (A5)
+            reported_days_held = min(int(day_count), int(max_hold)) if reason == "TIME" else int(day_count)
+
             trade = {
                 "trade_id": f"{state['strategy_id']}:{pos.get('signal_date')}:{ticker}:{pos['entry_date']}:{as_of}",
                 "ticker": ticker,
@@ -1125,7 +1212,7 @@ def settle_positions(
                 "atr": pos.get("atr"),
                 "tp_price": float(pos["tp"]),
                 "sl_price": float(pos["sl"]),
-                "days_held": int(day_count),
+                "days_held": reported_days_held,
                 "exit_reason": reason,
                 "buy_cost": round(buy_cost, 2),
                 "sell_cost": round(sell_cost, 2),
@@ -1152,36 +1239,31 @@ def mark_equity(
 ) -> dict[str, Any]:
     """Calculate and record daily equity and benchmark equity for as_of."""
     initial_cap = state["config"]["initial_capital"]
-    market_value = sum(
-        closes.get(tkr, pos["entry"]) * pos["shares"]
-        for tkr, pos in state["positions"].items()
-    )
+
+    # 1. Update last_valid_close and calculate stale_marks / stale_ratio (A3)
+    stale_marks = 0
+    stale_market_val = 0.0
+    total_mkt_val = 0.0
+
+    for tkr, pos in state["positions"].items():
+        px_close = closes.get(tkr)
+        if px_close is not None and isinstance(px_close, (int, float)) and math.isfinite(px_close) and px_close > 0:
+            pos["last_valid_close"] = float(px_close)
+            pos["last_valid_date"] = as_of
+            px = float(px_close)
+        else:
+            px = pos.get("last_valid_close", pos["entry"])
+            stale_marks += 1
+            stale_market_val += px * pos["shares"]
+        total_mkt_val += px * pos["shares"]
+
+    market_value = total_mkt_val
     equity = state["cash"] + market_value
+    stale_ratio = round(stale_market_val / market_value, 6) if market_value > 0 else 0.0
+    if stale_ratio > 0.3:
+        print(f"   ⚠️ Warning: {as_of} stale_ratio={stale_ratio:.1%} > 30%, daily_return may be untrustworthy")
 
-    if state["equity_curve"]:
-        prev_equity = state["equity_curve"][-1]["equity"]
-        first_bm_close = state["equity_curve"][0]["benchmark_close"]
-    else:
-        prev_equity = initial_cap
-        first_bm_close = benchmark_close
-
-    daily_return = (equity / prev_equity - 1.0) if prev_equity > 0 else 0.0
-    cum_return = (equity / initial_cap - 1.0)
-
-    if first_bm_close and first_bm_close > 0:
-        bm_equity = initial_cap * (benchmark_close / first_bm_close)
-        bm_return = (bm_equity / initial_cap - 1.0)
-    else:
-        bm_equity = initial_cap
-        bm_return = 0.0
-
-    excess_return = cum_return - bm_return
-
-    all_equities = [e["equity"] for e in state["equity_curve"]] + [equity]
-    peak_equity = max(all_equities)
-    drawdown = (equity - peak_equity) / peak_equity if peak_equity > 0 else 0.0
-
-    # Avoid duplicate entry for same date
+    # 2. Avoid duplicate entry for same date first (A4 idempotent)
     state["equity_curve"] = [e for e in state["equity_curve"] if e.get("date") != as_of]
 
     record = {
@@ -1189,16 +1271,40 @@ def mark_equity(
         "cash": round(state["cash"], 2),
         "market_value": round(market_value, 2),
         "equity": round(equity, 2),
-        "daily_return": round(daily_return, 6),
-        "cumulative_return": round(cum_return, 6),
-        "benchmark_close": round(benchmark_close, 2),
-        "benchmark_equity": round(bm_equity, 2),
-        "benchmark_return": round(bm_return, 6),
-        "excess_return": round(excess_return, 6),
-        "drawdown": round(drawdown, 6),
+        "daily_return": 0.0,
+        "cumulative_return": 0.0,
+        "benchmark_close": round(benchmark_close, 2) if benchmark_close is not None else 0.0,
+        "benchmark_equity": round(initial_cap, 2),
+        "benchmark_return": 0.0,
+        "excess_return": 0.0,
+        "drawdown": 0.0,
+        "stale_marks": stale_marks,
+        "stale_ratio": stale_ratio,
     }
     state["equity_curve"].append(record)
-    return record
+
+    # 3. Sort by date strictly ascending and recompute equity metrics across the chain (A4)
+    state["equity_curve"].sort(key=lambda e: e["date"])
+    earliest_bm = state["equity_curve"][0]["benchmark_close"] if state["equity_curve"] else benchmark_close
+    peak = 0.0
+    target_record = record
+
+    for i, rec in enumerate(state["equity_curve"]):
+        prev_eq = state["equity_curve"][i - 1]["equity"] if i > 0 else initial_cap
+        rec["daily_return"] = round((rec["equity"] / prev_eq - 1.0) if prev_eq > 0 else 0.0, 6)
+        rec["cumulative_return"] = round((rec["equity"] / initial_cap - 1.0), 6)
+        if earliest_bm and earliest_bm > 0:
+            rec["benchmark_equity"] = round(initial_cap * (rec["benchmark_close"] / earliest_bm), 2)
+            rec["benchmark_return"] = round((rec["benchmark_equity"] / initial_cap - 1.0), 6)
+        rec["excess_return"] = round(rec["cumulative_return"] - rec.get("benchmark_return", 0.0), 6)
+        if rec["equity"] > peak:
+            peak = rec["equity"]
+        rec["drawdown"] = round((rec["equity"] - peak) / peak if peak > 0 else 0.0, 6)
+        if rec["date"] == as_of:
+            target_record = rec
+
+    return target_record
+
 
 
 # =====================================================================
@@ -1218,6 +1324,8 @@ def export_ledgers(state: dict[str, Any], data_dir: Path | str = DEFAULT_DATA_DI
         "tp_price", "sl_price", "shares", "message"
     ]
     orders_df = pd.DataFrame(state.get("order_events", []), columns=order_cols)
+    if not orders_df.empty and "execution_date" in orders_df.columns:
+        orders_df = orders_df.sort_values(by=["execution_date", "event_time"])
     orders_df.to_csv(d / "orders.csv", index=False)
 
     # 2. trades.csv
@@ -1228,15 +1336,20 @@ def export_ledgers(state: dict[str, Any], data_dir: Path | str = DEFAULT_DATA_DI
         "gross_pnl", "net_pnl", "net_return_pct"
     ]
     trades_df = pd.DataFrame(state.get("closed_trades", []), columns=trade_cols)
+    if not trades_df.empty and "exit_date" in trades_df.columns:
+        trades_df = trades_df.sort_values(by=["exit_date", "entry_date"])
     trades_df.to_csv(d / "trades.csv", index=False)
 
     # 3. equity.csv
     equity_cols = [
         "date", "cash", "market_value", "equity", "daily_return",
         "cumulative_return", "benchmark_close", "benchmark_equity",
-        "benchmark_return", "excess_return", "drawdown"
+        "benchmark_return", "excess_return", "drawdown",
+        "stale_marks", "stale_ratio"
     ]
     equity_df = pd.DataFrame(state.get("equity_curve", []), columns=equity_cols)
+    if not equity_df.empty and "date" in equity_df.columns:
+        equity_df = equity_df.sort_values(by="date")
     equity_df.to_csv(d / "equity.csv", index=False)
 
 
@@ -1262,12 +1375,22 @@ def compute_performance(
         "trading_days": len(equity_df),
     }
 
+    if not equity_df.empty and "date" in equity_df.columns:
+        equity_df = equity_df.sort_values(by="date")
+
     if not equity_df.empty and "cumulative_return" in equity_df.columns:
         last = equity_df.iloc[-1]
         res["total_return"] = float(last.get("cumulative_return", 0.0))
         res["benchmark_return"] = float(last.get("benchmark_return", 0.0))
         res["excess_return"] = float(last.get("excess_return", 0.0))
-        res["max_drawdown"] = float(equity_df["drawdown"].min()) if "drawdown" in equity_df.columns else 0.0
+
+        # Recompute drawdown from sorted sequence (A4)
+        if "equity" in equity_df.columns:
+            peaks = equity_df["equity"].cummax()
+            dd_series = (equity_df["equity"] - peaks) / peaks
+            res["max_drawdown"] = float(dd_series.min()) if len(dd_series) > 0 else 0.0
+        elif "drawdown" in equity_df.columns:
+            res["max_drawdown"] = float(equity_df["drawdown"].min())
 
         if "benchmark_equity" in equity_df.columns:
             bm_peak = equity_df["benchmark_equity"].cummax()
@@ -1279,6 +1402,10 @@ def compute_performance(
             rets = equity_df["daily_return"].iloc[1:]  # skip day 0
             if len(rets) > 0 and rets.std() > 0:
                 res["sharpe"] = float((rets.mean() / rets.std()) * np.sqrt(252))
+
+        if "stale_ratio" in equity_df.columns:
+            high_stale = equity_df[equity_df["stale_ratio"] > 0.3]["date"].tolist()
+            res["high_stale_days"] = high_stale
 
     if trades:
         wins = [t for t in trades if t.get("net_pnl", 0) > 0]
@@ -1294,14 +1421,14 @@ def compute_performance(
         elif tot_win > 0:
             res["profit_factor"] = float("inf")
 
-    # Fill rate from terminal orders
+    # Fill rate from terminal orders (including estimated intraday fills)
     terminal_orders = [e for e in order_events if e.get("status") in [
-        "FILLED", "CANCELLED_OPEN_ABOVE_LIMIT", "CANCELLED_NO_OPEN_PRICE",
+        "FILLED", "FILLED_INTRADAY_ESTIMATED", "CANCELLED_OPEN_ABOVE_LIMIT", "CANCELLED_NO_OPEN_PRICE",
         "CANCELLED_NO_CAPACITY", "CANCELLED_INSUFFICIENT_CASH", "CANCELLED_BELOW_LOT_SIZE",
         "CANCELLED_EXPIRED"
     ]]
     if terminal_orders:
-        filled_count = sum(1 for e in terminal_orders if e.get("status") == "FILLED")
+        filled_count = sum(1 for e in terminal_orders if e.get("status") in ("FILLED", "FILLED_INTRADAY_ESTIMATED"))
         res["fill_rate"] = filled_count / len(terminal_orders)
 
     return res
@@ -1579,8 +1706,8 @@ def run_open(
     save_state_atomic(state, data_dir=d)
     export_ledgers(state, data_dir=d)
 
-    filled = [e for e in events if e.get("status") == "FILLED"]
-    cancelled = [e for e in events if e.get("status") != "FILLED"]
+    filled = [e for e in events if e.get("status") in ("FILLED", "FILLED_INTRADAY_ESTIMATED")]
+    cancelled = [e for e in events if e.get("status") not in ("FILLED", "FILLED_INTRADAY_ESTIMATED")]
     print(f"✅ Open execution completed for {today_str}: {len(filled)} filled, {len(cancelled)} cancelled/skipped.")
 
     if notify:
@@ -1791,7 +1918,7 @@ def print_status(data_dir: Path | str = DEFAULT_DATA_DIR) -> None:
 
     # ── Separate tracking: fills / open positions / closed trades ──
     order_events = state.get("order_events", [])
-    fill_events = [e for e in order_events if e.get("status") == "FILLED"]
+    fill_events = [e for e in order_events if e.get("status") in ("FILLED", "FILLED_INTRADAY_ESTIMATED")]
     cancel_events = [e for e in order_events if e.get("status", "").startswith("CANCELLED")]
     pending_events = [e for e in order_events if e.get("status") == "PENDING"]
 
