@@ -1,7 +1,7 @@
 {
- "fetched_at": "2026-08-14",
+ "fetched_at": "2026-09-14",
  "source": "https://isin.twse.com.tw/isin/C_public.jsp?strMode=2",
- "count": 1085,
+ "count": 1084,
  "stocks": [
   {
    "code": "1101",
@@ -840,7 +840,7 @@
   },
   {
    "code": "1721",
-   "name": "三晃",
+   "name": "國慶科技",
    "listing_date": "1996-05-16"
   },
   {
@@ -2409,11 +2409,6 @@
    "listing_date": "2002-09-16"
   },
   {
-   "code": "2867",
-   "name": "三商壽",
-   "listing_date": "2012-12-18"
-  },
-  {
    "code": "2880",
    "name": "華南金",
    "listing_date": "2001-12-19"
@@ -2786,7 +2781,7 @@
   {
    "code": "3054",
    "name": "立萬利",
-   "listing_date": "2002-11-18"
+   "listing_date": "2026-09-01"
   },
   {
    "code": "3055",
@@ -4745,7 +4740,7 @@
   },
   {
    "code": "6949",
-   "name": "沛爾生醫-創",
+   "name": "沛爾生醫*-創",
    "listing_date": "2024-03-08"
   },
   {

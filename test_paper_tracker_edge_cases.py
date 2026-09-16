@@ -288,7 +288,7 @@ class TestBuyLimitLifecycle(unittest.TestCase):
         # 當已有 5 個持倉時，MAX_POSITIONS=7 剩餘 2 個 submission slots，
         # 新進入 4 個信號應只保留前 2 個進入 pending_orders
         today = pt.date.today().isoformat()
-        positions = {f"233{i}": {'entry': 100.0, 'tp': 120.0, 'sl': 80.0, 'entry_date': '2026-01-01', 'shares': 100, 'day_count': 1, 'max_hold_days': 20} for i in range(5)}
+        positions = {f"233{i}": {'entry': 100.0, 'tp': 120.0, 'sl': 80.0, 'entry_date': today, 'shares': 100, 'day_count': 1, 'max_hold_days': 20} for i in range(5)}
         data = {
             'start_date': '2026-01-01',
             'initial_capital': 500_000,

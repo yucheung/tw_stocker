@@ -563,3 +563,37 @@ def test_cancel_reasons_dict():
     assert total_cancelled == from_cancel_log, (
         f"cancel_reasons sum {total_cancelled} != fill_log cancelled {from_cancel_log}"
     )
+
+
+def test_missing_price_does_not_vanish_from_market_value():
+    """A3: When close price is missing/NaN, position must not vanish from market value."""
+    from eval_trader import _new_state, _daily_mtm
+    dates = pd.bdate_range("2025-03-01", periods=3)
+    tickers = ["AAAA"]
+    close_df, open_df, high_df, low_df, _vol_df = _make_df([
+        {"date": dates[0], "close_AAAA": 100.0, "open_AAAA": 100.0,
+         "high_AAAA": 101.0, "low_AAAA": 99.0, "vol_AAAA": 1e6},
+        {"date": dates[1], "close_AAAA": 105.0, "open_AAAA": 101.0,
+         "high_AAAA": 106.0, "low_AAAA": 100.0, "vol_AAAA": 1e6},
+        {"date": dates[2], "close_AAAA": np.nan, "open_AAAA": np.nan,
+         "high_AAAA": np.nan, "low_AAAA": np.nan, "vol_AAAA": 0},
+    ], tickers)
+
+    state = _new_state()
+    state["positions"]["AAAA"] = {
+        "entry": 100.0, "shares": 1000,
+        "tp": 150.0, "sl": 80.0, "atr": 2.0,
+        "entry_date": dates[0].strftime("%Y-%m-%d"),
+        "day_count": 0,
+        "last_valid_close": 100.0,
+    }
+    state["cash"] = 50000.0
+
+    # Day 1 MTM (date 1): close is 105
+    _daily_mtm(state, close_df, open_df, high_df, low_df, dates[1].strftime("%Y-%m-%d"))
+    assert state["equity_curve"][-1]["equity"] == 50000.0 + 105.0 * 1000
+
+    # Day 2 MTM (date 2): close is NaN -> must use last_valid_close (105.0), NOT vanish to 0
+    _daily_mtm(state, close_df, open_df, high_df, low_df, dates[2].strftime("%Y-%m-%d"))
+    assert state["equity_curve"][-1]["equity"] == 50000.0 + 105.0 * 1000
+

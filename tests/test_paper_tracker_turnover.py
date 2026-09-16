@@ -9,6 +9,19 @@ import pytest
 import paper_tracker as pt
 
 
+def _entry_date_n_ago(n):
+    """回推 n 個 XTAI 交易日的日期（與 production 日曆口徑一致）。"""
+    import exchange_calendars as xcals
+    import pandas as pd
+    today = pt.date.today().isoformat()
+    if n <= 0:
+        return today
+    cal = xcals.get_calendar("XTAI")
+    ts = pd.Timestamp(today)
+    sessions = cal.sessions_in_range(ts - pd.Timedelta(days=n * 3 + 10), ts)
+    return sessions[-n - 1].strftime("%Y-%m-%d")
+
+
 class TestFindReplaceCandidate(unittest.TestCase):
     def test_empty_positions_returns_none(self):
         self.assertIsNone(pt.find_replace_candidate({}, new_rank=1))
@@ -82,7 +95,7 @@ class TestTurnoverIntegration(unittest.TestCase):
                 "entry": 100.0,
                 "tp": 120.0,
                 "sl": 80.0,
-                "entry_date": "2026-08-01",
+                "entry_date": _entry_date_n_ago(i),
                 "shares": 100,
                 "day_count": i,
                 "max_hold_days": 15,
@@ -155,7 +168,7 @@ class TestTurnoverIntegration(unittest.TestCase):
                 "entry": 100.0,
                 "tp": 120.0,
                 "sl": 80.0,
-                "entry_date": "2026-08-01",
+                "entry_date": today,
                 "shares": 100,
                 "day_count": i,
                 "max_hold_days": 15,
@@ -220,7 +233,7 @@ class TestTurnoverIntegration(unittest.TestCase):
                 "entry": 100.0,
                 "tp": 120.0,
                 "sl": 80.0,
-                "entry_date": "2026-08-01",
+                "entry_date": _entry_date_n_ago(i * 2),
                 "shares": 100,
                 "day_count": i * 2,
                 "max_hold_days": 15,
@@ -285,7 +298,7 @@ class TestTurnoverIntegration(unittest.TestCase):
                 "entry": 100.0,
                 "tp": 120.0,
                 "sl": 80.0,
-                "entry_date": "2026-08-01",
+                "entry_date": _entry_date_n_ago(i),
                 "shares": 100,
                 "day_count": i,
                 "max_hold_days": 15,
@@ -356,7 +369,7 @@ class TestTurnoverIntegration(unittest.TestCase):
                 "entry": 100.0,
                 "tp": 120.0,
                 "sl": 80.0,
-                "entry_date": "2026-08-01",
+                "entry_date": _entry_date_n_ago(5),
                 "shares": 100,
                 "day_count": 5,
                 "max_hold_days": 15,
@@ -403,7 +416,7 @@ class TestTurnoverIntegration(unittest.TestCase):
                 "entry": 100.0,
                 "tp": 120.0,
                 "sl": 80.0,
-                "entry_date": "2026-08-01",
+                "entry_date": today,
                 "shares": 100,
                 "day_count": i * 2,
                 "max_hold_days": 15,
