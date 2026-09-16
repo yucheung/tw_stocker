@@ -1,1 +1,3 @@
 order_id,signal_date,execution_date,event_time,ticker,upstream_rank,score,selection_mode,reference_close,limit_price,open_price,status,fill_price,atr,tp_price,sl_price,shares,message
+mr20:2026-09-07:6446:buy,2026-09-07,2026-09-08,2026-09-07T18:05:29.220529+08:00,6446,1,66.4101,auto,1315.0,1315.0,,PENDING,,41.9986,,,0,Order placed for next session
+mr20:2026-09-07:6446:buy,2026-09-07,2026-09-08,2026-09-08T09:35:50.110553+08:00,6446,1,66.4101,auto,1315.0,1315.0,1345.0,CANCELLED_OPEN_ABOVE_LIMIT,,41.9986,,,0,Open price above limit

@@ -17,7 +17,7 @@ import pandas as pd
 
 # Project imports
 from strategy.ai_strategy import fetch_panel_data
-from strategy.order_execution import evaluate_buy_limit_at_open
+from strategy.order_execution import evaluate_buy_limit_at_open, evaluate_buy_limit_until_0930
 from strategy.risk_metrics import compute_risk_metrics
 from strategy.sizing import size_position
 
@@ -83,7 +83,7 @@ def _close_position(state, tkr, exit_price, exit_date, reason):
         "ticker": tkr, "signal_date": pos["signal_date"],
         "entry_date": pos["entry_date"], "exit_date": exit_date,
         "entry": entry, "exit": exit_price, "shares": shares,
-        "days_held": pos["day_count"], "reason": reason,
+        "days_held": min(pos["day_count"], MAX_HOLD), "reason": reason,
         "net_pnl": round(net_pnl, 2), "return_pct": round(ret_pct, 4),
     })
     del state["positions"][tkr]
@@ -147,8 +147,8 @@ def _place_orders(state, candidates, signal_date, next_date, top_n=5):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Execute due orders (D+1 open)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def _execute_orders(state, open_df, exec_date):
-    """Fill or cancel pending orders using D+1 open price.
+def _execute_orders(state, open_df, exec_date, low_df=None):
+    """Fill or cancel pending orders using D+1 open price (and intraday low if available).
 
     Sizing uses open prices for held positions (no same-day close look-ahead)
     and enforces MAX_POSITIONS at execution time.
@@ -160,8 +160,9 @@ def _execute_orders(state, open_df, exec_date):
         tkr = order["ticker"]
         limit = order["limit_price"]
         bar_open = open_df.at[exec_date, tkr] if exec_date in open_df.index and tkr in open_df.columns else np.nan
-        decision = evaluate_buy_limit_at_open(limit, bar_open)
-        if decision.status != "FILLED":
+        bar_low = low_df.at[exec_date, tkr] if (low_df is not None and exec_date in low_df.index and tkr in low_df.columns) else np.nan
+        decision = evaluate_buy_limit_until_0930(limit, bar_open, low_price=bar_low)
+        if not decision.filled:
             fills.append({"ticker": tkr, "limit_price": limit, "open_price": bar_open,
                           "status": decision.status, "exec_date": exec_date})
             continue
@@ -181,9 +182,9 @@ def _execute_orders(state, open_df, exec_date):
                 if math.isfinite(px):
                     mkt_val += px * p["shares"]
                 else:
-                    mkt_val += p["entry"] * p["shares"]
+                    mkt_val += p.get("last_valid_close", p["entry"]) * p["shares"]
             else:
-                mkt_val += p["entry"] * p["shares"]
+                mkt_val += p.get("last_valid_close", p["entry"]) * p["shares"]
         equity_now = state["cash"] + mkt_val
         sizing = size_position(
             equity=equity_now,
@@ -207,12 +208,17 @@ def _execute_orders(state, open_df, exec_date):
         sl = fill_price - SL_ATR * atr
         state["cash"] -= (sizing.trade_amount + cost)
         state["positions"][tkr] = {
-            "entry": fill_price, "shares": shares, "tp": tp, "sl": sl,
-            "entry_date": exec_date, "day_count": 0,
+            "entry": fill_price,
+            "last_valid_close": fill_price,
+            "shares": shares,
+            "tp": tp,
+            "sl": sl,
+            "entry_date": exec_date,
+            "day_count": 0,
             "signal_date": order["signal_date"],
         }
         fills.append({"ticker": tkr, "limit_price": limit, "fill_price": fill_price,
-                       "shares": shares, "tp": tp, "sl": sl, "status": "FILLED",
+                       "shares": shares, "tp": tp, "sl": sl, "status": decision.status,
                        "exec_date": exec_date})
     return fills
 
@@ -220,33 +226,55 @@ def _execute_orders(state, open_df, exec_date):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Daily MTM + SL/TP/TIME exits  (SL > TP > TIME priority)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def _trading_days_between(start_ymd: str, end_ymd: str) -> int:
+    """起日不計、迄日計的交易日數；日曆不可用時退回週一~五。"""
+    try:
+        import exchange_calendars as xcals
+        sessions = xcals.get_calendar("XTAI").sessions_in_range(
+            pd.Timestamp(start_ymd), pd.Timestamp(end_ymd))
+        return int((sessions > pd.Timestamp(start_ymd)).sum())
+    except Exception:
+        return len(pd.bdate_range(start_ymd, end_ymd)) - 1
+
+
 def _daily_mtm(state, close_df, open_df, high_df, low_df, date_str):
     """Check exits, update day_count, record equity."""
     to_remove = []
     for tkr, pos in state["positions"].items():
         if pos["entry_date"] == date_str:
             continue  # no exit on fill day
-        if date_str not in close_df.index or tkr not in close_df.columns:
-            continue
-        close_px = close_df.at[date_str, tkr]
-        open_px = open_df.at[date_str, tkr] if tkr in open_df.columns else np.nan
-        high_px = high_df.at[date_str, tkr] if tkr in high_df.columns else np.nan
-        low_px = low_df.at[date_str, tkr] if tkr in low_df.columns else np.nan
 
-        pos["day_count"] += 1
+        # 持有天數以交易日曆重算（排程漏跑也不漂移）
+        day_count = _trading_days_between(pos["entry_date"], date_str)
+        pos["day_count"] = day_count
+
+        has_bar = (date_str in close_df.index and tkr in close_df.columns and pd.notna(close_df.at[date_str, tkr]))
+        if not has_bar:
+            if day_count >= MAX_HOLD:
+                pos["pending_time_exit"] = True
+            continue
+
+        close_px = float(close_df.at[date_str, tkr])
+        open_px = open_df.at[date_str, tkr] if (date_str in open_df.index and tkr in open_df.columns) else np.nan
+        high_px = high_df.at[date_str, tkr] if (date_str in high_df.index and tkr in high_df.columns) else np.nan
+        low_px = low_df.at[date_str, tkr] if (date_str in low_df.index and tkr in low_df.columns) else np.nan
+
         reason = None
         exit_price = close_px
 
-        # SL check (gap-down: fill at open)
-        if pd.notna(low_px) and low_px <= pos["sl"]:
+        if pos.get("pending_time_exit"):
+            reason = "TIME"
+            exit_price = open_px if (pd.notna(open_px) and math.isfinite(open_px) and open_px > 0) else close_px
+        elif pd.notna(low_px) and low_px <= pos["sl"]:
+            # SL check (gap-down: fill at open)
             reason = "SL"
             exit_price = open_px if (pd.notna(open_px) and open_px < pos["sl"]) else pos["sl"]
-        # TP check (gap-up: fill at open)
         elif pd.notna(high_px) and high_px >= pos["tp"]:
+            # TP check (gap-up: fill at open)
             reason = "TP"
             exit_price = open_px if (pd.notna(open_px) and open_px > pos["tp"]) else pos["tp"]
-        # TIME exit
-        elif pos["day_count"] >= MAX_HOLD:
+        elif day_count >= MAX_HOLD:
+            # TIME exit
             reason = "TIME"
             exit_price = close_px
 
@@ -256,12 +284,19 @@ def _daily_mtm(state, close_df, open_df, high_df, low_df, date_str):
     for tkr, exit_price, exit_date, reason in to_remove:
         _close_position(state, tkr, exit_price, exit_date, reason)
 
-    # Record equity
-    mkt_val = sum(
-        close_df.at[date_str, t] * p["shares"]
-        for t, p in state["positions"].items()
-        if date_str in close_df.index and t in close_df.columns
-    )
+    # Record equity (A3: do not vanish when close price is NaN)
+    mkt_val = 0.0
+    for t, p in state["positions"].items():
+        px = np.nan
+        if date_str in close_df.index and t in close_df.columns:
+            val = close_df.at[date_str, t]
+            if pd.notna(val) and math.isfinite(val) and val > 0:
+                px = float(val)
+                p["last_valid_close"] = px
+        if not (pd.notna(px) and math.isfinite(px) and px > 0):
+            px = p.get("last_valid_close", p["entry"])
+        mkt_val += px * p["shares"]
+
     equity = state["cash"] + mkt_val
     state["equity_curve"].append({"date": date_str, "equity": round(equity, 2)})
 
@@ -289,7 +324,7 @@ def run_backtest(
         dt_str = dt.strftime("%Y-%m-%d")
 
         # 1) Execute due orders on D (placed yesterday)
-        fills = _execute_orders(state, open_df, dt_str)
+        fills = _execute_orders(state, open_df, dt_str, low_df)
         fill_log.extend(fills)
 
         # 2) Daily MTM (exits) — updates capacity before new signals

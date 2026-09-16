@@ -25,7 +25,7 @@ import argparse
 import pandas as pd
 import exchange_calendars as xcals
 
-from strategy.order_execution import DEFAULT_TP_SL, evaluate_buy_limit_at_open
+from strategy.order_execution import DEFAULT_TP_SL, evaluate_buy_limit_at_open, evaluate_buy_limit_until_0930
 from strategy.sizing import compute_commission, size_position
 
 DATA_FILE = 'paper_equity.json'
@@ -341,6 +341,20 @@ def get_required_rank_gap(day_count: int) -> Optional[int]:
     return 1
 
 
+_TW_CAL = None
+
+def _trading_days_between(start_ymd: str, end_ymd: str) -> int:
+    """起日不計、迄日計的 XTAI 交易日數；日曆不可用時退回週一~五。"""
+    global _TW_CAL
+    try:
+        if _TW_CAL is None:
+            _TW_CAL = xcals.get_calendar('XTAI')
+        sessions = _TW_CAL.sessions_in_range(pd.Timestamp(start_ymd), pd.Timestamp(end_ymd))
+        return int((sessions > pd.Timestamp(start_ymd)).sum())
+    except Exception:
+        return len(pd.bdate_range(start_ymd, end_ymd)) - 1
+
+
 def find_replace_candidate(positions: dict, new_rank: Optional[int], min_rank_gap: Optional[int] = None, **kwargs) -> Optional[str]:
     """
     比較新訊號 rank 與持倉中最弱者的 entry_rank。
@@ -416,7 +430,7 @@ def close_position(data: dict, ticker: str, exit_price: float, today: str, reaso
         'reason': reason,
         'entry_date': pos['entry_date'],
         'exit_date': today,
-        'days_held': pos.get('day_count', 0),
+        'days_held': min(pos.get('day_count', 0), pos.get('max_hold_days', 15)),
     }
     del data['positions'][ticker]
     data['closed_trades'].append(trade_record)
@@ -483,15 +497,24 @@ def update_tracker(data):
     to_close = []
     for ticker, pos in data['positions'].items():
         bar = bars.get(ticker)
+        # 持有天數一律以交易日曆從 entry_date 重算（排程漏跑也不漂移）
+        pos['day_count'] = _trading_days_between(pos.get('entry_date', today), today)
+        pos_max_hold = pos.get('max_hold_days', max_hold)
         if bar is None or bar.get('close') is None or bar.get('date') != today:
+            # 缺價日：仍老化；到期則標記次一有效報價日開盤出場
+            if pos['day_count'] >= pos_max_hold:
+                pos['pending_time_exit'] = True
             continue
-        pos['day_count'] = pos.get('day_count', 0) + 1
+        pos['last_valid_close'] = bar['close']
 
         reason = None
         exit_price = bar['close']
-        pos_max_hold = pos.get('max_hold_days', max_hold)
         # Conservative same-day ordering: SL before TP, matching backtest.
-        if bar.get('low') is not None and bar['low'] <= pos['sl']:
+        if pos.pop('pending_time_exit', False):
+            reason = 'TIME'
+            open_px = bar.get('open')
+            exit_price = open_px if (open_px is not None and open_px > 0) else bar['close']
+        elif bar.get('low') is not None and bar['low'] <= pos['sl']:
             reason = 'SL'
             open_price = bar.get('open')
             exit_price = open_price if open_price is not None and open_price < pos['sl'] else pos['sl']
@@ -592,9 +615,22 @@ def update_tracker(data):
 
             bar = bars.get(ticker)
             open_price = bar.get('open') if bar else None
+            low_price = bar.get('low') if bar else None
+            high_price = bar.get('high') if bar else None
             if bar and bar.get('date') != today:
                 open_price = None
-            decision = evaluate_buy_limit_at_open(limit_price, open_price)
+                low_price = None
+                high_price = None
+
+            if sig.get('time_in_force') == 'DAY_UNTIL_0930':
+                decision = evaluate_buy_limit_until_0930(
+                    limit_price,
+                    open_price,
+                    low_price=low_price,
+                    high_price=high_price,
+                )
+            else:
+                decision = evaluate_buy_limit_at_open(limit_price, open_price)
 
             if not decision.filled:
                 order_events.append({
@@ -667,7 +703,7 @@ def update_tracker(data):
             projected_equity = projected_capital
             for tkr, pos in data['positions'].items():
                 if tkr != replace_ticker:
-                    px = prices.get(tkr, pos['entry'])
+                    px = prices.get(tkr, pos.get('last_valid_close', pos['entry']))
                     projected_equity += px * pos['shares']
 
             position_size = _opt_float(sig.get('position_size'), 0.07)
@@ -727,6 +763,7 @@ def update_tracker(data):
             tp_new, sl_new = recompute_tp_sl(sig, fill_price, atr_for_tp)
             data['positions'][ticker] = {
                 'entry': fill_price,
+                'last_valid_close': fill_price,
                 'tp': tp_new,
                 'sl': sl_new,
                 'entry_date': today,
@@ -739,7 +776,7 @@ def update_tracker(data):
                 **event_base,
                 'limit_price': limit_price,
                 'open_price': open_price,
-                'status': 'FILLED',
+                'status': decision.status,
                 'fill_price': fill_price,
             })
             opened += 1
@@ -816,10 +853,10 @@ def update_tracker(data):
         data['pending_orders'] = deferred
         print(f"   📋 今日無信號")
 
-    # 4. 計算今日總權益
+    # 4. 計算今日總權益（A3: 缺價使用 last_valid_close；A4: 依日期去重）
     total_equity = data['capital']
     for ticker, pos in data['positions'].items():
-        price = prices.get(ticker, pos['entry'])
+        price = prices.get(ticker, pos.get('last_valid_close', pos['entry']))
         total_equity += price * pos['shares']
 
     data['equity_curve'].append({
