@@ -1,0 +1,55 @@
+{
+  "orders": [
+    {
+      "signal_date": "2026-09-21",
+      "execution_date": "2026-09-22",
+      "ticker": "6669",
+      "side": "buy",
+      "order_type": "limit",
+      "limit_price": 2150.0,
+      "reference_close": 2150.0,
+      "entry_model": "signal_close_limit_next_open_v1",
+      "time_in_force": "DAY_UNTIL_0930",
+      "cancel_time": "09:30:00",
+      "timezone": "Asia/Taipei",
+      "rank": 1,
+      "score": 72.0081,
+      "atr": 62.6597,
+      "tp_price": 2400.6388,
+      "sl_price": 1962.0209,
+      "tp_atr_mult": 4.0,
+      "sl_atr_mult": 3.0,
+      "max_hold_days": 20,
+      "position_size": 0.45,
+      "tp_sl_mode": "atr",
+      "model_version": "mr20_pullback_v1"
+    }
+  ],
+  "diagnostic": {
+    "strategy": "mr20",
+    "signal_date": "2026-09-21",
+    "execution_date": "2026-09-22",
+    "funnel": {
+      "requested": 1084,
+      "valid_60d": 1082,
+      "liquid_top50": 50,
+      "trend": 36,
+      "pullback": 13,
+      "rsi": 3,
+      "bounce": 1,
+      "final": 1
+    },
+    "config": {
+      "rsi_max": 40.0,
+      "ma_short": 20,
+      "ma_long": 60,
+      "liquidity_top_n": 50,
+      "min_history_days": 60,
+      "rsi_period": 5,
+      "max_candidates": 7
+    },
+    "universe_tickers": 1084,
+    "universe_rows": 124,
+    "saved_at": "2026-09-21T18:07:15.259630+08:00"
+  }
+}
