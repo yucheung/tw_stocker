@@ -448,16 +448,16 @@ def load_orders(
     orders_path: Path | str,
     calendar: Optional[xcals.ExchangeCalendar] = None,
     as_of: Optional[str] = None,
+    allow_rollover: bool = False,
 ) -> list[dict[str, Any]]:
     """Load and strictly validate upstream Top-7 orders from JSON artifact.
 
-    When `as_of` is given, the orders' signal_date must equal it. Without
-    this, an internally-consistent but stale file (signal_date -> next
-    XTAI session -> execution_date all checking out, just for the wrong
-    day) is silently accepted as if it were fresh — the exact failure mode
-    behind the TOP7 "8/24 規劃 8/14 訊號" incident, most easily triggered
-    via an explicit --orders path pointing at an old file
-    (docs/REVIEW-opus-20260907.md §1.3 :430, §2.3-1).
+    When `as_of` is given:
+    - If `allow_rollover` is True (Top-7 rollover): accepts orders where
+      signal_date <= as_of and execution_date >= as_of.
+    - If `allow_rollover` is False (default / MR20): strictly requires
+      signal_date == as_of. Stale orders where execution_date < as_of are
+      rejected under both modes.
     """
     p = Path(orders_path)
     if not p.exists():
@@ -482,11 +482,20 @@ def load_orders(
         raise ValueError(f"Inconsistent signal_date found in orders: {signal_dates}")
 
     sig_date = list(signal_dates)[0]
-    if as_of is not None and sig_date != as_of:
-        raise ValueError(
-            f"Orders file signal_date {sig_date} does not match requested as-of {as_of}: {p}"
-        )
     expected_exec_date = cal.next_session(sig_date).strftime("%Y-%m-%d")
+
+    if as_of is not None:
+        if allow_rollover:
+            if not (sig_date <= as_of and expected_exec_date >= as_of):
+                raise ValueError(
+                    f"Orders file signal_date {sig_date} (execution_date {expected_exec_date}) "
+                    f"is stale or invalid for as-of {as_of}: {p}"
+                )
+        else:
+            if sig_date != as_of:
+                raise ValueError(
+                    f"Orders file signal_date {sig_date} does not match requested as-of {as_of}: {p}"
+                )
 
     for idx, o in enumerate(orders):
         if not o.get("ticker"):
@@ -540,12 +549,41 @@ def _is_dateless_empty_orders(path: Path) -> bool:
     return not diag.get("signal_date")
 
 
+def _orders_signal_and_exec_dates(
+    path: Path | str,
+    calendar: Optional[xcals.ExchangeCalendar] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """Extract (signal_date, execution_date) from an orders artifact."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return None, None
+    orders = data.get("orders") or []
+    sig = None
+    exec_d = None
+    if orders and isinstance(orders, list):
+        sig = orders[0].get("signal_date")
+        exec_d = orders[0].get("execution_date")
+    if not sig:
+        diag = data.get("diagnostic") or {}
+        sig = diag.get("signal_date")
+        exec_d = diag.get("execution_date")
+    if sig and not exec_d:
+        try:
+            cal = calendar or get_calendar("XTAI")
+            exec_d = cal.next_session(sig).strftime("%Y-%m-%d")
+        except Exception:
+            exec_d = None
+    return sig, exec_d
+
+
 def resolve_orders_file(
     strat_id: str,
     today_str: str,
     orders_dir: Optional[Path | str] = None,
+    consumed_files: Optional[set[str] | list[str]] = None,
 ) -> Optional[Path]:
-    """Locate the orders artifact whose *content* signal_date matches today_str.
+    """Locate the orders artifact for the given strategy and date.
 
     Previously this only checked whether a filename built from today_str
     existed, which silently mis-resolves whenever an orders file is saved
@@ -553,6 +591,12 @@ def resolve_orders_file(
     This tries the conventional filename first (fast path, content-verified),
     then falls back to scanning orders_dir for any file whose content
     signal_date matches.
+
+    For Top-7 (DEFAULT_STRATEGY_ID):
+    If today's conventional/content-matched orders file does not exist (e.g. GHA
+    delivers artifacts after 18:05), automatically falls back to the latest valid
+    orders file where signal_date <= today_str and execution_date >= today_str,
+    preventing orphaned orders and enabling seamless rollover.
     """
     strat_cfg = get_strategy_config(strat_id)
     compact_date = today_str.replace("-", "")
@@ -560,11 +604,13 @@ def resolve_orders_file(
     pattern = strat_cfg.get("orders_pattern", "orders_{date}.json")
 
     fast_candidates = [base_dir / pattern.format(date=compact_date)]
-    if strat_id == DEFAULT_STRATEGY_ID:
+    if strat_id == DEFAULT_STRATEGY_ID and orders_dir is None and base_dir != Path("artifacts"):
         fast_candidates.append(Path("artifacts") / f"orders_{compact_date}.json")
 
+    consumed_set = set(consumed_files or [])
+
     for cf in fast_candidates:
-        if not cf.exists():
+        if not cf.exists() or cf.name in consumed_set:
             continue
         if _orders_signal_date(cf) == today_str:
             return cf
@@ -573,9 +619,29 @@ def resolve_orders_file(
 
     if base_dir.exists():
         glob_pattern = pattern.format(date="*")
-        for cf in sorted(base_dir.glob(glob_pattern)):
+        all_files = sorted(base_dir.glob(glob_pattern))
+        for cf in all_files:
+            if cf.name in consumed_set:
+                continue
             if _orders_signal_date(cf) == today_str:
                 return cf
+
+        # Top-7 orphan rollover fallback:
+        # GHA delivers artifacts/orders_YYYYMMDD.json after 22:00, while close-and-plan
+        # runs at 18:05. If today's file is not yet delivered, discover the latest
+        # unconsumed file where signal_date <= today_str and execution_date >= today_str.
+        if strat_id == DEFAULT_STRATEGY_ID:
+            valid_rollover = []
+            for cf in all_files:
+                if cf.name in consumed_set:
+                    continue
+                sig_d, exec_d = _orders_signal_and_exec_dates(cf)
+                if sig_d and exec_d and sig_d <= today_str and exec_d >= today_str:
+                    valid_rollover.append((sig_d, exec_d, cf))
+
+            if valid_rollover:
+                valid_rollover.sort(key=lambda x: (x[0], x[1], x[2].name), reverse=True)
+                return valid_rollover[0][2]
 
     return None
 
@@ -833,7 +899,7 @@ def plan_orders(
 
     fetcher = fetch_closes_fn or (lambda tkr: fetch_ticker_closes(tkr, end_date=as_of))
     new_pending = []
-    today_str = today or get_taipei_today()
+    today_str = today or as_of or get_taipei_today()
 
     for candidate in selected_candidates[:capacity]:
         ticker = candidate["ticker"]
@@ -1741,6 +1807,10 @@ def _resolve_and_plan_orders(
     failure behind a normal-looking "0 orders planned" run
     (docs/REVIEW-opus-20260907.md §3.2 步驟3).
     """
+    strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
+    allow_rollover = (strat_id == DEFAULT_STRATEGY_ID)
+    consumed = state.get("consumed_orders_files", [])
+
     if orders_path:
         orders_file = Path(orders_path)
         if not orders_file.exists():
@@ -1748,8 +1818,14 @@ def _resolve_and_plan_orders(
                 f"Explicit --orders path not found: {orders_file} (as-of {today_str})"
             )
     else:
-        strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
-        orders_file = resolve_orders_file(strat_id, today_str)
+        strat_cfg = get_strategy_config(strat_id)
+        configured_dir = strat_cfg.get("orders_dir")
+        orders_file = resolve_orders_file(
+            strat_id,
+            today_str,
+            orders_dir=configured_dir,
+            consumed_files=consumed,
+        )
 
     if orders_file is None:
         # Auto-discovery found nothing: could be a legitimate day with no
@@ -1758,14 +1834,13 @@ def _resolve_and_plan_orders(
         # flagged in state for a daily check (see check_processed_runs.py)
         # to surface separately, and for a same-day rerun with a late
         # orders file to backfill (see run_close_and_plan).
-        strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
         gaps = state.setdefault("planning_gaps", [])
         if today_str not in gaps:
             gaps.append(today_str)
         print(f"   ⚠️ [{strat_id}] 找不到 signal_date={today_str} 的訂單檔（自動搜尋未命中），已記錄為 planning_gaps")
         return 0
 
-    orders = load_orders(orders_file, as_of=today_str)
+    orders = load_orders(orders_file, as_of=today_str, allow_rollover=allow_rollover)
     held_set = set(state["positions"].keys())
     pending_set = {p["ticker"] for p in state["pending_orders"]}
     eff_max_price = max_price if max_price is not None else state["config"].get("max_price")
@@ -1777,12 +1852,20 @@ def _resolve_and_plan_orders(
         max_price=eff_max_price,
         manual_tickers=tickers,
     )
-    new_pending = plan_orders(state, candidates, as_of=today_str)
+    new_pending = plan_orders(state, candidates, as_of=today_str, today=today_str)
 
-    # A late/explicit orders file just resolved a previously-flagged gap.
+    if orders_file.name not in state.setdefault("consumed_orders_files", []):
+        state["consumed_orders_files"].append(orders_file.name)
+
+    # A late/explicit/rollover orders file just resolved a previously-flagged gap.
     gaps = state.get("planning_gaps")
-    if gaps and today_str in gaps:
-        gaps.remove(today_str)
+    if gaps:
+        if today_str in gaps:
+            gaps.remove(today_str)
+        if orders:
+            upstream_sig = orders[0].get("signal_date")
+            if upstream_sig and upstream_sig in gaps:
+                gaps.remove(upstream_sig)
 
     return len(new_pending)
 
