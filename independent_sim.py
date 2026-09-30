@@ -70,6 +70,7 @@ STRATEGY_CONFIGS: dict[str, dict[str, Any]] = {
         "tp_atr_mult": 4.0,
         "sl_atr_mult": 3.0,
         "initial_capital": 200000.0,
+        "allow_orders_fallback": True,
     },
     "top7": {
         "strategy_id": "top7",
@@ -87,6 +88,7 @@ STRATEGY_CONFIGS: dict[str, dict[str, Any]] = {
         "tp_atr_mult": 4.0,
         "sl_atr_mult": 3.0,
         "initial_capital": 20000.0,
+        "allow_orders_fallback": True,
     },
     "mr20": {
         "strategy_id": "mr20",
@@ -101,6 +103,7 @@ STRATEGY_CONFIGS: dict[str, dict[str, Any]] = {
         "tp_atr_mult": 4.0,
         "sl_atr_mult": 3.0,
         "initial_capital": 1000000.0,
+        "allow_orders_fallback": False,
     },
     "rsi_reversal": {
         "strategy_id": "rsi_reversal",
@@ -117,6 +120,7 @@ STRATEGY_CONFIGS: dict[str, dict[str, Any]] = {
         "tp_atr_mult": 2.0,
         "sl_atr_mult": 2.0,
         "initial_capital": 1000000.0,
+        "allow_orders_fallback": False,
     },
 }
 
@@ -156,6 +160,7 @@ def get_strategy_config(strategy: Optional[str] = None) -> dict[str, Any]:
         "tp_atr_mult": DEFAULT_TP_ATR_MULT,
         "sl_atr_mult": DEFAULT_SL_ATR_MULT,
         "initial_capital": DEFAULT_CAPITAL,
+        "allow_orders_fallback": False,
     }
 
 
@@ -612,19 +617,20 @@ def resolve_orders_file(
     then falls back to scanning orders_dir for any file whose content
     signal_date matches.
 
-    For Top-7 (DEFAULT_STRATEGY_ID):
+    For strategies with allow_orders_fallback (Top-7 / DEFAULT):
     If today's conventional/content-matched orders file does not exist (e.g. GHA
     delivers artifacts after 18:05), automatically falls back to the latest valid
     orders file where signal_date <= today_str and execution_date >= today_str,
     preventing orphaned orders and enabling seamless rollover.
     """
     strat_cfg = get_strategy_config(strat_id)
+    allow_fallback = bool(strat_cfg.get("allow_orders_fallback", False))
     compact_date = today_str.replace("-", "")
     base_dir = Path(orders_dir) if orders_dir is not None else Path(strat_cfg.get("orders_dir", "artifacts"))
     pattern = strat_cfg.get("orders_pattern", "orders_{date}.json")
 
     fast_candidates = [base_dir / pattern.format(date=compact_date)]
-    if strat_id == DEFAULT_STRATEGY_ID and orders_dir is None and base_dir != Path("artifacts"):
+    if allow_fallback and orders_dir is None and base_dir != Path("artifacts"):
         fast_candidates.append(Path("artifacts") / f"orders_{compact_date}.json")
 
     consumed_set = set(consumed_files or [])
@@ -650,7 +656,7 @@ def resolve_orders_file(
         # GHA delivers artifacts/orders_YYYYMMDD.json after 22:00, while close-and-plan
         # runs at 18:05. If today's file is not yet delivered, discover the latest
         # unconsumed file where signal_date <= today_str and execution_date >= today_str.
-        if strat_id == DEFAULT_STRATEGY_ID:
+        if allow_fallback:
             valid_rollover = []
             for cf in all_files:
                 if cf.name in consumed_set:
@@ -784,6 +790,7 @@ def get_default_state(
             "lot_size": eff_lot_size,
             "slot_amount": eff_slot_amount,
             "trade_unit": eff_trade_unit,
+            "allow_orders_fallback": bool(strat_cfg.get("allow_orders_fallback", False)),
         },
         "cash": eff_capital,
         "positions": {},
@@ -1878,7 +1885,13 @@ def _resolve_and_plan_orders(
     (docs/REVIEW-opus-20260907.md §3.2 步驟3).
     """
     strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
-    allow_rollover = (strat_id == DEFAULT_STRATEGY_ID)
+    strat_cfg = get_strategy_config(strat_id)
+    allow_rollover = bool(
+        state.get("config", {}).get(
+            "allow_orders_fallback",
+            strat_cfg.get("allow_orders_fallback", False)
+        )
+    )
     consumed = state.get("consumed_orders_files", [])
 
     if orders_path:
@@ -1888,7 +1901,6 @@ def _resolve_and_plan_orders(
                 f"Explicit --orders path not found: {orders_file} (as-of {today_str})"
             )
     else:
-        strat_cfg = get_strategy_config(strat_id)
         configured_dir = strat_cfg.get("orders_dir")
         orders_file = resolve_orders_file(
             strat_id,
