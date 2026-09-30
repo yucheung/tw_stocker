@@ -268,6 +268,15 @@ class TestBacktestWorker(unittest.TestCase):
         self.assertNotIn("sec_val_99887766", json_sanitized)
         self.assertIn('{"api_key":"***MASKED***"', json_sanitized)
 
+        # 含空格路徑只剩檔名測試
+        spaced_raw = "Failed at /root/my project/run/log.txt"
+        spaced_sanitized = backtest_worker.sanitize_error(spaced_raw)
+        self.assertNotIn("/root/my project", spaced_sanitized)
+        self.assertEqual(spaced_sanitized, "Failed at log.txt")
+
+        spaced_alone = backtest_worker.sanitize_error("/root/my project/run/log.txt")
+        self.assertEqual(spaced_alone, "log.txt")
+
     @patch("backtest_worker.requests.get")
     @patch("backtest_worker.requests.post")
     def test_claim_conflict_409_gives_up_and_exits(self, mock_post, mock_get):
@@ -316,6 +325,66 @@ class TestBacktestWorker(unittest.TestCase):
             artifacts_dir=self.tmp_path / "artifacts",
         )
         self.assertFalse(processed)
+
+    @patch("backtest_worker.pd.read_csv")
+    @patch("backtest_worker.requests.get")
+    @patch("backtest_worker.requests.post")
+    @patch("backtest_worker.subprocess.run")
+    def test_csv_parse_exception_sanitizes_token_and_path(self, mock_run, mock_post, mock_get, mock_read_csv):
+        """Test CSV parse exception sanitizes tokens and paths before logging and sending to sync API."""
+        job_id = "job_csv_fail_456"
+        job_data = {
+            "job_id": job_id,
+            "status": "queued",
+            "priority": 1,
+            "params_json": json.dumps({"days": 60}),
+        }
+
+        mock_get_resp = MagicMock()
+        mock_get_resp.status_code = 200
+        mock_get_resp.json.return_value = {"runs": [job_data]}
+        mock_get.return_value = mock_get_resp
+
+        mock_post_resp = MagicMock()
+        mock_post_resp.status_code = 200
+        mock_post_resp.json.return_value = {"ok": True}
+        mock_post.return_value = mock_post_resp
+
+        def fake_run(cmd, **kwargs):
+            out_idx = cmd.index("--output")
+            out_path = Path(cmd[out_idx + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text("dummy", encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, stdout="Success", stderr="")
+
+        mock_run.side_effect = fake_run
+        mock_read_csv.side_effect = ValueError(
+            "ParserError: invalid token=secret_csv_token_9876543210 at /root/my project/corrupt_data.csv: corrupted"
+        )
+
+        with self.assertLogs(backtest_worker.log, level="ERROR") as log_cm:
+            processed = backtest_worker.run_worker_once(
+                base_url="http://mock-worker",
+                lock_path=self.tmp_path / "worker.lock",
+                artifacts_dir=self.tmp_path / "artifacts",
+            )
+
+        self.assertTrue(processed)
+        self.assertEqual(mock_post.call_count, 2)
+
+        # Check call 2: failed + error sanitized
+        call2_args, call2_kwargs = mock_post.call_args_list[1]
+        payload = call2_kwargs["json"]
+        self.assertEqual(payload["status"], "failed")
+        self.assertNotIn("secret_csv_token_9876543210", payload["error"], "假 token 不得存在於回填 error")
+        self.assertNotIn("/root/my project", payload["error"], "絕對路徑不得存在於回填 error")
+        self.assertIn("corrupt_data.csv", payload["error"], "檔名應保留")
+
+        # Verify VPS log does not contain raw token or absolute path
+        log_output = "\n".join(log_cm.output)
+        self.assertNotIn("secret_csv_token_9876543210", log_output, "VPS log 不得含假 token 原文")
+        self.assertNotIn("/root/my project", log_output, "VPS log 不得含絕對路徑")
+        self.assertIn("corrupt_data.csv", log_output, "VPS log 應保留檔名")
 
 
 if __name__ == "__main__":
