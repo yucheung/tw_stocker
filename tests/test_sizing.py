@@ -65,3 +65,46 @@ class TestSizePosition:
         assert result.status == "OK"
         assert result.trade_amount == pytest.approx(1000 * 100.0)
         assert result.commission == pytest.approx(max(1000 * 100.0 * 0.001425, 20.0))
+
+    def test_fixed_slot_amount_odd_lot_3605(self):
+        # 3605 @ 183 TWD with 20,000 TWD slot budget: 109 shares affordable
+        result = size_position(
+            equity=20_000,
+            position_size=1.0,
+            fill_price=183.0,
+            lot_size=1,
+            slot_amount=20_000.0,
+        )
+        assert result.status == "OK"
+        assert result.shares == 109
+        assert result.trade_amount == pytest.approx(109 * 183.0)
+        assert result.commission == pytest.approx(round(max(109 * 183.0 * 0.001425, 20.0), 2))
+        # Total cost <= 20,000 budget
+        assert result.trade_amount + result.commission <= 20_000.0
+
+    def test_fixed_slot_amount_odd_lot_unaffordable_below_one_share(self):
+        # Price 25,000 > 20,000 slot budget -> cannot afford even 1 share
+        result = size_position(
+            equity=20_000,
+            position_size=1.0,
+            fill_price=25_000.0,
+            lot_size=1,
+            slot_amount=20_000.0,
+        )
+        assert result.status == "CANCELLED_BELOW_LOT_SIZE"
+        assert result.shares == 0
+
+    def test_fixed_slot_amount_odd_lot_insufficient_cash(self):
+        # Slot budget allows 109 shares, but available cash is only 100 TWD (< 1 share @ 183)
+        result = size_position(
+            equity=20_000,
+            position_size=1.0,
+            fill_price=183.0,
+            cash=100.0,
+            reserve=0.0,
+            lot_size=1,
+            slot_amount=20_000.0,
+        )
+        assert result.status == "CANCELLED_INSUFFICIENT_CASH"
+        assert result.shares == 0
+

@@ -1148,3 +1148,149 @@ class TestPlanOrdersExecutionChainFix:
         d = evaluate_buy_limit_until_0930(limit_price=1315.0, open_price=1345.0, low_price=1300.0)
         assert d.filled
         assert d.status == "FILLED_INTRADAY_ESTIMATED"
+
+
+class TestTop7OddLotSimulation:
+    """Tests for Top7 odd-lot (零股) trading simulation and accounting consistency."""
+
+    def test_top7_odd_lot_buy_execution_and_insufficient_cash(self, temp_dir):
+        # Top7: 20,000 TWD capital, slot budget 20,000 TWD, lot_size=1
+        state = sim.get_default_state(
+            capital=20000.0,
+            lot_size=1,
+            slot_amount=20000.0,
+            reserve_ratio=0.0,
+            strategy_id="top7",
+        )
+        state["pending_orders"] = [
+            {
+                "order_id": "top7:2026-09-29:3605:buy",
+                "signal_date": "2026-09-29",
+                "execution_date": "2026-09-30",
+                "ticker": "3605",
+                "limit_price": 183.5,
+                "atr": 12.1,
+            },
+            {
+                "order_id": "top7:2026-09-29:3443:buy",
+                "signal_date": "2026-09-29",
+                "execution_date": "2026-09-30",
+                "ticker": "3443",
+                "limit_price": 8525.0,
+                "atr": 420.75,
+            },
+        ]
+        bars = {
+            "3605": {"date": "2026-09-30", "open": 183.0, "high": 185.0, "low": 182.0, "close": 184.0},
+            "3443": {"date": "2026-09-30", "open": 8090.0, "high": 8200.0, "low": 8050.0, "close": 8100.0},
+        }
+
+        events = sim.execute_open_orders(state, bars, as_of="2026-09-30")
+        assert len(events) == 2
+
+        # 1. First order 3605 fills 109 shares @ 183.0
+        ev1 = events[0]
+        assert ev1["ticker"] == "3605"
+        assert ev1["status"] in ("FILLED", "FILLED_AT_OPEN")
+        assert ev1["shares"] == 109
+        assert "3605" in state["positions"]
+        assert state["positions"]["3605"]["shares"] == 109
+
+        # Trade amount: 109 * 183 = 19,947; commission: 28.42; total: 19975.42
+        # Cash remaining: 20000 - 19975.42 = 24.58
+        assert state["cash"] == pytest.approx(24.58, abs=0.01)
+
+        # 2. Second order 3443 skipped: 24.58 cash cannot afford 1 share of 8090
+        ev2 = events[1]
+        assert ev2["ticker"] == "3443"
+        assert ev2["status"] == "CANCELLED_INSUFFICIENT_CASH"
+        assert ev2["shares"] == 0
+        assert "1 share" in ev2["message"]
+
+    def test_top7_odd_lot_unaffordable_below_one_share(self, temp_dir):
+        # A stock with price 25,000 > 20,000 slot budget -> cannot afford even 1 share
+        state = sim.get_default_state(
+            capital=20000.0,
+            lot_size=1,
+            slot_amount=20000.0,
+            reserve_ratio=0.0,
+            strategy_id="top7",
+        )
+        state["pending_orders"] = [
+            {
+                "order_id": "top7:2026-09-29:SUPER:buy",
+                "signal_date": "2026-09-29",
+                "execution_date": "2026-09-30",
+                "ticker": "SUPER",
+                "limit_price": 26000.0,
+                "atr": 500.0,
+            }
+        ]
+        bars = {
+            "SUPER": {"date": "2026-09-30", "open": 25000.0, "high": 26000.0, "low": 24900.0, "close": 25500.0},
+        }
+        events = sim.execute_open_orders(state, bars, as_of="2026-09-30")
+        assert len(events) == 1
+        assert events[0]["status"] == "CANCELLED_BELOW_LOT_SIZE"
+        assert events[0]["shares"] == 0
+        assert "1 share" in events[0]["message"]
+        assert state["cash"] == 20000.0
+
+    def test_top7_odd_lot_accounting_consistency(self, temp_dir):
+        state = sim.get_default_state(
+            capital=20000.0,
+            lot_size=1,
+            slot_amount=20000.0,
+            reserve_ratio=0.0,
+            strategy_id="top7",
+        )
+        state["pending_orders"] = [
+            {
+                "order_id": "top7:2026-09-29:3605:buy",
+                "signal_date": "2026-09-29",
+                "execution_date": "2026-09-30",
+                "ticker": "3605",
+                "limit_price": 183.5,
+                "atr": 12.1,
+            }
+        ]
+        bars_open = {
+            "3605": {"date": "2026-09-30", "open": 183.0, "high": 185.0, "low": 182.0, "close": 184.0},
+        }
+        sim.execute_open_orders(state, bars_open, as_of="2026-09-30")
+
+        # Mark equity on day of entry
+        sim.mark_equity(state, closes={"3605": 184.0}, benchmark_close=112.0, as_of="2026-09-30")
+
+        # Save and generate report
+        sim.save_state_atomic(state, temp_dir)
+        report_md, _ = sim.generate_report(temp_dir)
+
+        # Check equity.csv
+        eq_df = pd.read_csv(temp_dir / "equity.csv")
+        assert len(eq_df) == 1
+        latest_row = eq_df.iloc[-1]
+        assert latest_row["cash"] == pytest.approx(24.58, abs=0.01)
+        assert latest_row["market_value"] == pytest.approx(109 * 184.0, abs=0.01)
+        assert latest_row["equity"] == pytest.approx(latest_row["cash"] + latest_row["market_value"], abs=0.01)
+
+        # Check performance.md
+        md_text = (temp_dir / "performance.md").read_text(encoding="utf-8")
+        assert "24.58" in md_text
+        assert "109" in md_text
+
+        # Now test position exit via SL on next day (2026-10-01)
+        # Entry 183.0, SL is 183.0 - 3 * 12.1 = 146.7
+        # Simulate bar dropping to 140.0 (< SL)
+        bars_exit = {
+            "3605": {"date": "2026-10-01", "open": 145.0, "high": 150.0, "low": 140.0, "close": 142.0},
+        }
+        closed = sim.settle_positions(state, bars_exit, as_of="2026-10-01")
+        assert len(closed) == 1
+        tr = closed[0]
+        assert tr["exit_reason"] == "SL"
+        assert tr["shares"] == 109
+        # Check cash updated with proceeds
+        assert state["cash"] > 24.58
+        assert "3605" not in state["positions"]
+

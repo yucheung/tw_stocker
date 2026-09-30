@@ -30,7 +30,7 @@ import pandas as pd
 
 import exchange_calendars as xcals
 from strategy.order_execution import DEFAULT_TP_SL, evaluate_buy_limit_at_open, evaluate_buy_limit_until_0930
-from strategy.sizing import compute_commission, size_position
+from strategy.sizing import DEFAULT_LOT_SIZE, compute_commission, size_position
 
 # =====================================================================
 # Constants & Defaults
@@ -71,6 +71,23 @@ STRATEGY_CONFIGS: dict[str, dict[str, Any]] = {
         "sl_atr_mult": 3.0,
         "initial_capital": 200000.0,
     },
+    "top7": {
+        "strategy_id": "top7",
+        "name": "Top-7 Momentum Odd-Lot",
+        "default_data_dir": "independent_sim_data_top7",
+        "orders_dir": "artifacts",
+        "orders_pattern": "orders_{date}.json",
+        "max_positions": 2,
+        "position_size": 1.0,
+        "reserve_ratio": 0.0,
+        "slot_amount": 20000.0,
+        "lot_size": 1,
+        "trade_unit": "odd_lot",
+        "max_hold_days": 20,
+        "tp_atr_mult": 4.0,
+        "sl_atr_mult": 3.0,
+        "initial_capital": 20000.0,
+    },
     "mr20": {
         "strategy_id": "mr20",
         "name": "MR20 Pullback Mean Reversion",
@@ -109,6 +126,8 @@ def resolve_strategy_id(strategy: Optional[str]) -> str:
     if not strategy:
         return DEFAULT_STRATEGY_ID
     s = str(strategy).lower().strip()
+    if s in ("top7", "top7_v1", "top7_odd_lot"):
+        return "top7"
     if s in ("top2", "top2_score_v1", "top2_v1"):
         return "top2_score_v1"
     if s in ("mr20", "mr20_pullback_v1", "mr20_v1"):
@@ -116,6 +135,7 @@ def resolve_strategy_id(strategy: Optional[str]) -> str:
     if s in ("rsi_reversal", "rsi_reversal_v1", "rsi"):
         return "rsi_reversal"
     return s
+
 
 
 def get_strategy_config(strategy: Optional[str] = None) -> dict[str, Any]:
@@ -728,6 +748,9 @@ def get_default_state(
     entry_model: str = DEFAULT_ENTRY_MODEL,
     strategy_id: Optional[str] = None,
     created_at: Optional[str] = None,
+    lot_size: Optional[int] = None,
+    slot_amount: Optional[float] = None,
+    trade_unit: Optional[str] = None,
 ) -> dict[str, Any]:
     """Return fresh initial state dictionary."""
     sid = resolve_strategy_id(strategy_id)
@@ -740,6 +763,9 @@ def get_default_state(
     eff_tp_mult = float(tp_atr_mult) if tp_atr_mult is not None else float(strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT))
     eff_sl_mult = float(sl_atr_mult) if sl_atr_mult is not None else float(strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT))
     eff_max_hold = int(max_hold_days) if max_hold_days is not None else int(strat_cfg.get("max_hold_days", DEFAULT_MAX_HOLD_DAYS))
+    eff_lot_size = int(lot_size) if lot_size is not None else int(strat_cfg.get("lot_size", DEFAULT_LOT_SIZE))
+    eff_slot_amount = float(slot_amount) if slot_amount is not None else (float(strat_cfg["slot_amount"]) if "slot_amount" in strat_cfg else None)
+    eff_trade_unit = trade_unit or strat_cfg.get("trade_unit", "odd_lot" if eff_lot_size == 1 else "board_lot")
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -755,6 +781,9 @@ def get_default_state(
             "sl_atr_mult": eff_sl_mult,
             "max_hold_days": eff_max_hold,
             "entry_model": entry_model,
+            "lot_size": eff_lot_size,
+            "slot_amount": eff_slot_amount,
+            "trade_unit": eff_trade_unit,
         },
         "cash": eff_capital,
         "positions": {},
@@ -852,6 +881,9 @@ def init_simulation(
     max_hold_days: Optional[int] = None,
     strategy: Optional[str] = None,
     force: bool = False,
+    lot_size: Optional[int] = None,
+    slot_amount: Optional[float] = None,
+    trade_unit: Optional[str] = None,
 ) -> dict[str, Any]:
     """Initialize a new simulation state."""
     sid = resolve_strategy_id(strategy)
@@ -870,10 +902,14 @@ def init_simulation(
         reserve_ratio=reserve_ratio,
         max_hold_days=max_hold_days,
         strategy_id=sid,
+        lot_size=lot_size,
+        slot_amount=slot_amount,
+        trade_unit=trade_unit,
     )
     save_state_atomic(state, data_dir=d)
     export_ledgers(state, data_dir=d)
     return state
+
 
 
 # =====================================================================
@@ -1023,9 +1059,18 @@ def execute_open_orders(
     """Execute due pending orders at 09:30 on execution_date as_of."""
     cfg = state["config"]
     initial_cap = cfg["initial_capital"]
-    reserve_cash = initial_cap * cfg.get("reserve_ratio", DEFAULT_RESERVE_RATIO)
-    pos_size = cfg.get("position_size", DEFAULT_POSITION_SIZE)
-    max_pos = cfg.get("max_positions", DEFAULT_MAX_POSITIONS)
+    strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
+    strat_cfg = get_strategy_config(strat_id)
+
+    lot_size = int(cfg.get("lot_size", strat_cfg.get("lot_size", DEFAULT_LOT_SIZE)))
+    slot_amount = cfg.get("slot_amount", strat_cfg.get("slot_amount", None))
+    if slot_amount is not None:
+        slot_amount = float(slot_amount)
+
+    default_reserve = 0.0 if slot_amount is not None else DEFAULT_RESERVE_RATIO
+    reserve_cash = initial_cap * cfg.get("reserve_ratio", strat_cfg.get("reserve_ratio", default_reserve))
+    pos_size = cfg.get("position_size", strat_cfg.get("position_size", DEFAULT_POSITION_SIZE))
+    max_pos = cfg.get("max_positions", strat_cfg.get("max_positions", DEFAULT_MAX_POSITIONS))
 
     due_orders = [o for o in state["pending_orders"] if o.get("execution_date") == as_of]
     remaining_pending = [o for o in state["pending_orders"] if o.get("execution_date") != as_of]
@@ -1098,7 +1143,7 @@ def execute_open_orders(
             terminal_events.append(event)
             continue
 
-        # Sizing and Cash allocation (integer board-lot, shared with paper_tracker/eval_trader — A1)
+        # Sizing and Cash allocation
         fill_price = decision.fill_price
         current_market_val = sum(
             pos["shares"] * bars.get(t, {}).get("close", pos["entry"])
@@ -1111,14 +1156,23 @@ def execute_open_orders(
             fill_price=fill_price,
             cash=state["cash"],
             reserve=reserve_cash,
+            lot_size=lot_size,
+            slot_amount=slot_amount,
         )
 
         if not sizing.ok:
-            message = (
-                f"Position slot cannot afford one board lot at {fill_price:.2f}"
-                if sizing.status == "CANCELLED_BELOW_LOT_SIZE"
-                else f"Insufficient cash to buy 1 lot while preserving reserve {reserve_cash:.0f}"
-            )
+            if lot_size == 1:
+                message = (
+                    f"Position slot budget cannot afford 1 share at {fill_price:.2f}"
+                    if sizing.status == "CANCELLED_BELOW_LOT_SIZE"
+                    else f"Insufficient cash to buy 1 share while preserving reserve {reserve_cash:.0f}"
+                )
+            else:
+                message = (
+                    f"Position slot cannot afford one board lot at {fill_price:.2f}"
+                    if sizing.status == "CANCELLED_BELOW_LOT_SIZE"
+                    else f"Insufficient cash to buy 1 lot while preserving reserve {reserve_cash:.0f}"
+                )
             event = {
                 **event_base,
                 "open_price": open_price,
@@ -1133,8 +1187,10 @@ def execute_open_orders(
         trade_amount = sizing.trade_amount
         buy_cost = sizing.commission
 
-        # Deduct cash
-        state["cash"] -= (trade_amount + buy_cost)
+        # Deduct cash (rounded to 2 decimal places)
+        total_outflow = round(trade_amount + buy_cost, 2)
+        state["cash"] = round(state["cash"] - total_outflow, 2)
+
 
         # Compute TP/SL anchored on fill_price
         strat_cfg = get_strategy_config(state.get("strategy_id"))
@@ -1252,16 +1308,16 @@ def settle_positions(
         if reason:
             shares = pos["shares"]
             entry_price = pos["entry"]
-            sell_cost = compute_commission(exit_price * shares, BUY_COST_RATE) + exit_price * shares * (SELL_COST_RATE - BUY_COST_RATE)
-            slippage_cost = exit_price * shares * SLIPPAGE
-            proceeds = exit_price * shares - sell_cost - slippage_cost
-            buy_cost = compute_commission(entry_price * shares, BUY_COST_RATE)
-            cost_basis = entry_price * shares + buy_cost
-            gross_pnl = (exit_price - entry_price) * shares
-            net_pnl = proceeds - cost_basis
-            net_return_pct = (net_pnl / cost_basis) * 100.0 if cost_basis > 0 else 0.0
+            sell_cost = round(compute_commission(exit_price * shares, BUY_COST_RATE) + exit_price * shares * (SELL_COST_RATE - BUY_COST_RATE), 2)
+            slippage_cost = round(exit_price * shares * SLIPPAGE, 2)
+            proceeds = round(exit_price * shares - sell_cost - slippage_cost, 2)
+            buy_cost = round(compute_commission(entry_price * shares, BUY_COST_RATE), 2)
+            cost_basis = round(entry_price * shares + buy_cost, 2)
+            gross_pnl = round((exit_price - entry_price) * shares, 2)
+            net_pnl = round(proceeds - cost_basis, 2)
+            net_return_pct = round((net_pnl / cost_basis) * 100.0, 4) if cost_basis > 0 else 0.0
 
-            state["cash"] += proceeds
+            state["cash"] = round(state["cash"] + proceeds, 2)
 
             # Cap reported days_held at max_hold for TIME exits (A5)
             reported_days_held = min(int(day_count), int(max_hold)) if reason == "TIME" else int(day_count)
@@ -1323,8 +1379,9 @@ def mark_equity(
             stale_market_val += px * pos["shares"]
         total_mkt_val += px * pos["shares"]
 
-    market_value = total_mkt_val
-    equity = state["cash"] + market_value
+    market_value = round(total_mkt_val, 2)
+    state["cash"] = round(state["cash"], 2)
+    equity = round(state["cash"] + market_value, 2)
     stale_ratio = round(stale_market_val / market_value, 6) if market_value > 0 else 0.0
     if stale_ratio > 0.3:
         print(f"   ⚠️ Warning: {as_of} stale_ratio={stale_ratio:.1%} > 30%, daily_return may be untrustworthy")
@@ -1337,6 +1394,7 @@ def mark_equity(
         "cash": round(state["cash"], 2),
         "market_value": round(market_value, 2),
         "equity": round(equity, 2),
+
         "daily_return": 0.0,
         "cumulative_return": 0.0,
         "benchmark_close": round(benchmark_close, 2) if benchmark_close is not None else 0.0,
@@ -1514,13 +1572,21 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
     max_price_desc = f"<= {max_price_val} 元" if max_price_val is not None else "無"
 
 
+    slot_desc = (
+        f"每檔固定 {cfg['slot_amount']:,.0f} TWD (零股)"
+        if cfg.get("slot_amount") is not None
+        else f"每檔投入 ~{cfg['position_size']*100:.0f}% 權益"
+    )
+    unit_desc = "零股 (1 股)" if cfg.get("lot_size") == 1 else "整張 (1,000 股)"
+
     lines = [
         f"# {strat_name} Simulation Report ({strat_id})",
         "",
         f"- **建立時間 / 狀態更新**: {get_taipei_now_iso()}",
-        f"- **初始資金**: {cfg['initial_capital']:,.0f} TWD",
-        f"- **目前現金**: {state['cash']:,.0f} TWD",
-        f"- **最大持倉**: {cfg['max_positions']} 檔 (每檔投入 ~{cfg['position_size']*100:.0f}% 權益)",
+        f"- **初始資金**: {cfg['initial_capital']:,.2f} TWD",
+        f"- **目前現金**: {state['cash']:,.2f} TWD",
+        f"- **最大持倉**: {cfg['max_positions']} 檔 ({slot_desc})",
+        f"- **下單單位**: {unit_desc}",
         f"- **低價篩選**: {max_price_desc}",
         "",
         "## 1. 策略 vs 0050 績效比較",
@@ -1538,7 +1604,7 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
         "|---|---|",
         f"| **已平倉總筆數** | {perf['total_trades']} 筆 |",
         f"| **勝率** | {perf['win_rate']*100:.1f}% |",
-        f"| **平均每筆損益** | {perf['avg_trade_pnl']:+,.0f} TWD ({perf['avg_trade_return_pct']:+.2f}%) |",
+        f"| **平均每筆損益** | {perf['avg_trade_pnl']:+,.2f} TWD ({perf['avg_trade_return_pct']:+.2f}%) |",
         f"| **獲利因子 (Profit Factor)** | {pf_str} |",
         f"| **委託成交率** | {perf['fill_rate']*100:.1f}% |",
         "",
@@ -1586,11 +1652,15 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
         for t in trades[-5:]:
             lines.append(
                 f"| `{t['ticker']}` | {t['entry_date']} | {t['exit_date']} | {t['entry_price']:.2f} | "
-                f"{t['exit_price']:.2f} | {t['shares']:,} | {t['net_pnl']:+,.0f} | {t['net_return_pct']:+.2f}% | `{t['exit_reason']}` |"
+                f"{t['exit_price']:.2f} | {t['shares']:,} | {t['net_pnl']:+,.2f} | {t['net_return_pct']:+.2f}% | `{t['exit_reason']}` |"
             )
     else:
         lines.append("*(尚無平倉交易記錄)*")
     lines.append("")
+
+    if cfg.get("lot_size") == 1:
+        lines.append("*(盤中零股規則：手續費 0.1425% 最低 20 元、證交稅 0.3%、賣出滑價 0.3%；依日K/開盤價估算撮合，不支援市價單/當沖/融資融券)*")
+        lines.append("")
 
     return "\n".join(lines)
 
@@ -2057,19 +2127,21 @@ def build_cli_parser() -> argparse.ArgumentParser:
 
     # init
     p_init = subparsers.add_parser("init", help="Initialize simulation state")
-    p_init.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal)")
+    p_init.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7)")
     p_init.add_argument("--capital", type=float, default=None, help="Initial capital in TWD")
     p_init.add_argument("--max-price", type=float, default=None, help="Optional max price filter")
     p_init.add_argument("--position-size", type=float, default=None, help="Target position size fraction")
     p_init.add_argument("--reserve-ratio", type=float, default=None, help="Minimum cash reserve fraction")
     p_init.add_argument("--max-positions", type=int, default=None, help="Max positions count")
     p_init.add_argument("--max-hold-days", type=int, default=None, help="Max holding days")
+    p_init.add_argument("--lot-size", type=int, default=None, help="Trading lot size (1 for odd-lot, 1000 for board-lot)")
+    p_init.add_argument("--slot-amount", type=float, default=None, help="Fixed slot budget in TWD")
     p_init.add_argument("--data-dir", type=str, default=None, help="Data directory")
     p_init.add_argument("--force", action="store_true", help="Force overwrite existing state")
 
     # close-and-plan
     p_cp = subparsers.add_parser("close-and-plan", help="Settle positions, mark equity, and plan next day orders")
-    p_cp.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal)")
+    p_cp.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7)")
     p_cp.add_argument("--orders", type=str, default=None, help="Path to orders_YYYYMMDD.json artifact")
     p_cp.add_argument("--as-of", type=str, default=None, help="Evaluation date (YYYY-MM-DD), default today")
     p_cp.add_argument("--max-price", type=float, default=None, help="Optional max price override")
@@ -2079,20 +2151,20 @@ def build_cli_parser() -> argparse.ArgumentParser:
 
     # open
     p_open = subparsers.add_parser("open", help="Simulate 09:00-09:30 open limit order fills")
-    p_open.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal)")
+    p_open.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7)")
     p_open.add_argument("--as-of", type=str, default=None, help="Execution date (YYYY-MM-DD), default today")
     p_open.add_argument("--data-dir", type=str, default=None, help="Data directory")
     p_open.add_argument("--notify", action="store_true", help="Send Telegram notification")
 
     # report
     p_rep = subparsers.add_parser("report", help="Generate performance report, charts, and export CSVs")
-    p_rep.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal)")
+    p_rep.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7)")
     p_rep.add_argument("--data-dir", type=str, default=None, help="Data directory")
     p_rep.add_argument("--notify", action="store_true", help="Send Telegram notification")
 
     # status
     p_stat = subparsers.add_parser("status", help="Print current status summary")
-    p_stat.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal)")
+    p_stat.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7)")
     p_stat.add_argument("--data-dir", type=str, default=None, help="Data directory")
 
     # is-session: exit 0 (session) / 1 (not a session) / 2 (lookup error).
@@ -2148,6 +2220,8 @@ def main() -> None:
             reserve_ratio=args.reserve_ratio,
             max_positions=args.max_positions,
             max_hold_days=args.max_hold_days,
+            lot_size=getattr(args, "lot_size", None),
+            slot_amount=getattr(args, "slot_amount", None),
             strategy=sid,
             force=args.force,
         )

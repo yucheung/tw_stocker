@@ -70,22 +70,28 @@ def size_position(
     lot_size: int = DEFAULT_LOT_SIZE,
     min_commission: float = DEFAULT_MIN_COMMISSION,
     buy_cost_rate: float = DEFAULT_BUY_COST_RATE,
+    slot_amount: Optional[float] = None,
 ) -> SizingResult:
     """Compute a lot-rounded share count for a single new position.
 
     `cash` defaults to `equity` (pure position-size affordability check) when
     the caller doesn't need a separate cash constraint.
+    `slot_amount` allows overriding the percentage-based `equity * position_size`
+    with a fixed allocation amount (e.g. NT$20,000 for odd-lot trading).
     """
     eff_cash = equity if cash is None else cash
-    slot_amount = max(0.0, equity * position_size)
+    if slot_amount is not None:
+        eff_slot_amount = max(0.0, float(slot_amount))
+    else:
+        eff_slot_amount = max(0.0, equity * position_size)
     available_cash = max(0.0, eff_cash - reserve)
 
-    slot_raw_shares = _max_affordable_shares(slot_amount, fill_price, buy_cost_rate, min_commission)
+    slot_raw_shares = _max_affordable_shares(eff_slot_amount, fill_price, buy_cost_rate, min_commission)
     slot_shares = (slot_raw_shares // lot_size) * lot_size
     if slot_shares < lot_size:
         return SizingResult(0, 0.0, 0.0, "CANCELLED_BELOW_LOT_SIZE")
 
-    target_amount = min(slot_amount, available_cash)
+    target_amount = min(eff_slot_amount, available_cash)
     raw_shares = _max_affordable_shares(target_amount, fill_price, buy_cost_rate, min_commission)
     shares = (raw_shares // lot_size) * lot_size
     if shares < lot_size:
@@ -94,3 +100,4 @@ def size_position(
     notional = shares * fill_price
     commission = compute_commission(notional, buy_cost_rate, min_commission)
     return SizingResult(int(shares), round(notional, 2), round(commission, 2), "OK")
+
