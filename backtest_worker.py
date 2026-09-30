@@ -36,6 +36,7 @@ import json
 import logging
 import math
 import os
+import re
 import subprocess
 import sys
 import time
@@ -189,21 +190,86 @@ def map_params_to_cli(params: Dict[str, Any], output_csv: str) -> Tuple[List[str
 
     # 5. Untransmitted parameters (unsupported by param_sweep.py CLI)
     untransmitted = []
+
+    hold_days = params.get("hold_days")
+    if hold_days is None:
+        hold_days = params.get("holdDays")
+
+    tp_sl_mode = params.get("tp_sl_mode")
+    if tp_sl_mode is None:
+        tp_sl_mode = params.get("tpSlMode")
+
+    gap_filter = params.get("gap_filter")
+    if gap_filter is None:
+        gap_filter = params.get("gapFilter")
+
+    regime_filter = params.get("regime_filter")
+    if regime_filter is None:
+        regime_filter = params.get("regimeFilter")
+
+    advanced_json = params.get("advanced_json")
+    if advanced_json is None:
+        advanced_json = params.get("advancedJson")
+
+    notify = params.get("notify")
+    strategy = params.get("strategy")
+
     unsupported_keys = [
         ("capital", params.get("capital")),
-        ("hold_days", params.get("hold_days") or params.get("holdDays")),
-        ("strategy", params.get("strategy")),
+        ("hold_days", hold_days),
+        ("strategy", strategy),
         ("pool", params.get("pool")),
-        ("tp_sl_mode", params.get("tp_sl_mode") or params.get("tpSlMode")),
-        ("gap_filter", params.get("gap_filter") or params.get("gapFilter")),
+        ("tp_sl_mode", tp_sl_mode),
+        ("gap_filter", gap_filter),
         ("slippage", params.get("slippage")),
-        ("regime_filter", params.get("regime_filter") or params.get("regimeFilter")),
+        ("regime_filter", regime_filter),
+        ("advanced_json", advanced_json),
+        ("notify", notify),
     ]
     for key, val in unsupported_keys:
         if val is not None:
             untransmitted.append(f"{key}={val}")
 
     return cmd, untransmitted
+
+
+def sanitize_error(error: Optional[str]) -> Optional[str]:
+    """
+    Sanitize error message before backfilling (P2-2):
+    1. Mask known sensitive environment variable values.
+    2. Mask token-like patterns (JWT, Bearer, token=..., 32+ hex).
+    3. Mask VPS absolute paths to keep only filename.
+    """
+    if not error:
+        return error
+    msg = str(error)
+
+    # 1. Mask known sensitive env values
+    sensitive_env_keys = [
+        "SYNC_PUSH_TOKEN",
+        "CF_ACCESS_SERVICE_TOKEN_SECRET",
+        "CF_ACCESS_CLIENT_SECRET",
+        "CF_ACCESS_SERVICE_TOKEN_ID",
+        "CF_ACCESS_CLIENT_ID",
+        "CF_ACCESS_AUD",
+    ]
+    for key in sensitive_env_keys:
+        val = os.environ.get(key)
+        if val and len(val) >= 4:
+            msg = msg.replace(val, "***MASKED***")
+
+    # 2. Token-like pattern masking
+    # JWT tokens
+    msg = re.sub(r'eyJ[a-zA-Z0-9_-]{4,}\.[a-zA-Z0-9_-]{2,}(?:\.[a-zA-Z0-9_-]+)?', '***MASKED_TOKEN***', msg)
+    # token / key / secret = ...
+    msg = re.sub(r'(?i)(token|secret|password|bearer|auth|key)([\s:=]+)([A-Za-z0-9_-]{8,})', r'\1\2***MASKED***', msg)
+    # 32+ char hex tokens
+    msg = re.sub(r'\b[a-fA-F0-9]{32,}\b', '***MASKED_HEX***', msg)
+
+    # 3. VPS absolute path masking: keep only filename
+    msg = re.sub(r'/(?:[\w.-]+/)+([\w.-]+)', r'\1', msg)
+
+    return msg
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +344,14 @@ def run_worker_once(
                 headers=headers,
                 timeout=15,
             )
+            if claim_resp.status_code == 409:
+                log.info("Job %s was already claimed by another worker (conflict 409). Giving up and exiting.", job_id)
+                return False
             claim_resp.raise_for_status()
+            claim_data = claim_resp.json()
+            if not claim_data.get("ok", True):
+                log.info("Job %s claim rejected (%s). Giving up and exiting.", job_id, claim_data.get("error"))
+                return False
             log.info("Marked job %s as running", job_id)
         except Exception as e:
             log.error("Failed to mark job %s as running: %s", job_id, e)
@@ -291,6 +364,10 @@ def run_worker_once(
         except Exception as e:
             params = {}
             log.warning("Could not parse params_json for job %s: %s", job_id, e)
+
+        # Ensure strategy from top-level job is in params if missing (P2-1)
+        if "strategy" not in params and job.get("strategy"):
+            params["strategy"] = job.get("strategy")
 
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         output_csv = artifacts_dir / f"backtest_{job_id}.csv"
@@ -323,7 +400,7 @@ def run_worker_once(
                 json={
                     "job_id": job_id,
                     "status": "failed",
-                    "error": "Execution timed out (1800s limit)",
+                    "error": sanitize_error("Execution timed out (1800s limit)"),
                     "progress_pct": 0,
                 },
                 headers=headers,
@@ -337,7 +414,7 @@ def run_worker_once(
                 json={
                     "job_id": job_id,
                     "status": "failed",
-                    "error": f"Subprocess execution error: {str(e)}",
+                    "error": sanitize_error(f"Subprocess execution error: {str(e)}"),
                     "progress_pct": 0,
                 },
                 headers=headers,
@@ -348,14 +425,15 @@ def run_worker_once(
         # Step 6: Handle subprocess completion
         if proc.returncode != 0:
             err_msg = (proc.stderr or proc.stdout or f"Process exited with code {proc.returncode}").strip()
-            log.error("Job %s failed with code %d:\n%s", job_id, proc.returncode, err_msg[-500:])
+            sanitized_err = sanitize_error(err_msg) or ""
+            log.error("Job %s failed with code %d:\n%s", job_id, proc.returncode, sanitized_err[-500:])
             try:
                 requests.post(
                     sync_url,
                     json={
                         "job_id": job_id,
                         "status": "failed",
-                        "error": err_msg[-1500:],
+                        "error": sanitized_err[-1500:],
                         "progress_pct": 0,
                     },
                     headers=headers,
@@ -373,7 +451,7 @@ def run_worker_once(
                 json={
                     "job_id": job_id,
                     "status": "failed",
-                    "error": "param_sweep.py completed but output CSV is missing or empty",
+                    "error": sanitize_error(f"Output CSV {output_csv.name} not found or empty"),
                     "progress_pct": 0,
                 },
                 headers=headers,

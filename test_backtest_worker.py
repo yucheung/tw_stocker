@@ -63,7 +63,7 @@ class TestBacktestWorker(unittest.TestCase):
             self.assertIn("Mozilla/5.0", headers.get("User-Agent", ""))
 
     def test_param_mapping_and_untransmitted(self):
-        """Test params correctly map to param_sweep.py CLI and untransmitted are listed."""
+        """Test params correctly map to param_sweep.py CLI and untransmitted are listed (including 0/False, strategy, advanced_json, notify)."""
         params = {
             "strategy": "momentum_v85",
             "pool": "full",
@@ -73,6 +73,10 @@ class TestBacktestWorker(unittest.TestCase):
             "tp_atr": 2.5,
             "sl_atr": 3.5,
             "hold_days": 10,
+            "gap_filter": False,
+            "regime_filter": 0,
+            "advanced_json": {"grid_opt": True},
+            "notify": False,
             "start_date": "2026-01-01",
             "end_date": "2026-03-01",
         }
@@ -101,12 +105,16 @@ class TestBacktestWorker(unittest.TestCase):
         self.assertIn("--output", cmd)
         self.assertIn("--skip-data-gate", cmd)
 
-        # Verify untransmitted parameters are truthfully listed
+        # Verify untransmitted parameters are truthfully listed (P2-1)
         untransmitted_str = " ".join(untransmitted)
         self.assertIn("capital=100000", untransmitted_str)
         self.assertIn("hold_days=10", untransmitted_str)
         self.assertIn("strategy=momentum_v85", untransmitted_str)
         self.assertIn("pool=full", untransmitted_str)
+        self.assertIn("gap_filter=False", untransmitted_str, "gap_filter=False (boolean) 必須被記錄")
+        self.assertIn("regime_filter=0", untransmitted_str, "regime_filter=0 (numeric 0) 必須被記錄")
+        self.assertIn("advanced_json=", untransmitted_str)
+        self.assertIn("notify=False", untransmitted_str, "notify=False 必須被記錄")
 
     @patch("backtest_worker.requests.get")
     @patch("backtest_worker.requests.post")
@@ -202,9 +210,16 @@ class TestBacktestWorker(unittest.TestCase):
         mock_post_resp.json.return_value = {"ok": True}
         mock_post.return_value = mock_post_resp
 
-        # Mock subprocess failing
+        # Mock subprocess failing with VPS absolute path and secret tokens
         mock_run.return_value = subprocess.CompletedProcess(
-            ["python3"], 1, stdout="", stderr="RuntimeError: yfinance rate limit"
+            ["python3"],
+            1,
+            stdout="",
+            stderr=(
+                "Traceback (most recent call last):\n"
+                "  File \"/root/work/tw_stocker/strategy/custom_backtest.py\", line 42, in run\n"
+                "RuntimeError: invalid token=ghp_fake1234567890abcdef1234567890abcdef and /var/log/secret.log"
+            ),
         )
 
         processed = backtest_worker.run_worker_once(
@@ -216,11 +231,67 @@ class TestBacktestWorker(unittest.TestCase):
         self.assertTrue(processed)
         self.assertEqual(mock_post.call_count, 2)
 
-        # Check call 2: failed
+        # Check call 2: failed + error sanitized (P2-2)
         call2_args, call2_kwargs = mock_post.call_args_list[1]
         payload = call2_kwargs["json"]
         self.assertEqual(payload["status"], "failed")
-        self.assertIn("yfinance rate limit", payload["error"])
+        self.assertNotIn("/root/work/tw_stocker/strategy/custom_backtest.py", payload["error"], "絕對路徑不得出現在原文")
+        self.assertIn("custom_backtest.py", payload["error"], "檔名應保留")
+        self.assertNotIn("/var/log/secret.log", payload["error"])
+        self.assertIn("secret.log", payload["error"])
+        self.assertNotIn("ghp_fake1234567890abcdef1234567890abcdef", payload["error"], "假 token 樣式字串不得出現在原文")
+
+    def test_sanitize_error_direct(self):
+        """Test sanitize_error directly: masks VPS paths, tokens, and sensitive envs (P2-2)."""
+        with patch.dict(os.environ, {"SYNC_PUSH_TOKEN": "super_secret_sync_key"}):
+            raw = (
+                "Error at /root/work/tw_stocker/backtest_worker.py: push token=super_secret_sync_key, "
+                "auth key=my_api_key_12345678, JWT eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.t-IDcSemACt8x4iTMCda8Yhe3iZaWbvV5XKSTbuAn0M, "
+                "hash=0123456789abcdef0123456789abcdef, log in /home/vps/error.txt"
+            )
+            sanitized = backtest_worker.sanitize_error(raw)
+            self.assertNotIn("/root/work/tw_stocker/backtest_worker.py", sanitized)
+            self.assertIn("backtest_worker.py", sanitized)
+            self.assertNotIn("/home/vps/error.txt", sanitized)
+            self.assertIn("error.txt", sanitized)
+            self.assertNotIn("super_secret_sync_key", sanitized)
+            self.assertNotIn("my_api_key_12345678", sanitized)
+            self.assertNotIn("0123456789abcdef0123456789abcdef", sanitized)
+            self.assertNotIn("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30", sanitized)
+
+    @patch("backtest_worker.requests.get")
+    @patch("backtest_worker.requests.post")
+    def test_claim_conflict_409_gives_up_and_exits(self, mock_post, mock_get):
+        """Test atomic claim conflict (409): worker gives up and exits cleanly (P1-2)."""
+        job_id = "job_conflict_123"
+        job_data = {
+            "job_id": job_id,
+            "status": "queued",
+            "priority": 1,
+            "params_json": json.dumps({"days": 60}),
+        }
+
+        mock_get_resp = MagicMock()
+        mock_get_resp.status_code = 200
+        mock_get_resp.json.return_value = {"runs": [job_data]}
+        mock_get.return_value = mock_get_resp
+
+        # Mock claim returning 409 Conflict (another worker took it)
+        mock_claim_resp = MagicMock()
+        mock_claim_resp.status_code = 409
+        mock_claim_resp.json.return_value = {"error": "conflict: job not queued", "ok": False}
+        mock_post.return_value = mock_claim_resp
+
+        processed = backtest_worker.run_worker_once(
+            base_url="http://mock-worker",
+            lock_path=self.tmp_path / "worker.lock",
+            artifacts_dir=self.tmp_path / "artifacts",
+        )
+
+        # Worker should abandon and exit
+        self.assertFalse(processed)
+        # Should have called claim once and never called done/failed
+        self.assertEqual(mock_post.call_count, 1)
 
     @patch("backtest_worker.requests.get")
     def test_empty_queue_exits_cleanly(self, mock_get):
