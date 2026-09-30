@@ -272,8 +272,12 @@ def sanitize_error(error: Optional[str]) -> Optional[str]:
     # 32+ char hex tokens
     msg = re.sub(r'\b[a-fA-F0-9]{32,}\b', '***MASKED_HEX***', msg)
 
-    # 3. VPS absolute path masking: keep only filename
-    msg = re.sub(r'/(?:[\w.-]+/)+([\w.-]+)', r'\1', msg)
+    # 3. VPS absolute path masking: keep only filename (supports paths with spaces)
+    msg = re.sub(
+        r'/(?:[^\s"\'`:\r\n]+(?:[ \t]+[^\s"\'`:\r\n]+)*\/)+(?:[^"\'`:\r\n]+?(?=["\'`])|[^\s"\'`:\r\n]+)',
+        lambda m: os.path.basename(m.group(0)),
+        msg,
+    )
 
     return msg
 
@@ -499,13 +503,14 @@ def run_worker_once(
                 "unmapped_params": untransmitted,
             }
         except Exception as e:
-            log.error("Failed to parse CSV for job %s: %s", job_id, e)
+            sanitized_err = sanitize_error(f"Failed to parse output CSV metrics: {str(e)}") or ""
+            log.error("Failed to parse CSV for job %s: %s", job_id, sanitize_error(str(e)))
             requests.post(
                 sync_url,
                 json={
                     "job_id": job_id,
                     "status": "failed",
-                    "error": f"Failed to parse output CSV metrics: {str(e)}",
+                    "error": sanitized_err,
                     "progress_pct": 0,
                 },
                 headers=headers,
