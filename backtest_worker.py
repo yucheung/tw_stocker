@@ -261,8 +261,14 @@ def sanitize_error(error: Optional[str]) -> Optional[str]:
     # 2. Token-like pattern masking
     # JWT tokens
     msg = re.sub(r'eyJ[a-zA-Z0-9_-]{4,}\.[a-zA-Z0-9_-]{2,}(?:\.[a-zA-Z0-9_-]+)?', '***MASKED_TOKEN***', msg)
-    # token / key / secret = ...
-    msg = re.sub(r'(?i)(token|secret|password|bearer|auth|key)([\s:=]+)([A-Za-z0-9_-]{8,})', r'\1\2***MASKED***', msg)
+    # JSON quoted fields & key-value tokens (e.g. {"api_key":"sk_live_..."}, token=..., secret: ...)
+    msg = re.sub(
+        r'(?i)(["\']?(?:[a-zA-Z0-9_-]*(?:token|secret|password|api_?key|auth|credential)[a-zA-Z0-9_-]*|key)["\']?\s*[:=]\s*["\']?(?:bearer\s+)?)([^"\'\s,}{]{4,})(["\']?)',
+        r'\g<1>***MASKED***\g<3>',
+        msg,
+    )
+    # Bare bearer token
+    msg = re.sub(r'(?i)(bearer\s+)(["\']?)([^"\'\s,}{]{4,})\2', r'\g<1>\g<2>***MASKED***\g<2>', msg)
     # 32+ char hex tokens
     msg = re.sub(r'\b[a-fA-F0-9]{32,}\b', '***MASKED_HEX***', msg)
 
@@ -514,7 +520,7 @@ def run_worker_once(
             "progress_pct": 1.0,
             "summary_json": summary,
             "equity_json": [],
-            "artifacts_path": str(output_csv),
+            "artifacts_path": output_csv.name,
             "error": None,
         }
 
