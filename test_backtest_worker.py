@@ -51,6 +51,8 @@ class TestBacktestWorker(unittest.TestCase):
         """Test headers contain browser UA and service tokens."""
         with patch.dict(os.environ, {
             "SYNC_PUSH_TOKEN": "my-push-token",
+            "CF_ACCESS_SERVICE_TOKEN_ID": "cid-123",
+            "CF_ACCESS_SERVICE_TOKEN_SECRET": "csec-456",
             "CF_ACCESS_CLIENT_ID": "cid-123",
             "CF_ACCESS_CLIENT_SECRET": "csec-456",
         }):
@@ -97,6 +99,7 @@ class TestBacktestWorker(unittest.TestCase):
         self.assertIn("--start-date", cmd)
         self.assertIn("--end-date", cmd)
         self.assertIn("--output", cmd)
+        self.assertIn("--skip-data-gate", cmd)
 
         # Verify untransmitted parameters are truthfully listed
         untransmitted_str = " ".join(untransmitted)
