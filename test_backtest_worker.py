@@ -181,6 +181,8 @@ class TestBacktestWorker(unittest.TestCase):
         payload = call2_kwargs["json"]
         self.assertEqual(payload["status"], "done")
         self.assertEqual(payload["progress_pct"], 1.0)
+        self.assertNotIn("/", payload["artifacts_path"], "artifacts_path 不得包含絕對路徑斜線")
+        self.assertTrue(payload["artifacts_path"].endswith(".csv"), "artifacts_path 應為 CSV 檔名")
         self.assertAlmostEqual(payload["summary_json"]["total_return"], 0.152)
         self.assertAlmostEqual(payload["summary_json"]["sharpe"], 1.35)
         self.assertAlmostEqual(payload["summary_json"]["mdd"], 0.105)
@@ -258,6 +260,13 @@ class TestBacktestWorker(unittest.TestCase):
             self.assertNotIn("my_api_key_12345678", sanitized)
             self.assertNotIn("0123456789abcdef0123456789abcdef", sanitized)
             self.assertNotIn("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30", sanitized)
+
+        # JSON 引號欄位測試（例如 {"api_key":"sk_live_..."}）
+        json_raw = 'Request failed: {"api_key":"sk_live_1234567890abcdef", "client_secret":"sec_val_99887766"}'
+        json_sanitized = backtest_worker.sanitize_error(json_raw)
+        self.assertNotIn("sk_live_1234567890abcdef", json_sanitized)
+        self.assertNotIn("sec_val_99887766", json_sanitized)
+        self.assertIn('{"api_key":"***MASKED***"', json_sanitized)
 
     @patch("backtest_worker.requests.get")
     @patch("backtest_worker.requests.post")
