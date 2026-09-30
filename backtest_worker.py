@@ -34,6 +34,7 @@ import argparse
 import fcntl
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -52,17 +53,17 @@ PARAM_SWEEP_PATH = BASE_DIR / "param_sweep.py"
 DEFAULT_LOCK_PATH = Path("/tmp/tw_stocker_backtest_worker.lock")
 DEFAULT_ARTIFACTS_DIR = BASE_DIR / "artifacts"
 
-# Load local .env if present
-env_file = BASE_DIR / ".env"
-if env_file.exists():
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        k, v = k.strip(), v.strip().strip("'\"")
-        if k and k not in os.environ:
-            os.environ[k] = v
+# Load local .env and /root/.tw-stocker-web-sync.env if present
+for env_candidate in [BASE_DIR / ".env", Path("/root/.tw-stocker-web-sync.env")]:
+    if env_candidate.exists():
+        for line in env_candidate.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k, v = k.strip(), v.strip().strip("'\"")
+            if k and k not in os.environ:
+                os.environ[k] = v
 
 DEFAULT_BASE_URL = os.environ.get(
     "TW_STOCKER_WEB_URL",
@@ -181,6 +182,10 @@ def map_params_to_cli(params: Dict[str, Any], output_csv: str) -> Tuple[List[str
         cmd.extend(["--start-date", str(params["start_date"])])
     if params.get("end_date"):
         cmd.extend(["--end-date", str(params["end_date"])])
+
+    # Optional: skip_data_gate for short runs or explicit request
+    if params.get("skip_data_gate") or (params.get("days") and int(params["days"]) < 100):
+        cmd.append("--skip-data-gate")
 
     # 5. Untransmitted parameters (unsupported by param_sweep.py CLI)
     untransmitted = []
@@ -382,21 +387,30 @@ def run_worker_once(
                 raise ValueError("output CSV contains no rows")
             row = df.iloc[0]
 
+            def _clean_float(val: Any, ndigits: int = 4, default: Optional[float] = None) -> Optional[float]:
+                try:
+                    f = float(val)
+                    if math.isnan(f) or math.isinf(f):
+                        return default
+                    return round(f, ndigits)
+                except Exception:
+                    return default
+
             summary = {
-                "total_return": round(float(row["total_return_pct"]) / 100.0, 4),
-                "annual_return": round(float(row["ann_return_pct"]) / 100.0, 4),
-                "cagr": round(float(row["ann_return_pct"]) / 100.0, 4),
-                "sharpe": round(float(row["sharpe"]), 3),
-                "sharpe_ratio": round(float(row["sharpe"]), 3),
-                "mdd": round(abs(float(row["mdd_pct"])) / 100.0, 4),
-                "max_drawdown": round(abs(float(row["mdd_pct"])) / 100.0, 4),
-                "win_rate": round(float(row["win_rate_pct"]) / 100.0, 3),
-                "profit_factor": round(float(row["profit_factor"]), 2),
-                "total_trades": int(row["total_trades"]),
-                "sortino": round(float(row.get("sortino", 0.0)), 3),
-                "calmar": round(float(row.get("calmar", 0.0)), 3),
-                "tp_atr": float(row["tp_mult"]),
-                "sl_atr": float(row["sl_mult"]),
+                "total_return": _clean_float(float(row["total_return_pct"]) / 100.0, 4, 0.0),
+                "annual_return": _clean_float(float(row["ann_return_pct"]) / 100.0, 4, 0.0),
+                "cagr": _clean_float(float(row["ann_return_pct"]) / 100.0, 4, 0.0),
+                "sharpe": _clean_float(row["sharpe"], 3, 0.0),
+                "sharpe_ratio": _clean_float(row["sharpe"], 3, 0.0),
+                "mdd": _clean_float(abs(float(row["mdd_pct"])) / 100.0, 4, 0.0),
+                "max_drawdown": _clean_float(abs(float(row["mdd_pct"])) / 100.0, 4, 0.0),
+                "win_rate": _clean_float(float(row["win_rate_pct"]) / 100.0, 3, 0.0),
+                "profit_factor": _clean_float(row["profit_factor"], 2, None),
+                "total_trades": int(row["total_trades"]) if pd.notna(row["total_trades"]) else 0,
+                "sortino": _clean_float(row.get("sortino"), 3, 0.0),
+                "calmar": _clean_float(row.get("calmar"), 3, 0.0),
+                "tp_atr": _clean_float(row["tp_mult"], 2, 4.0),
+                "sl_atr": _clean_float(row["sl_mult"], 2, 3.0),
                 "elapsed_sec": round(elapsed, 1),
                 "unmapped_params": untransmitted,
             }

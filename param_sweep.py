@@ -58,6 +58,10 @@ def parse_sweep_args():
         '--output', type=str, default='artifacts/param_sweep_results.csv',
         help='結果 CSV 輸出路徑'
     )
+    parser.add_argument(
+        '--skip-data-gate', action='store_true', default=False,
+        help='跳過資料完整性閘門（研究/短天數除錯用）'
+    )
     return parser.parse_args()
 
 
@@ -69,6 +73,8 @@ def build_base_args(sweep_args):
         argv += ['--start-date', sweep_args.start_date]
     if sweep_args.end_date:
         argv += ['--end-date', sweep_args.end_date]
+    if getattr(sweep_args, 'skip_data_gate', False):
+        argv += ['--skip-data-gate']
 
     old_argv = sys.argv
     try:
