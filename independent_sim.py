@@ -122,6 +122,23 @@ STRATEGY_CONFIGS: dict[str, dict[str, Any]] = {
         "initial_capital": 1000000.0,
         "allow_orders_fallback": False,
     },
+    "multifactor_c_v1": {
+        "strategy_id": "multifactor_c_v1",
+        "name": "TWSE Strategy C Multifactor v3",
+        "default_data_dir": "independent_sim_data_mfc",
+        "orders_dir": "artifacts/multifactor_c",
+        "orders_pattern": "orders_{date}.json",
+        "max_positions": 20,
+        "position_size": 0.05,
+        "reserve_ratio": 0.0,
+        "slot_amount": None,
+        "lot_size": 1,
+        "trade_unit": "odd_lot",
+        "max_hold_days": None,
+        "disable_tp_sl": True,
+        "initial_capital": 1_000_000.0,
+        "allow_orders_fallback": False,
+    },
 }
 
 
@@ -138,6 +155,8 @@ def resolve_strategy_id(strategy: Optional[str]) -> str:
         return "mr20"
     if s in ("rsi_reversal", "rsi_reversal_v1", "rsi"):
         return "rsi_reversal"
+    if s in ("multifactor_c_v1", "multifactor_c", "strategy_c", "mfc"):
+        return "multifactor_c_v1"
     return s
 
 
@@ -766,11 +785,22 @@ def get_default_state(
     eff_max_pos = int(max_positions) if max_positions is not None else int(strat_cfg["max_positions"])
     eff_pos_size = float(position_size) if position_size is not None else float(strat_cfg["position_size"])
     eff_reserve = float(reserve_ratio) if reserve_ratio is not None else float(strat_cfg["reserve_ratio"])
-    eff_tp_mult = float(tp_atr_mult) if tp_atr_mult is not None else float(strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT))
-    eff_sl_mult = float(sl_atr_mult) if sl_atr_mult is not None else float(strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT))
-    eff_max_hold = int(max_hold_days) if max_hold_days is not None else int(strat_cfg.get("max_hold_days", DEFAULT_MAX_HOLD_DAYS))
+    disable_tp_sl = bool(strat_cfg.get("disable_tp_sl", False))
+    eff_tp_mult = (
+        None if disable_tp_sl else float(tp_atr_mult) if tp_atr_mult is not None
+        else float(strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT))
+    )
+    eff_sl_mult = (
+        None if disable_tp_sl else float(sl_atr_mult) if sl_atr_mult is not None
+        else float(strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT))
+    )
+    eff_max_hold = (
+        None if disable_tp_sl else int(max_hold_days) if max_hold_days is not None
+        else int(strat_cfg.get("max_hold_days", DEFAULT_MAX_HOLD_DAYS))
+    )
     eff_lot_size = int(lot_size) if lot_size is not None else int(strat_cfg.get("lot_size", DEFAULT_LOT_SIZE))
-    eff_slot_amount = float(slot_amount) if slot_amount is not None else (float(strat_cfg["slot_amount"]) if "slot_amount" in strat_cfg else None)
+    configured_slot_amount = _opt_float(strat_cfg.get("slot_amount"))
+    eff_slot_amount = float(slot_amount) if slot_amount is not None else configured_slot_amount
     eff_trade_unit = trade_unit or strat_cfg.get("trade_unit", "odd_lot" if eff_lot_size == 1 else "board_lot")
 
     return {
@@ -1058,12 +1088,311 @@ def plan_orders(
     return new_pending
 
 
+def plan_mfc_orders(
+    state: dict[str, Any],
+    source_orders: list[dict[str, Any]],
+    as_of: str,
+) -> list[dict[str, Any]]:
+    """Plan Strategy C sell/buy orders for the next XTAI opening session."""
+    if state.get("strategy_id") != "multifactor_c_v1":
+        raise ValueError("plan_mfc_orders requires strategy_id=multifactor_c_v1")
+    expected_execution_date = get_next_trading_day(as_of)
+    new_pending = []
+    pending_ids = {order.get("order_id") for order in state.get("pending_orders", [])}
+    event_ids = {
+        event.get("order_id")
+        for event in state.get("order_events", [])
+        if event.get("status") == "PENDING"
+    }
+
+    for source in source_orders:
+        side = str(source.get("side", "buy")).lower()
+        if side not in {"buy", "sell"}:
+            raise ValueError(f"Unsupported MFC order side: {side}")
+        ticker = str(source.get("ticker", "")).strip()
+        signal_date = source.get("signal_date") or as_of
+        execution_date = source.get("execution_date") or expected_execution_date
+        order_id = source.get("order_id") or f"multifactor_c_v1:{as_of}:{ticker}:{side}"
+        if not ticker:
+            raise ValueError("MFC order is missing ticker")
+        if signal_date != as_of or execution_date != expected_execution_date:
+            raise ValueError(
+                f"MFC order dates must be signal_date={as_of} and execution_date={expected_execution_date}"
+            )
+        if order_id in pending_ids or order_id in event_ids:
+            continue
+
+        reference_close = _opt_float(source.get("reference_close", source.get("limit_price")))
+        limit_price = _opt_float(source.get("limit_price", reference_close))
+        if reference_close is None or reference_close <= 0 or limit_price is None or limit_price <= 0:
+            raise ValueError(f"MFC order {order_id} needs positive reference_close and limit_price")
+        shares = int(source.get("shares", 0) or 0)
+        slot_amount = _opt_float(source.get("slot_amount"))
+        if side == "sell" and shares < 1:
+            raise ValueError(f"MFC sell order {order_id} needs at least one share")
+        if side == "buy" and (slot_amount is None or slot_amount <= 0):
+            raise ValueError(f"MFC buy order {order_id} needs a positive slot_amount")
+
+        pending = {
+            "order_id": order_id,
+            "signal_date": signal_date,
+            "execution_date": execution_date,
+            "ticker": ticker,
+            "side": side,
+            "reference_close": reference_close,
+            "limit_price": limit_price,
+            "time_in_force": source.get("time_in_force", "DAY"),
+            "cancel_time": source.get("cancel_time"),
+            "shares": shares if side == "sell" else 0,
+            "slot_amount": slot_amount if side == "buy" else None,
+            "target_weight": _opt_float(source.get("target_weight")),
+            "upstream_rank": source.get("rank"),
+            "score": source.get("score"),
+            "selection_mode": source.get("selection_mode", "monthly_rebalance"),
+            "created_at": get_taipei_now_iso(),
+        }
+        state["pending_orders"].append(pending)
+        state["order_events"].append(
+            {
+                **pending,
+                "event_time": pending["created_at"],
+                "open_price": None,
+                "fill_price": None,
+                "atr": None,
+                "tp_price": None,
+                "sl_price": None,
+                "status": "PENDING",
+                "message": f"{side.title()} order planned for next session open",
+            }
+        )
+        pending_ids.add(order_id)
+        new_pending.append(pending)
+    return new_pending
+
+
+def _execute_mfc_open_orders(
+    state: dict[str, Any],
+    bars: dict[str, dict[str, Any]],
+    as_of: str,
+) -> list[dict[str, Any]]:
+    """Execute MFC sells and buys at the next session open without TP/SL."""
+    due = [order for order in state["pending_orders"] if order.get("execution_date") == as_of]
+    state["pending_orders"] = [order for order in state["pending_orders"] if order.get("execution_date") != as_of]
+    due.sort(key=lambda order: 0 if order.get("side") == "sell" else 1)
+    events = []
+
+    def append_event(order: dict[str, Any], status: str, message: str, **fields: Any) -> dict[str, Any]:
+        event = {
+            "order_id": order["order_id"],
+            "signal_date": order["signal_date"],
+            "execution_date": as_of,
+            "event_time": get_taipei_now_iso(),
+            "ticker": order["ticker"],
+            "side": order.get("side", "buy"),
+            "upstream_rank": order.get("upstream_rank"),
+            "score": order.get("score"),
+            "selection_mode": order.get("selection_mode", "monthly_rebalance"),
+            "reference_close": order.get("reference_close"),
+            "limit_price": order.get("limit_price"),
+            "open_price": None,
+            "fill_price": None,
+            "atr": None,
+            "tp_price": None,
+            "sl_price": None,
+            "shares": 0,
+            "status": status,
+            "message": message,
+            **fields,
+        }
+        state["order_events"].append(event)
+        events.append(event)
+        return event
+
+    for order in due:
+        ticker = order["ticker"]
+        bar = bars.get(ticker)
+        open_price = _opt_float(bar.get("open")) if bar and bar.get("date") == as_of else None
+        if open_price is None or open_price <= 0:
+            append_event(order, "CANCELLED_NO_OPEN_PRICE", "Missing or stale open price")
+            continue
+
+        if order.get("side") == "sell":
+            position = state["positions"].get(ticker)
+            if not position:
+                append_event(order, "CANCELLED_NO_POSITION", "No held shares remain to sell", open_price=open_price)
+                continue
+            shares = min(int(order.get("shares", 0)), int(position.get("shares", 0)))
+            if shares < 1:
+                append_event(order, "CANCELLED_NO_POSITION", "Sell quantity is below one share", open_price=open_price)
+                continue
+
+            notional = round(open_price * shares, 2)
+            sell_cost = round(compute_commission(notional, BUY_COST_RATE) + notional * (SELL_COST_RATE - BUY_COST_RATE), 2)
+            slippage_cost = round(notional * SLIPPAGE, 2)
+            proceeds = round(notional - sell_cost - slippage_cost, 2)
+            entry_price = float(position["entry"])
+            shares_before_sale = int(position.get("shares", 0))
+            legacy_cost_basis = entry_price * shares_before_sale + compute_commission(
+                entry_price * shares_before_sale,
+                BUY_COST_RATE,
+            )
+            total_cost_basis = round(float(position.get("buy_cost_remaining", legacy_cost_basis)), 2)
+            cost_basis = (
+                total_cost_basis
+                if shares >= shares_before_sale
+                else round(total_cost_basis * shares / shares_before_sale, 2)
+            )
+            buy_cost = round(max(0.0, cost_basis - entry_price * shares), 2)
+            gross_pnl = round((open_price - entry_price) * shares, 2)
+            net_pnl = round(proceeds - cost_basis, 2)
+            days_held = calculate_trading_days(position.get("entry_date", as_of), as_of)
+            state["cash"] = round(state["cash"] + proceeds, 2)
+            remaining_shares = int(position.get("shares", 0)) - shares
+            if remaining_shares <= 0:
+                state["positions"].pop(ticker, None)
+            else:
+                position["shares"] = remaining_shares
+                position["buy_cost_remaining"] = round(total_cost_basis - cost_basis, 2)
+
+            trade = {
+                "trade_id": f"{state['strategy_id']}:{position.get('signal_date')}:{ticker}:{position.get('entry_date')}:{as_of}",
+                "ticker": ticker,
+                "signal_date": position.get("signal_date", order["signal_date"]),
+                "entry_date": position.get("entry_date", ""),
+                "exit_date": as_of,
+                "entry_price": entry_price,
+                "exit_price": open_price,
+                "shares": shares,
+                "atr": None,
+                "tp_price": None,
+                "sl_price": None,
+                "days_held": days_held,
+                "exit_reason": "REBALANCE",
+                "buy_cost": buy_cost,
+                "sell_cost": sell_cost,
+                "slippage_cost": slippage_cost,
+                "gross_pnl": gross_pnl,
+                "net_pnl": net_pnl,
+                "net_return_pct": round(net_pnl / cost_basis * 100.0, 4) if cost_basis > 0 else 0.0,
+            }
+            state["closed_trades"].append(trade)
+            append_event(
+                order,
+                "FILLED",
+                f"Rebalance sale filled at open {open_price:.2f}",
+                open_price=open_price,
+                fill_price=open_price,
+                shares=shares,
+                sell_cost=sell_cost,
+                slippage_cost=slippage_cost,
+            )
+            continue
+
+        existing_position = state["positions"].get(ticker)
+        if existing_position is None and len(state["positions"]) >= int(state["config"].get("max_positions", 20)):
+            append_event(order, "CANCELLED_NO_CAPACITY", "Max positions reached", open_price=open_price)
+            continue
+
+        decision = evaluate_buy_limit_at_open(float(order["limit_price"]), open_price)
+        if not decision.filled:
+            append_event(
+                order,
+                decision.status,
+                "Open price above limit" if decision.status == "CANCELLED_OPEN_ABOVE_LIMIT" else "Invalid open price",
+                open_price=open_price,
+            )
+            continue
+
+        market_value = sum(
+            int(position["shares"]) * float(position.get("last_valid_close", position["entry"]))
+            for position in state["positions"].values()
+        )
+        current_equity = state["cash"] + market_value
+        sizing = size_position(
+            equity=current_equity,
+            position_size=float(state["config"].get("position_size", 0.05)),
+            fill_price=float(decision.fill_price),
+            cash=float(state["cash"]),
+            reserve=0.0,
+            lot_size=1,
+            slot_amount=float(order["slot_amount"]),
+        )
+        if not sizing.ok:
+            message = (
+                f"Position slot budget cannot afford 1 share at {decision.fill_price:.2f}"
+                if sizing.status == "CANCELLED_BELOW_LOT_SIZE"
+                else "Insufficient cash to buy 1 share"
+            )
+            append_event(order, sizing.status, message, open_price=open_price)
+            continue
+
+        shares = int(sizing.shares)
+        fill_price = float(decision.fill_price)
+        state["cash"] = round(state["cash"] - sizing.trade_amount - sizing.commission, 2)
+        if existing_position is not None:
+            old_shares = int(existing_position["shares"])
+            new_shares = old_shares + shares
+            old_entry = float(existing_position["entry"])
+            legacy_cost_basis = old_entry * old_shares + compute_commission(
+                old_entry * old_shares,
+                BUY_COST_RATE,
+            )
+            old_cost_basis = float(existing_position.get("buy_cost_remaining", legacy_cost_basis))
+            existing_position["entry"] = (
+                old_entry * old_shares + fill_price * shares
+            ) / new_shares
+            existing_position["shares"] = new_shares
+            existing_position["buy_cost_remaining"] = round(
+                old_cost_basis + sizing.trade_amount + sizing.commission,
+                2,
+            )
+            existing_position["last_valid_close"] = fill_price
+            existing_position["last_valid_date"] = as_of
+            message = f"Added {shares} shares at open {fill_price:.2f}"
+        else:
+            state["positions"][ticker] = {
+                "ticker": ticker,
+                "entry": fill_price,
+                "buy_cost_remaining": round(sizing.trade_amount + sizing.commission, 2),
+                "last_valid_close": fill_price,
+                "last_valid_date": as_of,
+                "shares": shares,
+                "tp": None,
+                "sl": None,
+                "tp_sl_mode": "none",
+                "tp_atr_mult": None,
+                "sl_atr_mult": None,
+                "tp_pct": None,
+                "sl_pct": None,
+                "atr": None,
+                "entry_date": as_of,
+                "day_count": 0,
+                "max_hold_days": None,
+                "signal_date": order["signal_date"],
+                "order_id": order["order_id"],
+            }
+            message = f"Filled at open {fill_price:.2f}"
+        append_event(
+            order,
+            "FILLED",
+            message,
+            open_price=open_price,
+            fill_price=fill_price,
+            shares=shares,
+            buy_cost=sizing.commission,
+        )
+    return events
+
+
 def execute_open_orders(
     state: dict[str, Any],
     bars: dict[str, dict[str, Any]],
     as_of: str,
 ) -> list[dict[str, Any]]:
     """Execute due pending orders at 09:30 on execution_date as_of."""
+    if state.get("strategy_id") == "multifactor_c_v1":
+        return _execute_mfc_open_orders(state, bars, as_of)
+
     cfg = state["config"]
     initial_cap = cfg["initial_capital"]
     strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
@@ -1454,6 +1783,8 @@ def export_ledgers(state: dict[str, Any], data_dir: Path | str = DEFAULT_DATA_DI
         "limit_price", "open_price", "status", "fill_price", "atr",
         "tp_price", "sl_price", "shares", "message"
     ]
+    if state.get("strategy_id") == "multifactor_c_v1":
+        order_cols.insert(5, "side")
     orders_df = pd.DataFrame(state.get("order_events", []), columns=order_cols)
     if not orders_df.empty and "execution_date" in orders_df.columns:
         orders_df = orders_df.sort_values(by=["execution_date", "event_time"])
@@ -1578,12 +1909,15 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
     max_price_val = cfg.get("max_price")
     max_price_desc = f"<= {max_price_val} 元" if max_price_val is not None else "無"
 
-
-    slot_desc = (
-        f"每檔固定 {cfg['slot_amount']:,.0f} TWD (零股)"
-        if cfg.get("slot_amount") is not None
-        else f"每檔投入 ~{cfg['position_size']*100:.0f}% 權益"
-    )
+    is_mfc = strat_id == "multifactor_c_v1"
+    if is_mfc:
+        slot_desc = "月調倉等權重（多頭100%／空頭20%曝險；零股）"
+    else:
+        slot_desc = (
+            f"每檔固定 {cfg['slot_amount']:,.0f} TWD (零股)"
+            if cfg.get("slot_amount") is not None
+            else f"每檔投入 ~{cfg['position_size']*100:.0f}% 權益"
+        )
     unit_desc = "零股 (1 股)" if cfg.get("lot_size") == 1 else "整張 (1,000 股)"
 
     lines = [
@@ -1595,6 +1929,7 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
         f"- **最大持倉**: {cfg['max_positions']} 檔 ({slot_desc})",
         f"- **下單單位**: {unit_desc}",
         f"- **低價篩選**: {max_price_desc}",
+        *( ["- **執行規則**: 每月11日後首個交易日產生訊號、次日開盤成交；非調倉日僅更新市值；不使用 TP/SL。"] if is_mfc else [] ),
         "",
         "## 1. 策略 vs 0050 績效比較",
         "",
@@ -1620,32 +1955,42 @@ def generate_markdown_report(state: dict[str, Any], perf: dict[str, Any]) -> str
     # Active positions
     lines.append("## 3. 目前持倉")
     if state["positions"]:
-        lines.append("| 標的 | 進場日 | 進場價 | 股數 | 停利 (TP) | 停損 (SL) | 已持有天數 |")
-        lines.append("|---|---|---|---|---|---|---|")
-        for tkr, pos in state["positions"].items():
-            pos_mode = derive_tp_sl_mode(pos, cfg=cfg, strat_cfg=strat_cfg)
-            if pos_mode == "fixed_pct":
-                p_tp = pos.get("tp_pct") if pos.get("tp_pct") is not None else cfg.get("tp_pct", strat_cfg.get("tp_pct", 0.06))
-                tp_label = f"+{p_tp * 100:.0f}%" if p_tp is not None else ""
+        if is_mfc:
+            lines.append("| 標的 | 進場日 | 進場價 | 最新收盤 | 股數 | 出場方式 |")
+            lines.append("|---|---|---|---|---|---|")
+            for tkr, pos in state["positions"].items():
+                latest_close = pos.get("last_valid_close", pos["entry"])
+                lines.append(
+                    f"| `{tkr}` | {pos['entry_date']} | {pos['entry']:.2f} | {latest_close:.2f} | "
+                    f"{pos['shares']:,} | 次月調倉 |"
+                )
+        else:
+            lines.append("| 標的 | 進場日 | 進場價 | 股數 | 停利 (TP) | 停損 (SL) | 已持有天數 |")
+            lines.append("|---|---|---|---|---|---|---|")
+            for tkr, pos in state["positions"].items():
+                pos_mode = derive_tp_sl_mode(pos, cfg=cfg, strat_cfg=strat_cfg)
+                if pos_mode == "fixed_pct":
+                    p_tp = pos.get("tp_pct") if pos.get("tp_pct") is not None else cfg.get("tp_pct", strat_cfg.get("tp_pct", 0.06))
+                    tp_label = f"+{p_tp * 100:.0f}%" if p_tp is not None else ""
 
-                p_sl = pos.get("sl_pct") if pos.get("sl_pct") is not None else cfg.get("sl_pct", strat_cfg.get("sl_pct", 0.03))
-                sl_label = f"-{p_sl * 100:.0f}%" if p_sl is not None else ""
-            else:
-                mult_tp = pos.get("tp_atr_mult") if pos.get("tp_atr_mult") is not None else cfg.get("tp_atr_mult", strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT))
-                tp_str = f"{mult_tp:g}" if isinstance(mult_tp, (int, float)) else str(mult_tp)
-                tp_label = f"+{tp_str} ATR" if mult_tp is not None else ""
+                    p_sl = pos.get("sl_pct") if pos.get("sl_pct") is not None else cfg.get("sl_pct", strat_cfg.get("sl_pct", 0.03))
+                    sl_label = f"-{p_sl * 100:.0f}%" if p_sl is not None else ""
+                else:
+                    mult_tp = pos.get("tp_atr_mult") if pos.get("tp_atr_mult") is not None else cfg.get("tp_atr_mult", strat_cfg.get("tp_atr_mult", DEFAULT_TP_ATR_MULT))
+                    tp_str = f"{mult_tp:g}" if isinstance(mult_tp, (int, float)) else str(mult_tp)
+                    tp_label = f"+{tp_str} ATR" if mult_tp is not None else ""
 
-                mult_sl = pos.get("sl_atr_mult") if pos.get("sl_atr_mult") is not None else cfg.get("sl_atr_mult", strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT))
-                sl_str = f"{mult_sl:g}" if isinstance(mult_sl, (int, float)) else str(mult_sl)
-                sl_label = f"-{sl_str} ATR" if mult_sl is not None else ""
+                    mult_sl = pos.get("sl_atr_mult") if pos.get("sl_atr_mult") is not None else cfg.get("sl_atr_mult", strat_cfg.get("sl_atr_mult", DEFAULT_SL_ATR_MULT))
+                    sl_str = f"{mult_sl:g}" if isinstance(mult_sl, (int, float)) else str(mult_sl)
+                    sl_label = f"-{sl_str} ATR" if mult_sl is not None else ""
 
-            tp_display = f"{pos['tp']:.2f} ({tp_label})" if tp_label else f"{pos['tp']:.2f}"
-            sl_display = f"{pos['sl']:.2f} ({sl_label})" if sl_label else f"{pos['sl']:.2f}"
+                tp_display = f"{pos['tp']:.2f} ({tp_label})" if tp_label else f"{pos['tp']:.2f}"
+                sl_display = f"{pos['sl']:.2f} ({sl_label})" if sl_label else f"{pos['sl']:.2f}"
 
-            lines.append(
-                f"| `{tkr}` | {pos['entry_date']} | {pos['entry']:.2f} | {pos['shares']:,} | "
-                f"{tp_display} | {sl_display} | {pos['day_count']}/{pos.get('max_hold_days', 20)} |"
-            )
+                lines.append(
+                    f"| `{tkr}` | {pos['entry_date']} | {pos['entry']:.2f} | {pos['shares']:,} | "
+                    f"{tp_display} | {sl_display} | {pos['day_count']}/{pos.get('max_hold_days', 20)} |"
+                )
     else:
         lines.append("*(目前無持倉，全持有現金)*")
     lines.append("")
@@ -1859,9 +2204,17 @@ def run_open(
         strat_name = state.get("config", {}).get("name") or strat_cfg.get("name") or strat_id
         msg_lines = [f"📊 *{strat_name} Open Execution ({today_str})*"]
         for f_ev in filled:
-            msg_lines.append(f"🟢 成交: `{f_ev['ticker']}` @ {f_ev['fill_price']:.2f} × {f_ev['shares']:,} 股")
+            if state.get("strategy_id") == "multifactor_c_v1":
+                action = "調倉賣出" if f_ev.get("side") == "sell" else "買進"
+                msg_lines.append(f"🟢 {action}: `{f_ev['ticker']}` @ {f_ev['fill_price']:.2f} × {f_ev['shares']:,} 股")
+            else:
+                msg_lines.append(f"🟢 成交: `{f_ev['ticker']}` @ {f_ev['fill_price']:.2f} × {f_ev['shares']:,} 股")
         for c_ev in cancelled:
-            msg_lines.append(f"⚪ 撤單/略過: `{c_ev['ticker']}` [{c_ev['status']}]")
+            if state.get("strategy_id") == "multifactor_c_v1":
+                action = "賣出" if c_ev.get("side") == "sell" else "買進"
+                msg_lines.append(f"⚪ 撤單/略過 ({action}): `{c_ev['ticker']}` [{c_ev['status']}]")
+            else:
+                msg_lines.append(f"⚪ 撤單/略過: `{c_ev['ticker']}` [{c_ev['status']}]")
         notify_telegram("\n".join(msg_lines))
 
 
@@ -1923,6 +2276,30 @@ def _resolve_and_plan_orders(
         return 0
 
     orders = load_orders(orders_file, as_of=today_str, allow_rollover=allow_rollover)
+    if strat_id == "multifactor_c_v1":
+        payload = json.loads(orders_file.read_text(encoding="utf-8"))
+        if payload.get("signal_date") != today_str:
+            raise ValueError(
+                f"MFC orders file signal_date {payload.get('signal_date')} does not match requested as-of {today_str}"
+            )
+        new_pending = plan_mfc_orders(state, orders, as_of=today_str)
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        state["mfc_last_signal"] = {
+            "signal_date": today_str,
+            "is_rebalance_date": bool(payload.get("is_rebalance_date", False)),
+            "market_bullish": metadata.get("market_bullish"),
+            "equity_exposure": metadata.get("equity_exposure"),
+            "previous_holdings": list(metadata.get("previous_holdings", [])),
+            "target_symbols": list(metadata.get("target_symbols", [])),
+            "orders_planned": len(new_pending),
+        }
+        if orders_file.name not in state.setdefault("consumed_orders_files", []):
+            state["consumed_orders_files"].append(orders_file.name)
+        gaps = state.get("planning_gaps")
+        if gaps and today_str in gaps:
+            gaps.remove(today_str)
+        return len(new_pending)
+
     held_set = set(state["positions"].keys())
     pending_set = {p["ticker"] for p in state["pending_orders"]}
     eff_max_price = max_price if max_price is not None else state["config"].get("max_price")
@@ -2018,10 +2395,14 @@ def run_close_and_plan(
     # 0. Expire outdated pending orders
     expired_events = expire_pending_orders(state, as_of=today_str)
 
-    # 1. Settle existing positions (SL / TP / TIME)
+    # 1. Settle existing positions (SL / TP / TIME) for the legacy strategies.
+    # Strategy C exits only when its next-session rebalance sells execute.
     held_tickers = list(state["positions"].keys())
-    bars = fetch_market_bars(held_tickers, as_of=today_str) if held_tickers else {}
-    closed_trades = settle_positions(state, bars, as_of=today_str)
+    if state.get("strategy_id") == "multifactor_c_v1":
+        closed_trades = []
+    else:
+        bars = fetch_market_bars(held_tickers, as_of=today_str) if held_tickers else {}
+        closed_trades = settle_positions(state, bars, as_of=today_str)
 
     # 2. Mark daily equity and 0050 benchmark
     remaining_tickers = list(state["positions"].keys())
@@ -2045,6 +2426,15 @@ def run_close_and_plan(
         f"Equity: {state['equity_curve'][-1]['equity']:,.0f} TWD"
     )
 
+    mfc_signal = state.get("mfc_last_signal", {})
+    if state.get("strategy_id") == "multifactor_c_v1" and mfc_signal.get("signal_date") == today_str:
+        if mfc_signal.get("is_rebalance_date"):
+            old_tickers = ", ".join(mfc_signal.get("previous_holdings", [])) or "無"
+            target_tickers = ", ".join(mfc_signal.get("target_symbols", [])) or "無"
+            print(f"MFC 調倉日：舊持倉 [{old_tickers}]；新目標 [{target_tickers}]；次日開盤委託 {planned_count} 筆。")
+        else:
+            print("MFC 非調倉日：僅更新持倉市值，今日未產生委託。")
+
     if notify:
         strat_id = state.get("strategy_id", DEFAULT_STRATEGY_ID)
         strat_cfg = get_strategy_config(strat_id)
@@ -2053,6 +2443,16 @@ def run_close_and_plan(
             f"📈 *{strat_name} Daily Summary ({today_str})*",
             f"💰 權益: {state['equity_curve'][-1]['equity']:,.0f} TWD (現金: {state['cash']:,.0f} TWD)",
         ]
+        if state.get("strategy_id") == "multifactor_c_v1" and mfc_signal.get("signal_date") == today_str:
+            if mfc_signal.get("is_rebalance_date"):
+                msg_lines.append(
+                    "🗓️ 調倉日\n舊持倉: "
+                    + (", ".join(mfc_signal.get("previous_holdings", [])) or "無")
+                    + "\n新目標: "
+                    + (", ".join(mfc_signal.get("target_symbols", [])) or "無")
+                )
+            else:
+                msg_lines.append("🗓️ 非調倉日：僅更新市值，未產生新委託")
         for tr in closed_trades:
             msg_lines.append(f"🏁 平倉: `{tr['ticker']}` [{tr['exit_reason']}] PnL: {tr['net_pnl']:+,.0f} ({tr['net_return_pct']:+.2f}%)")
         if planned_count > 0:
@@ -2095,14 +2495,27 @@ def print_status(data_dir: Path | str = DEFAULT_DATA_DIR) -> None:
     print(f"  Closed Trades   : {len(state.get('closed_trades', []))}")
 
     print(f"\nPositions ({len(state['positions'])}/{cfg['max_positions']}):")
+    is_mfc = state.get("strategy_id") == "multifactor_c_v1"
     for tkr, pos in state["positions"].items():
-        print(f"  - {tkr}: entry={pos['entry']:.2f}, shares={pos['shares']:,}, TP={pos['tp']:.2f}, SL={pos['sl']:.2f}, days={pos['day_count']}")
+        if is_mfc:
+            print(
+                f"  - {tkr}: entry={pos['entry']:.2f}, shares={pos['shares']:,}, "
+                "TP/SL=none, exit=next monthly rebalance"
+            )
+        else:
+            print(f"  - {tkr}: entry={pos['entry']:.2f}, shares={pos['shares']:,}, TP={pos['tp']:.2f}, SL={pos['sl']:.2f}, days={pos['day_count']}")
     if not state["positions"]:
         print("  (None)")
 
     print(f"Pending Orders ({len(state['pending_orders'])}):")
     for p in state["pending_orders"]:
-        print(f"  - {p['ticker']} (exec {p['execution_date']}): limit={p['limit_price']:.2f}, atr={p['atr']:.2f}")
+        if is_mfc:
+            print(
+                f"  - {p.get('side', 'buy').title()} {p['ticker']} "
+                f"(exec {p['execution_date']}): limit={p['limit_price']:.2f}"
+            )
+        else:
+            print(f"  - {p['ticker']} (exec {p['execution_date']}): limit={p['limit_price']:.2f}, atr={p['atr']:.2f}")
     if not state["pending_orders"]:
         print("  (None)")
 
@@ -2133,13 +2546,13 @@ def build_cli_parser() -> argparse.ArgumentParser:
         "--strategy", "-s",
         type=str,
         default=None,
-        help="Strategy ID (top2_score_v1, mr20, rsi_reversal)",
+        help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7, multifactor_c_v1)",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # init
     p_init = subparsers.add_parser("init", help="Initialize simulation state")
-    p_init.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7)")
+    p_init.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7, multifactor_c_v1)")
     p_init.add_argument("--capital", type=float, default=None, help="Initial capital in TWD")
     p_init.add_argument("--max-price", type=float, default=None, help="Optional max price filter")
     p_init.add_argument("--position-size", type=float, default=None, help="Target position size fraction")
@@ -2153,7 +2566,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
 
     # close-and-plan
     p_cp = subparsers.add_parser("close-and-plan", help="Settle positions, mark equity, and plan next day orders")
-    p_cp.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7)")
+    p_cp.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7, multifactor_c_v1)")
     p_cp.add_argument("--orders", type=str, default=None, help="Path to orders_YYYYMMDD.json artifact")
     p_cp.add_argument("--as-of", type=str, default=None, help="Evaluation date (YYYY-MM-DD), default today")
     p_cp.add_argument("--max-price", type=float, default=None, help="Optional max price override")
@@ -2163,20 +2576,20 @@ def build_cli_parser() -> argparse.ArgumentParser:
 
     # open
     p_open = subparsers.add_parser("open", help="Simulate 09:00-09:30 open limit order fills")
-    p_open.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7)")
+    p_open.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7, multifactor_c_v1)")
     p_open.add_argument("--as-of", type=str, default=None, help="Execution date (YYYY-MM-DD), default today")
     p_open.add_argument("--data-dir", type=str, default=None, help="Data directory")
     p_open.add_argument("--notify", action="store_true", help="Send Telegram notification")
 
     # report
     p_rep = subparsers.add_parser("report", help="Generate performance report, charts, and export CSVs")
-    p_rep.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7)")
+    p_rep.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7, multifactor_c_v1)")
     p_rep.add_argument("--data-dir", type=str, default=None, help="Data directory")
     p_rep.add_argument("--notify", action="store_true", help="Send Telegram notification")
 
     # status
     p_stat = subparsers.add_parser("status", help="Print current status summary")
-    p_stat.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7)")
+    p_stat.add_argument("--strategy", "-s", type=str, default=argparse.SUPPRESS, help="Strategy ID (top2_score_v1, mr20, rsi_reversal, top7, multifactor_c_v1)")
     p_stat.add_argument("--data-dir", type=str, default=None, help="Data directory")
 
     # is-session: exit 0 (session) / 1 (not a session) / 2 (lookup error).
