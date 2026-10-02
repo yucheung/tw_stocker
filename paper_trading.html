@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Paper Trading v8.5 — 2026-10-01</title>
+    <title>Paper Trading v8.5 — 2026-10-02</title>
     <meta name="description" content="TW Stocker v8.5 Paper Trading 實時績效追蹤">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <style>
@@ -92,21 +92,21 @@
     <h1>📈 Paper Trading v8.5</h1>
     <p class="subtitle">
         <span class="badge badge-live">● LIVE</span>
-        起始日 2026-08-20 | 更新 2026-10-01 | 初始資金 200,000 | 保留本金 10%，其餘投入
+        起始日 2026-08-20 | 更新 2026-10-02 | 初始資金 200,000 | 保留本金 10%，其餘投入
     </p>
 
     <div class="metrics">
         <div class="metric">
             <div class="label">總權益</div>
-            <div class="value green">201,004</div>
+            <div class="value green">203,381</div>
         </div>
         <div class="metric">
             <div class="label">總報酬</div>
-            <div class="value green">+0.5%</div>
+            <div class="value green">+1.7%</div>
         </div>
         <div class="metric">
             <div class="label">年化報酬</div>
-            <div class="value green">+4.5%</div>
+            <div class="value green">+14.7%</div>
         </div>
         <div class="metric">
             <div class="label">最大回撤</div>
@@ -114,19 +114,19 @@
         </div>
         <div class="metric">
             <div class="label">勝率</div>
-            <div class="value blue">43%</div>
+            <div class="value blue">38%</div>
         </div>
         <div class="metric">
             <div class="label">交易數</div>
-            <div class="value blue">7</div>
+            <div class="value blue">8</div>
         </div>
         <div class="metric">
             <div class="label">Profit Factor</div>
-            <div class="value red">0.99</div>
+            <div class="value red">0.92</div>
         </div>
         <div class="metric">
             <div class="label">持倉數</div>
-            <div class="value blue">3</div>
+            <div class="value blue">2</div>
         </div>
     </div>
 
@@ -141,20 +141,12 @@
             <tr><th>股票</th><th>進場價</th><th>停利</th><th>停損</th><th>進場日</th><th>持有</th></tr>
             
         <tr>
-            <td><b>3406</b></td>
-            <td>970.0</td>
-            <td>1176.4</td>
-            <td>815.2</td>
-            <td>2026-09-02</td>
-            <td>19天</td>
-        </tr>
-        <tr>
             <td><b>2455</b></td>
             <td>533.0</td>
             <td>658.4</td>
             <td>438.9</td>
             <td>2026-09-10</td>
-            <td>13天</td>
+            <td>14天</td>
         </tr>
         <tr>
             <td><b>2426</b></td>
@@ -162,7 +154,7 @@
             <td>127.8</td>
             <td>68.7</td>
             <td>2026-09-14</td>
-            <td>11天</td>
+            <td>12天</td>
         </tr>
         </table>
     </div>
@@ -174,31 +166,38 @@
             
         <tr>
             <td><b>3016</b></td>
-            <td>169.0</td>
-            <td>194.3</td>
-            <td>155.5</td>
-            <td>2026-10-02</td>
+            <td>180.5</td>
+            <td>216.8</td>
+            <td>153.3</td>
+            <td>2026-10-05</td>
         </tr>
         <tr>
             <td><b>2409</b></td>
-            <td>38.5</td>
-            <td>44.3</td>
-            <td>35.5</td>
-            <td>2026-10-02</td>
+            <td>40.5</td>
+            <td>49.5</td>
+            <td>33.7</td>
+            <td>2026-10-05</td>
         </tr>
         <tr>
             <td><b>3605</b></td>
             <td>170.5</td>
-            <td>196.1</td>
-            <td>156.9</td>
-            <td>2026-10-02</td>
+            <td>218.1</td>
+            <td>134.8</td>
+            <td>2026-10-05</td>
         </tr>
         <tr>
-            <td><b>8996</b></td>
-            <td>1605.0</td>
-            <td>1845.8</td>
-            <td>1476.6</td>
-            <td>2026-10-02</td>
+            <td><b>8150</b></td>
+            <td>127.0</td>
+            <td>152.6</td>
+            <td>107.8</td>
+            <td>2026-10-05</td>
+        </tr>
+        <tr>
+            <td><b>3443</b></td>
+            <td>7900.0</td>
+            <td>9553.0</td>
+            <td>6660.2</td>
+            <td>2026-10-05</td>
         </tr>
         </table>
     </div>
@@ -208,6 +207,15 @@
         <table>
             <tr><th>日期</th><th>股票</th><th>進場</th><th>出場</th><th>損益</th><th>原因</th><th>持有</th></tr>
             
+        <tr>
+            <td>2026-10-02</td>
+            <td><b>3406</b></td>
+            <td>970.0</td>
+            <td>961.0</td>
+            <td style="color:#f87171;font-weight:700">-0.9%</td>
+            <td>TIME</td>
+            <td>20天</td>
+        </tr>
         <tr>
             <td>2026-09-22</td>
             <td><b>2301</b></td>
@@ -285,10 +293,10 @@ const ctx = document.getElementById('equityChart').getContext('2d');
 new Chart(ctx, {
     type: 'line',
     data: {
-        labels: ["2026-08-20", "2026-08-21", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-29", "2026-09-30", "2026-10-01"],
+        labels: ["2026-08-20", "2026-08-21", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02"],
         datasets: [{
             label: 'Paper Trading 權益',
-            data: [200000, 200000, 197752.0, 200718.0, 205478.0, 205478.0, 207552.0, 205255.0, 206724.0, 199926.0, 203691.0, 200522.0, 200569.0, 204283.0, 202667.0, 200029.0, 197194.0, 193544.0, 199236.0, 196361.0, 200990.0, 202342.0, 200425.0, 200023.0, 199825.0, 199625.0, 201004.0, 201004.0],
+            data: [200000, 200000, 197752.0, 200718.0, 205478.0, 205478.0, 207552.0, 205255.0, 206724.0, 199926.0, 203691.0, 200522.0, 200569.0, 204283.0, 202667.0, 200029.0, 197194.0, 193544.0, 199236.0, 196361.0, 200990.0, 202342.0, 200425.0, 200023.0, 199825.0, 199625.0, 201004.0, 201004.0, 203381.0],
             borderColor: '#60a5fa',
             backgroundColor: 'rgba(96, 165, 250, 0.1)',
             fill: true,
@@ -297,7 +305,7 @@ new Chart(ctx, {
             borderWidth: 2,
         }, {
             label: '初始資金',
-            data: [200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000],
+            data: [200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000, 200000],
             borderColor: '#475569',
             borderDash: [5, 5],
             fill: false,
