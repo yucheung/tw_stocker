@@ -120,6 +120,19 @@ jobs:
             find artifacts/ -type f -mtime +180 -delete 2>/dev/null || true
           fi
 
+      # 圖表 PNG 不再入庫（.gitignore），改由 workflow artifact 保留 90 天。
+      - name: Upload chart artifact
+        if: >-
+          (steps.report.outcome == 'success' && steps.paper.outcome == 'success')
+          || steps.monthly.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: charts-${{ github.run_id }}
+          path: |
+            backtest_chart.png
+            factor_search_chart.png
+            ablation_chart.png
+          retention-days: 90
       # 只有在產報 + paper tracker 都成功時才 commit。若 ai_report.py 因資料完整性
       # 閘門中止（或當日非交易日而整段被跳過），一律不覆蓋 stock_report.html /
       # paper_equity.json，避免退化的產出污染 paper trading 歷史記錄。
@@ -131,7 +144,7 @@ jobs:
           git config --global user.email "voidful.stack@gmail.com"
           git config --global user.name "Voidful"
 
-          git add stock_report.html backtest_chart.png paper_trading.html paper_equity.json || true
+          git add stock_report.html paper_trading.html paper_equity.json || true
           git add -u artifacts || true
           # `-u` only stages modifications to already-tracked files — it can
           # never pick up a brand-new order artifact. artifacts/mr20/*.json
@@ -217,7 +230,7 @@ jobs:
           git config --global user.email "voidful.stack@gmail.com"
           git config --global user.name "Voidful"
 
-          git add factor_search_results.csv ablation_results.csv backtest_chart.png || true
+          git add factor_search_results.csv ablation_results.csv || true
           git add -u artifacts || true
           # See the equivalent comment in the generate-report job above.
           git add artifacts/mr20 || true

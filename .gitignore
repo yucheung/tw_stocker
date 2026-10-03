@@ -176,6 +176,14 @@ artifacts/*.json
 # 例外：TOP7 每日訊號檔需交付給本地 close-and-plan（workflow 有對應 git add）
 !artifacts/orders_*.json
 artifacts/*.html
+# 2026-10-04 git 瘦身：二進位／快取／產出不再入庫（已追蹤者另行 rm --cached）
+*.pkl
+*.parquet
+*.sqlite
+independent_sim_data_*/
+backtest_chart.png
+factor_search_chart.png
+ablation_chart.png
 stock_report.html
 paper_trading.html
 paper_equity.json
