@@ -9,7 +9,7 @@
       "sl": 438.95,
       "entry_date": "2026-09-10",
       "shares": 37,
-      "day_count": 17,
+      "day_count": 19,
       "max_hold_days": 20,
       "entry_rank": 3,
       "last_valid_close": 606.0
@@ -20,7 +20,7 @@
       "sl": 68.68,
       "entry_date": "2026-09-14",
       "shares": 209,
-      "day_count": 15,
+      "day_count": 17,
       "max_hold_days": 20,
       "entry_rank": 2,
       "last_valid_close": 114.0
@@ -29,15 +29,15 @@
   "pending_orders": [
     {
       "ticker": "3016",
-      "entry": 188.0,
-      "tp": 216.2,
-      "sl": 172.96,
-      "reference_close": 188.0,
+      "entry": 183.5,
+      "tp": 211.025,
+      "sl": 168.82,
+      "reference_close": 183.5,
       "atr": null,
       "gap_limit_atr": 1.5,
-      "execution_date": "2026-10-08",
+      "execution_date": "2026-10-13",
       "max_hold_days": 20,
-      "signal_date": "2026-10-07",
+      "signal_date": "2026-10-12",
       "rank": 1,
       "position_size": 0.1,
       "regime_scale": 1.0,
@@ -50,15 +50,15 @@
     },
     {
       "ticker": "6213",
-      "entry": 787.0,
-      "tp": 905.05,
-      "sl": 724.04,
-      "reference_close": 787.0,
+      "entry": 806.0,
+      "tp": 926.9,
+      "sl": 741.52,
+      "reference_close": 806.0,
       "atr": null,
       "gap_limit_atr": 1.5,
-      "execution_date": "2026-10-08",
+      "execution_date": "2026-10-13",
       "max_hold_days": 20,
-      "signal_date": "2026-10-07",
+      "signal_date": "2026-10-12",
       "rank": 2,
       "position_size": 0.1,
       "regime_scale": 1.0,
@@ -70,16 +70,16 @@
       "action": "BUY"
     },
     {
-      "ticker": "3605",
-      "entry": 172.0,
-      "tp": 197.8,
-      "sl": 158.24,
-      "reference_close": 172.0,
+      "ticker": "3443",
+      "entry": 8360.0,
+      "tp": 9614.0,
+      "sl": 7691.2,
+      "reference_close": 8360.0,
       "atr": null,
       "gap_limit_atr": 1.5,
-      "execution_date": "2026-10-08",
+      "execution_date": "2026-10-13",
       "max_hold_days": 20,
-      "signal_date": "2026-10-07",
+      "signal_date": "2026-10-12",
       "rank": 3,
       "position_size": 0.1,
       "regime_scale": 1.0,
@@ -91,16 +91,16 @@
       "action": "BUY"
     },
     {
-      "ticker": "3443",
-      "entry": 8375.0,
-      "tp": 9631.25,
-      "sl": 7705.0,
-      "reference_close": 8375.0,
+      "ticker": "8150",
+      "entry": 128.0,
+      "tp": 147.2,
+      "sl": 117.76,
+      "reference_close": 128.0,
       "atr": null,
       "gap_limit_atr": 1.5,
-      "execution_date": "2026-10-08",
+      "execution_date": "2026-10-13",
       "max_hold_days": 20,
-      "signal_date": "2026-10-07",
+      "signal_date": "2026-10-12",
       "rank": 4,
       "position_size": 0.1,
       "regime_scale": 1.0,
@@ -112,16 +112,16 @@
       "action": "BUY"
     },
     {
-      "ticker": "8150",
-      "entry": 127.5,
-      "tp": 146.625,
-      "sl": 117.3,
-      "reference_close": 127.5,
+      "ticker": "2492",
+      "entry": 420.0,
+      "tp": 483.0,
+      "sl": 386.4,
+      "reference_close": 420.0,
       "atr": null,
       "gap_limit_atr": 1.5,
-      "execution_date": "2026-10-08",
+      "execution_date": "2026-10-13",
       "max_hold_days": 20,
-      "signal_date": "2026-10-07",
+      "signal_date": "2026-10-12",
       "rank": 5,
       "position_size": 0.1,
       "regime_scale": 1.0,
@@ -452,6 +452,13 @@
     {
       "date": "2026-10-07",
       "equity": 203213.0,
+      "capital": 160185.0,
+      "n_positions": 2,
+      "n_closed_today": 0
+    },
+    {
+      "date": "2026-10-12",
+      "equity": 202358.0,
       "capital": 160185.0,
       "n_positions": 2,
       "n_closed_today": 0
@@ -840,6 +847,18 @@
         "8150",
         "8046",
         "3037"
+      ]
+    },
+    {
+      "date": "2026-10-12",
+      "tickers": [
+        "3016",
+        "6213",
+        "3443",
+        "8150",
+        "2492",
+        "1303",
+        "6257"
       ]
     }
   ],
@@ -1744,6 +1763,61 @@
       "limit_price": 1310.0,
       "open_price": null,
       "status": "CANCELLED_NO_OPEN_PRICE",
+      "fill_price": null
+    },
+    {
+      "order_id": "2026-10-07:3016:buy",
+      "ticker": "3016",
+      "signal_date": "2026-10-07",
+      "execution_date": "2026-10-08",
+      "event_time": "2026-10-12T09:30:00+08:00",
+      "limit_price": 188.0,
+      "open_price": null,
+      "status": "CANCELLED_EXPIRED",
+      "fill_price": null
+    },
+    {
+      "order_id": "2026-10-07:6213:buy",
+      "ticker": "6213",
+      "signal_date": "2026-10-07",
+      "execution_date": "2026-10-08",
+      "event_time": "2026-10-12T09:30:00+08:00",
+      "limit_price": 787.0,
+      "open_price": null,
+      "status": "CANCELLED_EXPIRED",
+      "fill_price": null
+    },
+    {
+      "order_id": "2026-10-07:3605:buy",
+      "ticker": "3605",
+      "signal_date": "2026-10-07",
+      "execution_date": "2026-10-08",
+      "event_time": "2026-10-12T09:30:00+08:00",
+      "limit_price": 172.0,
+      "open_price": null,
+      "status": "CANCELLED_EXPIRED",
+      "fill_price": null
+    },
+    {
+      "order_id": "2026-10-07:3443:buy",
+      "ticker": "3443",
+      "signal_date": "2026-10-07",
+      "execution_date": "2026-10-08",
+      "event_time": "2026-10-12T09:30:00+08:00",
+      "limit_price": 8375.0,
+      "open_price": null,
+      "status": "CANCELLED_EXPIRED",
+      "fill_price": null
+    },
+    {
+      "order_id": "2026-10-07:8150:buy",
+      "ticker": "8150",
+      "signal_date": "2026-10-07",
+      "execution_date": "2026-10-08",
+      "event_time": "2026-10-12T09:30:00+08:00",
+      "limit_price": 127.5,
+      "open_price": null,
+      "status": "CANCELLED_EXPIRED",
       "fill_price": null
     }
   ]
