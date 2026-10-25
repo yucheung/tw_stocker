@@ -32,13 +32,25 @@ fi
 # TODAY in Asia/Taipei calendar terms (same helper as MR20).
 TODAY=$("$PYTHON" -c "from independent_sim import get_taipei_today; print(get_taipei_today())")
 
-# Trading-day check via independent_sim.py is-session (exit 0=session).
-SESSION_OUT=$("$PYTHON" independent_sim.py is-session --date "$TODAY" 2>&1) || true
+# Trading-day check via independent_sim.py is-session (0=session, 1=holiday,
+# 2=calendar lookup error). Only exit 1 WITH the SESSION_RESULT:HOLIDAY:
+# protocol marker counts as a genuine holiday skip; any other non-zero exit
+# fails closed so crashes/lookup errors are never silently skipped.
+set +e
+SESSION_OUT=$("$PYTHON" independent_sim.py is-session --date "$TODAY" 2>&1)
 SESSION_RC=$?
+set -e
+
+if [ "$SESSION_RC" -eq 1 ] && [[ "$SESSION_OUT" == *"SESSION_RESULT:HOLIDAY:"* ]]; then
+    echo "=== MFC Scheduler [$MODE] [$TODAY] ==="
+    echo "$TODAY 非 XTAI 交易日，略過本次執行"
+    exit 0
+fi
 if [ "$SESSION_RC" -ne 0 ]; then
     echo "=== MFC Scheduler [$MODE] [$TODAY] ==="
-    echo "Not an XTAI trading session (rc=$SESSION_RC) — skip. $SESSION_OUT"
-    exit 0
+    echo "❌ 交易日判斷失敗（非可辨認休市結果，exit=$SESSION_RC），中止執行" >&2
+    printf '%s\n' "$SESSION_OUT" >&2
+    exit 1
 fi
 
 if [ "$MODE" = "open" ]; then
@@ -72,8 +84,9 @@ else
 fi
 
 # Same contract as MR20: untrusted new orders must not block settlement of
-# existing positions. FAILED=1 drops --orders (auto-discovery records a
-# planning gap instead of using stale data); settlement still runs.
+# existing positions. FAILED=1 drops --orders so close-and-plan falls back to
+# auto-discovery (recording a planning gap only if no valid orders are found);
+# settlement still runs.
 FAILED=0
 CLOSE_PLAN_ORDERS_ARGS=(--orders "$ORDERS")
 
@@ -81,7 +94,7 @@ if [ "$EXIT1" -ne 0 ] || [ ! -f "$ORDERS" ] || [ ! -s "$ORDERS" ]; then
     FAILED=1
     CLOSE_PLAN_ORDERS_ARGS=()
     echo ""
-    echo "❌ (No orders generated or signal failed — settlement will still run, planning gap recorded)" >&2
+    echo "❌ (No orders generated or signal failed — dropping --orders; settlement will still run, planning gap recorded if auto-discovery finds no valid orders)" >&2
 else
     EXPECTED_EXEC=$("$PYTHON" -c "
 from independent_sim import get_next_trading_day
@@ -111,7 +124,7 @@ except Exception as e:
         FAILED=1
         CLOSE_PLAN_ORDERS_ARGS=()
         echo "❌ Freshness gate FAILED: $FRESHNESS_OK" >&2
-        echo "(Refusing to trust these orders — settlement will still run, planning gap recorded)" >&2
+        echo "(Refusing to trust these orders — dropping --orders; settlement will still run, planning gap recorded if auto-discovery finds no valid orders)" >&2
     fi
 fi
 
@@ -124,7 +137,7 @@ echo "=== Step 2: Close-and-Plan ($D) ==="
 
 echo ""
 if [ "$FAILED" -ne 0 ]; then
-    echo "❌ MFC close finished WITH planning gap (signal/freshness failed, settlement done)" >&2
+    echo "❌ MFC close finished with signal/freshness failure (settlement attempted; planning gap recorded if no valid orders were auto-discovered)" >&2
     exit 1
 fi
 echo "✅ MFC close done: signal + settlement OK"
