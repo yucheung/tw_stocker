@@ -1,0 +1,31 @@
+{
+  "orders": [
+    {
+      "signal_date": "2026-11-23",
+      "execution_date": "2026-11-24",
+      "ticker": "2412",
+      "side": "buy",
+      "order_type": "limit",
+      "limit_price": 162.5,
+      "reference_close": 162.5,
+      "entry_model": "signal_close_limit_next_open_v1",
+      "time_in_force": "DAY_UNTIL_0930",
+      "cancel_time": "09:30:00",
+      "timezone": "Asia/Taipei",
+      "rank": 1,
+      "score": 4.0,
+      "max_hold_days": 20,
+      "position_size": 0.1,
+      "regime_scale": 0.1,
+      "tp_sl_mode": "atr",
+      "tp_atr_mult": 4.0,
+      "sl_atr_mult": 3.0,
+      "tp_pct": 0.15,
+      "sl_pct": 0.08,
+      "model_version": "v8.5",
+      "time_exit": "2026-12-21",
+      "tp_price": 186.875,
+      "sl_price": 149.5
+    }
+  ]
+}
