@@ -5,17 +5,38 @@
   "positions": {},
   "pending_orders": [
     {
-      "ticker": "2412",
-      "entry": 162.5,
-      "tp": 186.875,
-      "sl": 149.5,
-      "reference_close": 162.5,
+      "ticker": "2468",
+      "entry": 64.9,
+      "tp": 74.635,
+      "sl": 59.708,
+      "reference_close": 64.9,
       "atr": null,
       "gap_limit_atr": 1.5,
-      "execution_date": "2026-11-24",
+      "execution_date": "2026-11-25",
       "max_hold_days": 20,
-      "signal_date": "2026-11-23",
+      "signal_date": "2026-11-24",
       "rank": 1,
+      "position_size": 0.1,
+      "regime_scale": 0.1,
+      "tp_sl_mode": "atr",
+      "tp_atr_mult": 4.0,
+      "sl_atr_mult": 3.0,
+      "tp_pct": 0.15,
+      "sl_pct": 0.08,
+      "action": "BUY"
+    },
+    {
+      "ticker": "2412",
+      "entry": 164.5,
+      "tp": 189.175,
+      "sl": 151.34,
+      "reference_close": 164.5,
+      "atr": null,
+      "gap_limit_atr": 1.5,
+      "execution_date": "2026-11-25",
+      "max_hold_days": 20,
+      "signal_date": "2026-11-24",
+      "rank": 2,
       "position_size": 0.1,
       "regime_scale": 0.1,
       "tp_sl_mode": "atr",
@@ -557,6 +578,13 @@
     },
     {
       "date": "2026-11-23",
+      "equity": 197657.0,
+      "capital": 197657.0,
+      "n_positions": 0,
+      "n_closed_today": 0
+    },
+    {
+      "date": "2026-11-24",
       "equity": 197657.0,
       "capital": 197657.0,
       "n_positions": 0,
@@ -1244,6 +1272,13 @@
     {
       "date": "2026-11-23",
       "tickers": [
+        "2412"
+      ]
+    },
+    {
+      "date": "2026-11-24",
+      "tickers": [
+        "2468",
         "2412"
       ]
     }
@@ -3997,6 +4032,17 @@
       "limit_price": 83.5,
       "open_price": null,
       "status": "CANCELLED_EXPIRED",
+      "fill_price": null
+    },
+    {
+      "order_id": "2026-11-23:2412:buy",
+      "ticker": "2412",
+      "signal_date": "2026-11-23",
+      "execution_date": "2026-11-24",
+      "event_time": "2026-11-24T09:30:00+08:00",
+      "limit_price": 162.5,
+      "open_price": null,
+      "status": "CANCELLED_NO_OPEN_PRICE",
       "fill_price": null
     }
   ]
